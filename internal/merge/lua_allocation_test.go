@@ -1,0 +1,57 @@
+package merge_test
+
+import (
+	"errors"
+	"testing"
+
+	"github.com/liran/sink/internal/merge"
+)
+
+func TestLuaBoundsNativeIntermediateResults(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "fixed pack", body: `local scratch = string.pack("c16777216", "")`},
+		{name: "combined pack", body: `local scratch = string.pack("c600c600", "", "")`},
+		{name: "variable pack", body: `local value = string.pack("c600", ""); local scratch = string.pack("s2z", value, value)`},
+		{name: "concat", body: `local value = string.pack("c600", ""); local scratch = table.concat({value, value})`},
+		{name: "concat numeric bounds", body: `local value = string.pack("c600", ""); local scratch = table.concat({value, value}, "", "1", "2")`},
+		{name: "concat separator", body: `local value = string.pack("c600", ""); local scratch = table.concat({"a", "b", "c"}, value)`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			options := merge.LuaOptions{MaxResultBytes: 1024}
+			source := []byte("return function(current, incoming) " + test.body + "; return {ok=true} end")
+			merger := compileTestProgram(t, source, options)
+			request := merge.Request{Incoming: jsonDocument(`{}`)}
+			_, err := merger.Merge(t.Context(), request)
+			if !errors.Is(err, merge.ErrExecutionExhausted) {
+				t.Fatalf("unbounded native result: %v", err)
+			}
+		})
+	}
+}
+
+func TestLuaBoundedLibrariesPreserveNormalCalls(t *testing.T) {
+	source := []byte(`return function(current, incoming)
+    local packed = string.pack("!8 b s2 z Xh h c3", 1, "abc", "xyz", 2, "end")
+    local a, b, c, d, e = string.unpack("!8 b s2 z Xh h c3", packed)
+    assert(a == 1 and b == "abc" and c == "xyz" and d == 2 and e == "end")
+    assert(#string.pack("c1024", "") == 1024)
+    assert(table.concat({"a", "b", "c"}, ":", 2, 3) == "b:c")
+    assert(table.concat({[0] = 1, [1] = 2}, "-", 0, 1) == "1-2")
+    assert(table.concat({}, "", 2, 1) == "")
+    assert(not pcall(string.pack, "c1025", ""))
+    assert(not pcall(string.pack, "z", {}))
+    assert(not pcall(table.concat, {true}))
+    return {ok = true}
+end`)
+	options := merge.LuaOptions{MaxResultBytes: 1024}
+	merger := compileTestProgram(t, source, options)
+	request := merge.Request{Incoming: jsonDocument(`{}`)}
+	result, err := merger.Merge(t.Context(), request)
+	if err != nil || string(result.Document.Payload) != `{"ok":true}` {
+		t.Fatalf("result=%s err=%v", result.Document.Payload, err)
+	}
+}

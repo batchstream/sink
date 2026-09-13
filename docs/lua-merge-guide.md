@@ -315,6 +315,10 @@ Go maps, slices, or serialized output. Current/incoming payloads are also limite
 by `max_result_bytes`.
 
 The embedded VM still has no strict allocation-byte quota during execution.
+`string.pack` and `table.concat` preflight the size of each intermediate string
+against `max_result_bytes` before allocating it, even if the script discards it
+or returns only its length. Valid packing formats, alignment, variable strings,
+and concatenation ranges retain their ordinary behavior within that bound.
 These limits do not make arbitrary Lua safe to run in a shared trusted process.
 Use reviewed business scripts, isolate stores/workers into containers with
 memory limits, and test the largest permitted documents. See

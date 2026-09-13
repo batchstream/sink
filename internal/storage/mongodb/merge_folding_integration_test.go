@@ -75,7 +75,7 @@ func TestMongoDBFoldedMergesPreserveBSONAndFinalRevision(t *testing.T) {
 	}
 }
 
-func TestMongoDBMergePreservesNumericTypesAndReplacesDateWithString(t *testing.T) {
+func TestMongoDBMergePreservesBSONTypesAndReplacesDateWithString(t *testing.T) {
 	fixture := newIntegrationFixture(t)
 	luaOptions := merge.LuaOptions{}
 	engine, err := merge.NewLuaEngine(luaOptions)
@@ -94,7 +94,13 @@ func TestMongoDBMergePreservesNumericTypesAndReplacesDateWithString(t *testing.T
 	timestamp := time.Date(2026, time.September, 13, 1, 2, 3, 0, time.UTC)
 	filter := bson.D{{Key: "_id", Value: "typed-merge"}}
 	for _, dateValue := range []any{timestamp, timestamp.Format(time.RFC3339Nano)} {
-		fields := bson.D{{Key: "small", Value: int32(1)}, {Key: "long", Value: int64(1)}, {Key: "double", Value: float64(1)}, {Key: "date", Value: dateValue}}
+		fields := bson.D{
+			{Key: "small", Value: int32(1)}, {Key: "long", Value: int64(1)},
+			{Key: "double", Value: float64(1)}, {Key: "date", Value: dateValue},
+			{Key: "timestamp", Value: bson.Timestamp{T: 123, I: 1}},
+			{Key: "minimum", Value: bson.MinKey{}}, {Key: "maximum", Value: bson.MaxKey{}},
+			{Key: "literal", Value: bson.D{{Key: "$numberInt", Value: "1"}}},
+		}
 		payload, err := bson.Marshal(fields)
 		if err != nil {
 			t.Fatal(err)

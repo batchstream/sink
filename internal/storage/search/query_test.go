@@ -30,7 +30,7 @@ func TestQueryAndCountApplyControlsWithoutOpeningCursor(t *testing.T) {
 			}
 			_, _ = w.Write([]byte(`{"timed_out":false,"_shards":{"total":1,"successful":1,"failed":0},"hits":{"hits":[{"_id":"4","_source":{"number":4}},{"_id":"3","_source":{"number":3}},{"_id":"2","_source":{"number":2}}]}}`))
 		} else {
-			if string(body["size"]) != "0" || string(body["track_total_hits"]) != "true" || body["from"] != nil || body["aggs"] != nil || r.URL.Query().Has("track_total_hits") {
+			if string(body["size"]) != "0" || string(body["track_total_hits"]) != "true" || body["from"] != nil || body["aggs"] != nil || body["suggest"] != nil || body["profile"] != nil || r.URL.Query().Has("track_total_hits") {
 				t.Errorf("count did not request an exact unpaged total: %s", body)
 			}
 			_, _ = w.Write([]byte(`{"timed_out":false,"_shards":{"total":1,"successful":1,"failed":0},"hits":{"total":{"value":12001,"relation":"eq"},"hits":[]}}`))
@@ -45,7 +45,7 @@ func TestQueryAndCountApplyControlsWithoutOpeningCursor(t *testing.T) {
 	}
 	command := storage.NativeRequest{Store: "search", Method: "GET", Path: "/products/_search",
 		Query: "from=90&size=90&sort=old&track_total_hits=false&_source=false", ContentType: "application/json", MaxBytes: 4096,
-		Payload: []byte(`{"query":{"match_all":{}},"from":50,"size":50,"sort":["old"],"_source":false,"aggs":{"names":{"terms":{"field":"name"}}}}`)}
+		Payload: []byte(`{"query":{"match_all":{}},"from":50,"size":50,"sort":["old"],"_source":false,"aggs":{"names":{"terms":{"field":"name"}}},"suggest":{"name":{"text":"item","term":{"field":"name"}}},"profile":true}`)}
 	projection := &storage.Projection{Fields: []string{"number"}}
 	query := storage.QueryRequest{Request: command, Offset: 2, PageSize: 2,
 		Sort: []storage.SortField{{Field: "number", Descending: true}, {Field: "uid"}}, Projection: projection}

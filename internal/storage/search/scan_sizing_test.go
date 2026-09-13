@@ -1,12 +1,14 @@
 package search
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/liran/sink/internal/storage"
 )
@@ -70,6 +72,42 @@ func TestScanShrinksOversizedResponseWithoutSkipping(t *testing.T) {
 	}
 	if len(sizes) < 4 || sizes[0] != 17 || sizes[1] != 9 || sizes[2] != 5 || sizes[3] != 3 {
 		t.Fatalf("unexpected shrink sequence: %v", sizes)
+	}
+	if len(sizes) != 12 {
+		t.Fatalf("repeated oversized reads on later pages: %v", sizes)
+	}
+	for _, size := range sizes[4:] {
+		if size != 2 {
+			t.Fatalf("later page forgot its one-document capacity: %v", sizes)
+		}
+	}
+	request.Cursor = nil
+	request.Request.MaxBytes = 512 << 10
+	page, err := store.Scan(t.Context(), request)
+	if err != nil || len(page.Documents) != total || len(sizes) != 13 || sizes[12] != 17 {
+		t.Fatalf("small page budget throttled a larger caller: documents=%d sizes=%v err=%v", len(page.Documents), sizes, err)
+	}
+}
+
+func TestScanSizeHintsAreBoundedAndExpire(t *testing.T) {
+	var hints scanSizeCache
+	first := sha256.Sum256([]byte("first"))
+	hints.remember(first, 8)
+	if hints.suggest(first, 2) != 2 || hints.suggest(first, 100) != 8 {
+		t.Fatal("sizing hint exceeded caller limit or was ignored")
+	}
+	for index := range maxScanSizeHints {
+		key := sha256.Sum256(fmt.Appendf(nil, "query-%d", index))
+		hints.remember(key, 4)
+	}
+	if len(hints.entries) != maxScanSizeHints || hints.suggest(first, 100) != 100 {
+		t.Fatal("sizing hints retained an unbounded query history")
+	}
+	hints.remember(first, 8)
+	entry := hints.entries[first].Value.(*scanSizeHint)
+	entry.expires = time.Now().Add(-time.Second)
+	if hints.suggest(first, 100) != 100 {
+		t.Fatal("expired hint prevented probing changed document sizes")
 	}
 }
 

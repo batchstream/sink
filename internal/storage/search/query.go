@@ -166,7 +166,7 @@ func (s *Store) Count(ctx context.Context, req storage.CountRequest) (storage.Co
 	}
 	// Count needs matching-document totals, without computing hit presentation,
 	// aggregations or collapsing the hits returned by a normal search.
-	for _, name := range []string{"sort", "_source", "fields", "docvalue_fields", "stored_fields", "highlight", "script_fields", "aggs", "aggregations", "collapse", "rescore"} {
+	for _, name := range []string{"sort", "_source", "fields", "docvalue_fields", "stored_fields", "highlight", "script_fields", "aggs", "aggregations", "collapse", "rescore", "suggest", "profile"} {
 		delete(body, name)
 	}
 	for _, name := range []string{"sort", "_source", "_source_includes", "_source_excludes", "stored_fields", "docvalue_fields"} {

@@ -3,6 +3,7 @@ package search
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -70,6 +71,11 @@ func (s *Store) Scan(ctx context.Context, req storage.ScanRequest) (storage.Scan
 	if err != nil {
 		return empty, err
 	}
+	encoded, err := json.Marshal(req.Request)
+	if err != nil {
+		return empty, storage.InvalidArgumentError(err)
+	}
+	sizingKey := sha256.Sum256(encoded)
 	opts, body, err := pageOptions(req.Request)
 	if err != nil {
 		return empty, storage.InvalidArgumentError(err)
@@ -99,7 +105,8 @@ func (s *Store) Scan(ctx context.Context, req storage.ScanRequest) (storage.Scan
 	body["track_total_hits"] = json.RawMessage("false")
 	opts.query.Del("track_total_hits")
 	opts.maxBytes = int64(storage.ScanBackendBytes(req.Request.MaxBytes))
-	page, pageSize, err := s.scanQuery(ctx, opts, body, req.BatchSize)
+	pageSize := s.scanSizes.suggest(sizingKey, req.BatchSize)
+	page, pageSize, err := s.scanQuery(ctx, opts, body, pageSize)
 	if err != nil {
 		return empty, err
 	}
@@ -146,6 +153,8 @@ func (s *Store) Scan(ctx context.Context, req storage.ScanRequest) (storage.Scan
 	}
 	if !more {
 		position = nil
+	} else if len(documents) < req.BatchSize {
+		s.scanSizes.remember(sizingKey, len(documents))
 	}
 	return seek.Page(documents, position)
 }

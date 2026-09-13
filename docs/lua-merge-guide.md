@@ -319,6 +319,11 @@ The embedded VM still has no strict allocation-byte quota during execution.
 against `max_result_bytes` before allocating it, even if the script discards it
 or returns only its length. Valid packing formats, alignment, variable strings,
 and concatenation ranges retain their ordinary behavior within that bound.
+`string.gsub` checks each output append, including capture expansion and
+function/table replacements, against the same limit. Patterns use `string.find`
+capture validation, so unfinished captures are rejected. Substitution loops also
+check cancellation and instruction limits. The runtime still performs individual
+pattern matches; these checks do not interrupt a native match mid-search.
 These limits do not make arbitrary Lua safe to run in a shared trusted process.
 Use reviewed business scripts, isolate stores/workers into containers with
 memory limits, and test the largest permitted documents. See

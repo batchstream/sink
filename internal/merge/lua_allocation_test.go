@@ -12,6 +12,10 @@ func TestLuaBoundsNativeIntermediateResults(t *testing.T) {
 		name string
 		body string
 	}{
+		{name: "gsub string", body: `local value = string.pack("c600", ""); local scratch = string.gsub(value, ".", value)`},
+		{name: "gsub captures", body: `local value = string.pack("c600", ""); local scratch = string.gsub(value, "(.*)", "%1%1")`},
+		{name: "gsub callback", body: `local value = string.pack("c600", ""); local scratch = string.gsub("ab", ".", function() return value end)`},
+		{name: "gsub table", body: `local value = string.pack("c600", ""); local scratch = string.gsub("aa", ".", {a=value})`},
 		{name: "fixed pack", body: `local scratch = string.pack("c16777216", "")`},
 		{name: "combined pack", body: `local scratch = string.pack("c600c600", "", "")`},
 		{name: "variable pack", body: `local value = string.pack("c600", ""); local scratch = string.pack("s2z", value, value)`},

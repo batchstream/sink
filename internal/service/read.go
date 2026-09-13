@@ -31,7 +31,7 @@ func (s *Server) read(ctx context.Context, req *sink.ReadRequest, budgets *reque
 	if err := s.validateOperationCount(len(req.GetOperations())); err != nil {
 		return outcome, err
 	}
-	admission := admissionRequest{encodedBytes: req.SizeVT() + 2*s.maxReadBytes, stores: operationStores(req.GetOperations()), wait: budgets != nil}
+	admission := admissionRequest{encodedBytes: req.SizeVT() + failureResponseBytes(len(req.GetOperations())) + 2*s.maxReadBytes, stores: operationStores(req.GetOperations()), wait: budgets != nil}
 	ctx, release, err := s.admitRequest(ctx, admission)
 	if err != nil {
 		return outcome, err
@@ -41,6 +41,7 @@ func (s *Server) read(ctx context.Context, req *sink.ReadRequest, budgets *reque
 	response := &sink.ReadResponse{
 		Results: make([]*sink.ReadResult, len(req.GetOperations())),
 	}
+	defer boundResultFailures(response.Results, budgets, s.maxReadBytes)
 	outcome.response = response
 	outcome.deferred = make([]bool, budgets.callerCount())
 	storageOperations := make([]storage.ReadOperation, 0, len(req.GetOperations()))

@@ -348,7 +348,7 @@ func (s *BatchingServer) executeReads(
 		count := 0
 		bytes := 2 * s.server.maxReadBytes
 		for count < min(limit, len(calls)) {
-			next := calls[count].request.SizeVT()
+			next := calls[count].request.SizeVT() + failureResponseBytes(len(calls[count].request.GetOperations()))
 			if count > 0 && next > s.server.maxInFlightBytes-bytes {
 				break
 			}
@@ -492,7 +492,7 @@ func (s *BatchingServer) executeWriteBatch(
 			budgets.add(len(call.request.GetOperations()))
 		}
 		execution, executionCancel := batchExecutionContext(ctx, group, s.server.requestTimeout)
-		completion := newWriteCompletion(group, s.server.identityOf)
+		completion := newWriteCompletion(group, s.server.identityOf, s.server.maxReadBytes)
 		response, err := s.server.write(execution, request, budgets, completion)
 		executionCancel()
 		completion.finish(response, err)
@@ -540,7 +540,8 @@ func (s *BatchingServer) executeDeletes(
 		if parallel {
 			applied := combinedDeleteRequest(wave.applied)
 			visible := combinedDeleteRequest(wave.visible)
-			parallel = applied.SizeVT()+visible.SizeVT() <= s.server.maxInFlightBytes
+			responseBytes := failureResponseBytes(len(applied.Operations) + len(visible.Operations))
+			parallel = applied.SizeVT()+visible.SizeVT()+responseBytes <= s.server.maxInFlightBytes
 		}
 		var executions sync.WaitGroup
 		for _, group := range [][]*batchCall[*sink.DeleteRequest, *sink.DeleteResponse]{wave.applied, wave.visible} {
@@ -567,9 +568,31 @@ func (s *BatchingServer) executeDeleteBatch(
 	}
 	ctx, cancel := batchExecutionContext(ctx, calls, s.server.requestTimeout)
 	defer cancel()
-	request := combinedDeleteRequest(calls)
-	response, err := s.server.delete(ctx, request, true)
-	splitDeleteResponse(calls, response, err)
+	for len(calls) > 0 {
+		count, bytes := 0, 0
+		for count < len(calls) {
+			next := calls[count].request.SizeVT() + failureResponseBytes(len(calls[count].request.GetOperations()))
+			if count > 0 && next > s.server.maxInFlightBytes-bytes {
+				break
+			}
+			bytes += next
+			count++
+		}
+		group := liveMutationCalls(calls[:count])
+		calls = calls[count:]
+		if len(group) == 0 {
+			continue
+		}
+		request := combinedDeleteRequest(group)
+		budgets := &requestBudgets{}
+		for _, call := range group {
+			budgets.add(len(call.request.GetOperations()))
+		}
+		execution, executionCancel := batchExecutionContext(ctx, group, s.server.requestTimeout)
+		response, err := s.server.delete(execution, request, budgets)
+		executionCancel()
+		splitDeleteResponse(group, response, err)
+	}
 }
 
 func combinedDeleteRequest(calls []*batchCall[*sink.DeleteRequest, *sink.DeleteResponse]) *sink.DeleteRequest {
@@ -613,7 +636,7 @@ func splitDeleteResponse(
 	offset := 0
 	for _, call := range calls {
 		count := len(call.request.GetOperations())
-		results := response.GetResults()[offset : offset+count]
+		results := append([]*sink.DeleteResult(nil), response.GetResults()[offset:offset+count]...)
 		for index, result := range results {
 			result.OperationIndex = uint32(index)
 		}

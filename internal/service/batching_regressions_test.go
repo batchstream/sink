@@ -198,12 +198,12 @@ func TestMicrobatchMergeBudgetFailureDoesNotLeakIntoNextCaller(t *testing.T) {
 }
 
 func TestMicrobatchBudgetsSplitWithinExecutionMemoryLimit(t *testing.T) {
-	for _, method := range []string{"Read", "Write"} {
+	for _, method := range []string{"Read", "Write", "Delete"} {
 		t.Run(method, func(t *testing.T) {
 			backend := memory.New()
 			server := completionServer(t, backend)
 			server.server.maxReadBytes = 256
-			server.server.maxInFlightBytes = 1000
+			server.server.maxInFlightBytes = 1000 + failureResponseBytes(1)
 			switch method {
 			case "Write":
 				var calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]
@@ -212,6 +212,18 @@ func TestMicrobatchBudgetsSplitWithinExecutionMemoryLimit(t *testing.T) {
 				}
 				server.executeWrites(t.Context(), calls)
 				assertCompletionWrites(t, calls)
+			case "Delete":
+				var calls []*batchCall[*sink.DeleteRequest, *sink.DeleteResponse]
+				for _, key := range []string{"a", "b", "c"} {
+					calls = append(calls, completionDeleteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, key))
+				}
+				server.executeDeletes(t.Context(), calls)
+				for _, call := range calls {
+					result := awaitCompletion(t, call.result)
+					if result.err != nil || result.response.Results[0].Status != sink.DeleteStatus_DELETE_STATUS_APPLIED {
+						t.Fatalf("split delete: %+v", result)
+					}
+				}
 			case "Read":
 				var calls []*batchCall[*sink.ReadRequest, *sink.ReadResponse]
 				for _, key := range []string{"a", "b", "c"} {
@@ -377,7 +389,7 @@ func TestCancelledRPCIsOmittedFromLaterMemoryLimitedSegment(t *testing.T) {
 	backend := &completionStorage{Storage: memory.New(), events: make(chan completionEvent, 8), blocked: "a", release: make(chan struct{})}
 	server := completionServer(t, backend)
 	server.server.maxReadBytes = 256
-	server.server.maxInFlightBytes = 1000
+	server.server.maxInFlightBytes = 1000 + failureResponseBytes(1)
 	cancelled, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	defer func() {
@@ -425,7 +437,7 @@ func TestHotRecordSharesPhysicalReservationAcrossRPCBudgets(t *testing.T) {
 	backend := &completionStorage{Storage: memory.New(), events: make(chan completionEvent, 8)}
 	server := completionServer(t, backend)
 	server.server.maxReadBytes = 256
-	server.server.maxInFlightBytes = 2048
+	server.server.maxInFlightBytes = 2048 + failureResponseBytes(4)
 	var calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]
 	for range 4 {
 		calls = append(calls, completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, completionMerge("hot", 1)))

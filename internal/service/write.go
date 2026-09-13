@@ -56,6 +56,11 @@ type writeExecutionOptions struct {
 	WaitUntilVisible bool
 }
 
+func (o writeExecutionOptions) complete(group writeGroup, results []*sink.WriteResult) {
+	o.returns.settle(group, results)
+	o.completion.group(group, results)
+}
+
 func (s *Server) parseWrite(index int, operation *sink.WriteOperation, programs luaPrograms) (parsedWrite, error) {
 	parsed := parsedWrite{}
 	if operation == nil {
@@ -273,7 +278,7 @@ func (s *Server) executePuts(
 		if err := opts.returns.reserve(group, operation.put.document); err != nil {
 			failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: err}
 			applyWriteGroupResult(group, results, failure)
-			opts.completion.group(group, results)
+			opts.complete(group, results)
 			continue
 		}
 		storageOperation := storage.WriteOperation{
@@ -304,7 +309,7 @@ func (s *Server) executePuts(
 		group := appliedGroups[index]
 		applyWriteGroupResult(group, results, stored)
 		attachWriteDocument(group, results, storageOperations[index].Document)
-		opts.completion.group(group, results)
+		opts.complete(group, results)
 	}
 	return nil
 }
@@ -343,7 +348,7 @@ func (s *Server) executeConditionalWrites(
 			conflictErr := errors.New("record changed during conditional write")
 			result.Failure = newFailure(sink.FailureCode_FAILURE_CODE_CONFLICT, conflictErr, true)
 		}
-		opts.completion.group(group, results)
+		opts.complete(group, results)
 	}
 	return nil
 }
@@ -460,14 +465,14 @@ func (s *Server) applyWriteSnapshots(ctx context.Context, groups []writeGroup, s
 			if err := opts.returns.reserve(group, candidate.operation.Document); err != nil {
 				failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: err}
 				applyWriteGroupResult(group, results, failure)
-				opts.completion.group(group, results)
+				opts.complete(group, results)
 				continue
 			}
 			if opts.budgets == nil {
 				if err := attempt.output.Reserve(len(candidate.operation.Document.Payload)); err != nil {
 					failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: err}
 					applyWriteGroupResult(group, results, failure)
-					opts.completion.group(group, results)
+					opts.complete(group, results)
 					continue
 				}
 			}
@@ -485,7 +490,7 @@ func (s *Server) applyWriteSnapshots(ctx context.Context, groups []writeGroup, s
 			candidates = append(candidates, candidate)
 			outputBytes += candidateBytes
 		} else {
-			opts.completion.group(group, results)
+			opts.complete(group, results)
 		}
 	}
 	conflicts, err := s.commitWriteCandidates(ctx, candidates, attempt)
@@ -528,7 +533,7 @@ func (s *Server) commitWriteCandidates(ctx context.Context, candidates []writeGr
 		}
 		applyWriteGroupResult(group, attempt.results, stored)
 		attachWriteDocument(group, attempt.results, candidates[index].operation.Document)
-		attempt.options.completion.group(group, attempt.results)
+		attempt.options.complete(group, attempt.results)
 	}
 	return next, nil
 }

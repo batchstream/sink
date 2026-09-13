@@ -206,6 +206,7 @@ func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *req
 	response := &sink.WriteResponse{
 		Results: make([]*sink.WriteResult, len(req.GetOperations())),
 	}
+	defer boundResultFailures(response.Results, budgets, s.maxReadBytes)
 	operations := make([]parsedWrite, 0, len(req.GetOperations()))
 	for index, operation := range req.GetOperations() {
 		result := &sink.WriteResult{OperationIndex: uint32(index)}
@@ -274,10 +275,10 @@ func parseLuaPrograms(programs []*sink.LuaProgram) (luaPrograms, error) {
 }
 
 func (s *Server) Delete(ctx context.Context, req *sink.DeleteRequest) (*sink.DeleteResponse, error) {
-	return s.delete(ctx, req, false)
+	return s.delete(ctx, req, nil)
 }
 
-func (s *Server) delete(ctx context.Context, req *sink.DeleteRequest, wait bool) (*sink.DeleteResponse, error) {
+func (s *Server) delete(ctx context.Context, req *sink.DeleteRequest, budgets *requestBudgets) (*sink.DeleteResponse, error) {
 	if req == nil || len(req.GetOperations()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "delete request must contain operations")
 	}
@@ -287,7 +288,7 @@ func (s *Server) delete(ctx context.Context, req *sink.DeleteRequest, wait bool)
 	if !validCompletionMode(req.GetCompletionMode()) {
 		return nil, status.Error(codes.InvalidArgument, "delete request has an invalid completion mode")
 	}
-	admission := admissionRequest{encodedBytes: req.SizeVT(), stores: operationStores(req.GetOperations()), wait: wait}
+	admission := admissionRequest{encodedBytes: req.SizeVT() + failureResponseBytes(len(req.GetOperations())), stores: operationStores(req.GetOperations()), wait: budgets != nil}
 	admission.publish = req.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED
 	ctx, release, err := s.admitRequest(ctx, admission)
 	if err != nil {
@@ -298,6 +299,7 @@ func (s *Server) delete(ctx context.Context, req *sink.DeleteRequest, wait bool)
 	response := &sink.DeleteResponse{
 		Results: make([]*sink.DeleteResult, len(req.GetOperations())),
 	}
+	defer boundResultFailures(response.Results, budgets, s.maxReadBytes)
 	storageOperations := make([]storage.DeleteOperation, 0, len(req.GetOperations()))
 	operationIndexes := make([]int, 0, len(req.GetOperations()))
 	storageIndexes := make([]int, 0, len(req.GetOperations()))

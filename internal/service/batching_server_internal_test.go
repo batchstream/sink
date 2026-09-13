@@ -33,7 +33,7 @@ func TestWriteCompletionPropagatesExecutionError(t *testing.T) {
 	}
 	calls := []*batchCall[*sink.WriteRequest, *sink.WriteResponse]{call}
 	executionErr := errors.New("write failed")
-	completion := newWriteCompletion(calls, identityOf)
+	completion := newWriteCompletion(calls, identityOf, 1<<20)
 	completion.finish(nil, executionErr)
 	result := <-call.result
 	if result.response != nil || !errors.Is(result.err, executionErr) {

@@ -75,3 +75,20 @@ func attachWriteDocument(group writeGroup, results []*sink.WriteResult, document
 		}
 	}
 }
+
+// A final failure retains no returned document. A successful CAS may also
+// return a smaller document than a previous candidate reserved for that slot.
+func (r *writeReturns) settle(group writeGroup, results []*sink.WriteResult) {
+	if r == nil {
+		return
+	}
+	for _, operation := range group.operations {
+		reserved := r.sizes[operation.index]
+		retained := 0
+		if document := results[operation.index].GetDocument(); document != nil {
+			retained = len(document.GetPayload()) + 128
+		}
+		r.remaining[r.owners.owner(operation.index)] += max(0, reserved-retained)
+		delete(r.sizes, operation.index)
+	}
+}

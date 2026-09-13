@@ -188,6 +188,11 @@ MongoDB retains its native `_id` projection rules.
 
 MongoDB Query supports `find` and read-only `aggregate`. For find, Query replaces
 native skip/limit, and explicit sort/projection replace their native counterparts.
+Cursor options such as `tailable` are validated at the command level; matching
+business-field names inside filters remain valid. Aggregate validation rejects
+`$out`, `$merge`, and `$changeStream` in pipeline stages, including nested
+`$facet`, `$lookup`, and `$unionWith` pipelines, while allowing these names in
+literal values. The same validation applies to Count and Scan.
 `allowPartialResults: true` is rejected: a page must not silently omit unavailable
 shards. The lookahead document used only for `has_more` does not consume MongoDB's
 returned-document byte budget; the driver wire limit still applies.

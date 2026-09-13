@@ -584,6 +584,9 @@ limits protect the service. Call depth is fixed at 256 and VM stack slots at
 65,536; the other limits are configurable above. The embedded runtime does not
 provide a strict per-VM heap quota, so normal container or pod memory limits
 remain required.
+`string.pack` and `table.concat` also check each intermediate result against
+`max_result_bytes` before constructing the string. This bounds those library
+calls, not cumulative allocations or the complete VM heap.
 The Go client automatically deduplicates identical programs within a synchronous
 batch. Before publishing an asynchronous mutation, Sink expands the reference
 so every Kafka record contains the full program and remains independently

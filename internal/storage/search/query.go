@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"mime"
 	"net/http"
 	"strings"
@@ -97,8 +98,23 @@ func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.Qu
 	if err != nil {
 		return empty, storage.InvalidArgumentError(err)
 	}
+	if _, exists := body["collapse"]; exists {
+		return empty, storage.InvalidArgumentError(errors.New("Query cannot determine has_more for collapsed hits; use Execute for native collapsed pagination"))
+	}
+	if req.Offset > math.MaxInt64-int64(req.PageSize) {
+		return empty, storage.InvalidArgumentError(errors.New("query page end exceeds the supported offset range"))
+	}
+	end := req.Offset + int64(req.PageSize)
 	body["from"] = json.RawMessage(fmt.Sprint(req.Offset))
-	body["size"] = json.RawMessage(fmt.Sprint(req.PageSize + 1))
+	body["size"] = json.RawMessage(fmt.Sprint(req.PageSize))
+	// Count only far enough to prove another hit exists. Fetching an extra
+	// document consumes its source budget and exceeds the final legal window.
+	body["track_total_hits"] = json.RawMessage("true")
+	if end < math.MaxInt32 {
+		body["track_total_hits"] = json.RawMessage(fmt.Sprint(end + 1))
+	}
+	opts.query.Del("track_total_hits")
+	opts.query.Set("rest_total_hits_as_int", "false")
 	if len(req.Sort) > 0 {
 		sort := make([]map[string]string, 0, len(req.Sort))
 		for _, field := range req.Sort {
@@ -140,12 +156,16 @@ func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.Qu
 	if err != nil {
 		return empty, err
 	}
-	if len(page.Hits.Hits) > req.PageSize+1 {
+	if len(page.Hits.Hits) > req.PageSize {
 		return empty, errors.New("search query exceeded its requested result count")
 	}
-	result := storage.QueryResponse{HasMore: len(page.Hits.Hits) > req.PageSize}
+	hasMore, err := queryHasMore(page.Hits, req)
+	if err != nil {
+		return empty, err
+	}
+	result := storage.QueryResponse{HasMore: hasMore}
 	budget := storage.NewReadBudget(req.Request.MaxBytes)
-	for _, hit := range page.Hits.Hits[:min(len(page.Hits.Hits), req.PageSize)] {
+	for _, hit := range page.Hits.Hits {
 		if err := budget.Reserve(len(hit)); err != nil {
 			return empty, err
 		}
@@ -153,6 +173,31 @@ func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.Qu
 		result.Documents = append(result.Documents, document)
 	}
 	return result, nil
+}
+
+func queryHasMore(hits *scanHits, req storage.QueryRequest) (bool, error) {
+	var total struct {
+		Value    *int64 `json:"value"`
+		Relation string `json:"relation"`
+	}
+	err := json.Unmarshal(hits.Total, &total)
+	if err != nil || total.Value == nil || *total.Value < 0 {
+		return false, errors.New("search query omitted a nonnegative total")
+	}
+	end := req.Offset + int64(req.PageSize)
+	switch total.Relation {
+	case "eq":
+		expected := min(int64(req.PageSize), max(0, *total.Value-req.Offset))
+		if int64(len(hits.Hits)) != expected {
+			return false, errors.New("search query hit count does not match its exact total")
+		}
+		return *total.Value > end, nil
+	case "gte":
+		if *total.Value > end && len(hits.Hits) == req.PageSize {
+			return true, nil
+		}
+	}
+	return false, errors.New("search query total cannot prove has_more")
 }
 
 func (s *Store) Count(ctx context.Context, req storage.CountRequest) (storage.CountResponse, error) {

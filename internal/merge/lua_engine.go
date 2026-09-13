@@ -252,6 +252,7 @@ func (e *LuaEngine) newVM(ctx context.Context, observedAt time.Time) (*vm.VM, *l
 	options := []vm.VMOption{vm.WithContext(ctx), vm.WithLimits(limits)}
 	luaVM := vm.New(options...)
 	e.environment.install(luaVM)
+	boundLuaAllocations(luaVM, e.options.MaxResultBytes)
 	bridge := newLuaJSONBridge(luaVM)
 	addSinkV1Functions(luaVM, bridge, observedAt)
 	return luaVM, bridge
@@ -289,6 +290,7 @@ func classifyExecutionError(ctx context.Context, err error) error {
 		return fmt.Errorf("%w: %v", ErrExecutionDeadline, ctx.Err())
 	}
 	if strings.Contains(err.Error(), "instruction limit exceeded") ||
+		strings.Contains(err.Error(), nativeAllocationLimit) ||
 		strings.Contains(err.Error(), "not enough memory") || strings.Contains(err.Error(), "stack overflow") {
 		return fmt.Errorf("%w: %v", ErrExecutionExhausted, err)
 	}

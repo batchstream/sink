@@ -79,6 +79,13 @@ a case-sensitive `storages[].name` in the server configuration.
 | `dataset` | Collection name | Complete existing index or alias name |
 | `key` | MongoDB `_id` | Document `_id` |
 
+Record operations use binary string identity. MongoDB Read, Write and Delete
+explicitly use `simple` collation, even when the collection has a different
+default. Existing unique indexes still enforce their configured collation and
+may reject inserting a differently cased key. Native commands retain their
+explicit or collection-default collation. Search string keys must be nonempty;
+invalid keys fail permanently before contacting the backend.
+
 One request may target several stores. Sink routes their operations
 independently, executes unrelated store groups concurrently, and restores the
 original result order. An unknown store produces a failure for only the

@@ -41,6 +41,7 @@ func (s *Store) supportsClientBulk(ctx context.Context) bool {
 }
 
 func (s *Store) writeConditionalBulk(ctx context.Context, operations []writeWork, results []storage.WriteResult) {
+	collation := &options.Collation{Locale: "simple"}
 	writes := make([]mongo.ClientBulkWrite, 0, len(operations))
 	prepared := make([]writeWork, 0, len(operations))
 	for _, operation := range operations {
@@ -54,9 +55,9 @@ func (s *Store) writeConditionalBulk(ctx context.Context, operations []writeWork
 			literal := bson.D{{Key: "$literal", Value: operation.replacement}}
 			stage := bson.D{{Key: "$replaceWith", Value: literal}}
 			pipeline := mongo.Pipeline{stage}
-			model = mongo.NewClientUpdateOneModel().SetFilter(filter).SetUpdate(pipeline)
+			model = mongo.NewClientUpdateOneModel().SetFilter(filter).SetUpdate(pipeline).SetCollation(collation)
 		} else {
-			model = mongo.NewClientReplaceOneModel().SetFilter(filter).SetReplacement(operation.replacement)
+			model = mongo.NewClientReplaceOneModel().SetFilter(filter).SetReplacement(operation.replacement).SetCollation(collation)
 		}
 		write := mongo.ClientBulkWrite{Database: operation.collection.database, Collection: operation.collection.collection, Model: model}
 		writes = append(writes, write)

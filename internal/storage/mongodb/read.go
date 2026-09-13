@@ -9,6 +9,7 @@ import (
 
 	"github.com/liran/sink/internal/storage"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 type readWork struct {
@@ -99,7 +100,9 @@ func (s *Store) readGroup(ctx context.Context, group *readGroup, results []stora
 	}
 	inFilter := bson.D{{Key: "$in", Value: ids}}
 	filter := bson.D{{Key: "_id", Value: inFilter}}
-	cursor, err := group.collection.value.Find(ctx, filter)
+	collation := &options.Collation{Locale: "simple"}
+	findOptions := options.Find().SetCollation(collation)
+	cursor, err := group.collection.value.Find(ctx, filter, findOptions)
 	if err != nil {
 		s.setReadGroupError(group, results, storage.BackendError(err))
 		return

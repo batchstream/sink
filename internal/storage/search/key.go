@@ -21,6 +21,9 @@ func documentID(key storage.Key) (string, error) {
 	switch key.Type {
 	case "string":
 		id = string(key.Data)
+		if id == "" {
+			return "", errors.New("search string record key must not be empty")
+		}
 		if strings.HasPrefix(id, escapedKeyPrefix) {
 			id = escapedKeyPrefix + "string~" + encodeKeyPart(key.Data)
 		}

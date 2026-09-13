@@ -73,11 +73,13 @@ func (s *Store) Delete(ctx context.Context, req storage.DeleteRequest) (storage.
 }
 
 func (s *Store) deleteGroup(ctx context.Context, group *deleteGroup, results []storage.DeleteResult) {
+	collation := &options.Collation{Locale: "simple"}
 	models := make([]mongo.WriteModel, 0, len(group.operations))
 	for _, operation := range group.operations {
 		filter := bson.D{{Key: "_id", Value: operation.id}}
 		model := mongo.NewDeleteOneModel()
 		model.SetFilter(filter)
+		model.SetCollation(collation)
 		models = append(models, model)
 	}
 	bulkOptions := options.BulkWrite().SetOrdered(false)

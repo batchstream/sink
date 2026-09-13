@@ -194,6 +194,13 @@ returned-document byte budget; the driver wire limit still applies.
 For aggregate, explicit sort and projection follow the supplied pipeline, then
 skip/limit apply to its output. HTTP Query requires `_search`, replaces from/size,
 and maps explicit sort/projection to sort and `_source` selection.
+It fetches exactly `page_size` hits and overrides `track_total_hits` with a
+threshold just beyond the page end to prove `has_more` from the same response.
+This avoids fetching another document's source and keeps the final page within
+the configured result window. Invalid or insufficient totals fail explicitly.
+`collapse` is not supported by Query because native totals count documents before
+collapsing; use Execute for native collapsed pagination. Count continues to count
+matching documents independently of collapse.
 
 Each call is independent: no cursor or session is retained between RPCs. Any
 short-lived MongoDB cursor is closed before returning. Search does not open a

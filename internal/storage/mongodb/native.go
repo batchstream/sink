@@ -53,7 +53,7 @@ func validateNativeCommand(req storage.NativeRequest, scan bool) (bson.D, error)
 		default:
 			return command, fmt.Errorf("command %q cannot be scanned", name)
 		}
-		if forbiddenNativeValue(command) {
+		if forbiddenNativeQuery(command) {
 			return command, errors.New("scan does not permit data-writing stages or tailable cursors")
 		}
 		for _, field := range command {
@@ -75,28 +75,6 @@ func validateNativeCommand(req storage.NativeRequest, scan bool) (bson.D, error)
 	default:
 		return command, fmt.Errorf("command %q is not supported by revision-protected MongoDB Execute", name)
 	}
-}
-
-func forbiddenNativeValue(value any) bool {
-	switch typed := value.(type) {
-	case bson.D:
-		for _, field := range typed {
-			switch field.Key {
-			case "$out", "$merge", "$changeStream", "tailable", "awaitData", "noCursorTimeout", "singleBatch":
-				return true
-			}
-			if forbiddenNativeValue(field.Value) {
-				return true
-			}
-		}
-	case bson.A:
-		for _, item := range typed {
-			if forbiddenNativeValue(item) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func (s *Store) Execute(ctx context.Context, req storage.NativeRequest) (storage.NativeResponse, error) {

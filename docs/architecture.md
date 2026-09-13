@@ -85,6 +85,10 @@ default. Existing unique indexes still enforce their configured collation and
 may reject inserting a differently cased key. Native commands retain their
 explicit or collection-default collation. Search string keys must be nonempty;
 invalid keys fail permanently before contacting the backend.
+Address fields, string keys, and opaque key type names must contain valid UTF-8.
+This is checked before reads, writes, deletes, or Kafka publication, including
+when the optimized protobuf codec accepts invalid strings. Use bytes keys for
+arbitrary binary identities; their data is not subject to UTF-8 validation.
 
 One request may target several stores. Sink routes their operations
 independently, executes unrelated store groups concurrently, and restores the

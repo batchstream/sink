@@ -201,11 +201,11 @@ func (s *Store) bulkWrite(ctx context.Context, group *writeGroup, results []stor
 			continue
 		}
 		operation := group.operations[writeError.Index]
-		if operation.precondition.Kind == storage.PreconditionRecordNotExists && isDuplicateCode(writeError.Code) {
+		if operation.precondition.Kind == storage.PreconditionRecordNotExists && isIDDuplicate(writeError.WriteError) {
 			results[operation.index] = storage.WriteResult{Status: storage.WriteStatusPreconditionFailed}
 			continue
 		}
-		if operation.precondition.Kind == storage.PreconditionNone && isDuplicateCode(writeError.Code) {
+		if operation.precondition.Kind == storage.PreconditionNone && isIDDuplicate(writeError.WriteError) {
 			s.writeUpsert(ctx, operation, &results[operation.index])
 			continue
 		}
@@ -220,7 +220,8 @@ func (s *Store) writeUpsert(ctx context.Context, operation writeWork, result *st
 	for range 3 {
 		replaced, err := operation.collection.value.ReplaceOne(ctx, filter, operation.replacement, replaceOptions)
 		if err != nil {
-			if mongo.IsDuplicateKeyError(err) {
+			var failure mongo.WriteException
+			if errors.As(err, &failure) && failure.WriteConcernError == nil && len(failure.WriteErrors) == 1 && isIDDuplicate(failure.WriteErrors[0]) {
 				continue
 			}
 			setWriteError(result, classifyOperationError(err))
@@ -331,8 +332,4 @@ func setWriteApplied(result *storage.WriteResult, revision storage.Revision) {
 func setWriteError(result *storage.WriteResult, err error) {
 	result.Status = storage.WriteStatusFailed
 	result.Err = err
-}
-
-func isDuplicateCode(code int) bool {
-	return code == 11000 || code == 11001 || code == 12582 || code == 16460
 }

@@ -262,6 +262,30 @@ time. Define SLO, RPO and RTO from business requirements and validate them with
 these measurements. Passing local/fake-broker tests alone is not production
 reliability certification.
 
+### Write conflicts and unique constraints
+
+Final record-write conflicts use `WRITE_STATUS_PRECONDITION_FAILED`, including
+Upsert failures previously reported as `WRITE_STATUS_FAILED`. The Go SDK exposes
+this as `WritePreconditionFailed` without requiring a protocol or SDK update.
+Inspect the failure code and retryability to distinguish the cause:
+
+| Cause | Failure code | Retryable |
+| --- | --- | --- |
+| Create/Replace condition does not match | `PRECONDITION_FAILED` | false |
+| MongoDB unique constraint rejects the document | `PRECONDITION_FAILED` | false |
+| Internal revision or `_id` race exhausts retries | `CONFLICT` | true |
+
+A unique constraint failure preserves the MongoDB error, including the index
+name. It does not imply that the addressed record exists. Only a positively
+identified `_id` insertion race is retried as an Upsert/CAS race; secondary unique
+constraints do not improve by rebasing the same document. Workers treat these
+permanent failures as completed rejections so corrected queued writes can proceed.
+Transport and write-concern failures remain retryable dependency failures because
+they do not establish a definite rejected write.
+
+This status describes the final outcome of synchronous completion. An asynchronous
+`ACCEPTED` response cannot include conflicts discovered later by a worker.
+
 ### Search Bulk and Replace conflicts
 
 Search compacts valid JSON before writing Bulk NDJSON, retaining number and

@@ -25,10 +25,10 @@ func TestQueryAndCountApplyControlsWithoutOpeningCursor(t *testing.T) {
 			t.Errorf("query filter changed: %s", body["query"])
 		}
 		if calls == 1 {
-			if string(body["from"]) != "2" || string(body["size"]) != "3" || string(body["sort"]) != `[{"number":"desc"},{"uid":"asc"}]` || string(body["_source"]) != `{"includes":["number"]}` || r.URL.Query().Has("sort") || r.URL.Query().Has("_source") {
+			if string(body["from"]) != "2" || string(body["size"]) != "2" || string(body["track_total_hits"]) != "5" || string(body["sort"]) != `[{"number":"desc"},{"uid":"asc"}]` || string(body["_source"]) != `{"includes":["number"]}` || r.URL.Query().Has("sort") || r.URL.Query().Has("_source") || r.URL.Query().Has("track_total_hits") || r.URL.Query().Get("rest_total_hits_as_int") != "false" {
 				t.Errorf("page controls not applied: %s %s", r.URL.RawQuery, body)
 			}
-			_, _ = w.Write([]byte(`{"timed_out":false,"_shards":{"total":1,"successful":1,"failed":0},"hits":{"hits":[{"_id":"4","_source":{"number":4}},{"_id":"3","_source":{"number":3}},{"_id":"2","_source":{"number":2}}]}}`))
+			_, _ = w.Write([]byte(`{"timed_out":false,"_shards":{"total":1,"successful":1,"failed":0},"hits":{"total":{"value":5,"relation":"gte"},"hits":[{"_id":"4","_source":{"number":4}},{"_id":"3","_source":{"number":3}}]}}`))
 		} else {
 			if string(body["size"]) != "0" || string(body["track_total_hits"]) != "true" || body["from"] != nil || body["aggs"] != nil || body["suggest"] != nil || body["profile"] != nil || r.URL.Query().Has("track_total_hits") {
 				t.Errorf("count did not request an exact unpaged total: %s", body)

@@ -180,6 +180,8 @@ func storageFailureDetails(err error) (sink.FailureCode, bool) {
 		return sink.FailureCode_FAILURE_CODE_UNAVAILABLE, retryable
 	case storage.ErrorCodeConflict:
 		return sink.FailureCode_FAILURE_CODE_CONFLICT, retryable
+	case storage.ErrorCodePreconditionFailed:
+		return sink.FailureCode_FAILURE_CODE_PRECONDITION_FAILED, retryable
 	case storage.ErrorCodeDeadlineExceeded:
 		return sink.FailureCode_FAILURE_CODE_DEADLINE_EXCEEDED, retryable
 	default:
@@ -194,6 +196,9 @@ func setReadFailure(result *sink.ReadResult, code sink.FailureCode, err error, r
 
 func setWriteFailure(result *sink.WriteResult, code sink.FailureCode, err error, retryable bool) {
 	result.Status = sink.WriteStatus_WRITE_STATUS_FAILED
+	if code == sink.FailureCode_FAILURE_CODE_CONFLICT || code == sink.FailureCode_FAILURE_CODE_PRECONDITION_FAILED {
+		result.Status = sink.WriteStatus_WRITE_STATUS_PRECONDITION_FAILED
+	}
 	result.Failure = newFailure(code, err, retryable)
 }
 

@@ -150,14 +150,15 @@ func (s *Store) writeWaveAttempt(
 	if len(ready) == 0 {
 		return nil
 	}
-	payload, err := buildWriteBulk(ready)
+	request, err := buildWriteBulk(ready)
 	if err != nil {
 		for _, work := range ready {
 			setWriteError(&results[work.resultIndex], err)
 		}
 		return nil
 	}
-	items, err := s.performBulk(ctx, payload, len(ready), waitUntilVisible)
+	request.waitUntilVisible = waitUntilVisible
+	items, err := s.performBulk(ctx, request)
 	if err != nil {
 		for _, work := range ready {
 			setWriteError(&results[work.resultIndex], err)
@@ -241,7 +242,8 @@ func (s *Store) prepareExistingWrite(
 	*eligible = true
 }
 
-func buildWriteBulk(works []writeWork) ([]byte, error) {
+func buildWriteBulk(works []writeWork) (bulkRequest, error) {
+	request := bulkRequest{actions: make([]bulkAction, 0, len(works))}
 	var payload bytes.Buffer
 	for _, work := range works {
 		actionName := "index"
@@ -253,29 +255,32 @@ func buildWriteBulk(works []writeWork) ([]byte, error) {
 		case storage.PreconditionRevisionMatches:
 			revision, err := decodeRevision(work.precondition.Revision)
 			if err != nil {
-				return nil, err
+				return request, err
 			}
 			sequence := revision.sequenceNumber
 			primaryTerm := revision.primaryTerm
 			metadata.Sequence = &sequence
 			metadata.PrimaryTerm = &primaryTerm
 		default:
-			return nil, fmt.Errorf("precondition kind %d cannot use a search bulk write", work.precondition.Kind)
+			return request, fmt.Errorf("precondition kind %d cannot use a search bulk write", work.precondition.Kind)
 		}
 		action := make(map[string]bulkActionMetadata, 1)
 		action[actionName] = metadata
 		encodedAction, err := json.Marshal(action)
 		if err != nil {
-			return nil, fmt.Errorf("encode search bulk action: %w", err)
+			return request, fmt.Errorf("encode search bulk action: %w", err)
 		}
 		payload.Write(encodedAction)
 		payload.WriteByte('\n')
 		if err := json.Compact(&payload, work.source); err != nil {
-			return nil, fmt.Errorf("encode search bulk document: %w", err)
+			return request, fmt.Errorf("encode search bulk document: %w", err)
 		}
 		payload.WriteByte('\n')
+		expected := bulkAction{name: actionName, id: work.document.id}
+		request.actions = append(request.actions, expected)
 	}
-	return payload.Bytes(), nil
+	request.payload = payload.Bytes()
+	return request, nil
 }
 
 func applyWriteItem(result *storage.WriteResult, item bulkItem) {

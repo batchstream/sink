@@ -109,6 +109,13 @@ immutable-field and BSON-size rejections remain explicit record failures. A
 malformed read reply must not become a not-found result, and an error embedded in
 a bulk delete result must not become an applied acknowledgement.
 
+Search multi-get and bulk replies must identify each document in request order;
+bulk replies must also match the submitted action type. Missing index names or
+mismatched IDs/actions make the whole reply retryable, including entries that
+otherwise report success, absence or a permanent failure. Index aliases can
+return concrete index names, so those names are required but are not compared
+to the requested alias.
+
 Processing defaults to 20 seconds. A pending rebalance cancels backend work and
 allows at most five additional seconds for DLQ/offset settlement before releasing
 rebalance callbacks. This improves bounded handover but is not storage fencing.

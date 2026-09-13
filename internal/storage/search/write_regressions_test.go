@@ -26,9 +26,9 @@ func TestRegressionPrettyJSONProducesValidBulkFraming(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		lines := bytes.Split(bytes.TrimSuffix(bulk, []byte{'\n'}), []byte{'\n'})
+		lines := bytes.Split(bytes.TrimSuffix(bulk.payload, []byte{'\n'}), []byte{'\n'})
 		if len(lines) != 2 || !json.Valid(lines[0]) || !json.Valid(lines[1]) {
-			t.Errorf("accepted JSON creates invalid NDJSON: expected 2 complete JSON lines, got %d: %q", len(lines), bulk)
+			t.Errorf("accepted JSON creates invalid NDJSON: expected 2 complete JSON lines, got %d: %q", len(lines), bulk.payload)
 		}
 	}
 }
@@ -51,7 +51,7 @@ func TestRegressionMultilineJSONDoesNotFailCompactSibling(t *testing.T) {
 				return
 			}
 		}
-		_, _ = io.WriteString(w, `{"items":[{"index":{"status":201,"_seq_no":1,"_primary_term":1}},{"index":{"status":201,"_seq_no":2,"_primary_term":1}}]}`)
+		_, _ = io.WriteString(w, `{"items":[{"index":{"_index":"legacy-records","_id":"compact","status":201,"_seq_no":1,"_primary_term":1}},{"index":{"_index":"legacy-records","_id":"pretty","status":201,"_seq_no":2,"_primary_term":1}}]}`)
 	})
 	endpoint := httptest.NewServer(handler)
 	defer endpoint.Close()
@@ -77,11 +77,11 @@ func TestRegressionMultilineJSONDoesNotFailCompactSibling(t *testing.T) {
 }
 
 func TestReplaceRetriesOnlyInternalRevisionConflicts(t *testing.T) {
-	read := expectedRequest{method: http.MethodPost, path: "/_mget", statusCode: 200, responseBody: `{"docs":[{"found":true,"_seq_no":1,"_primary_term":1,"_source":{"value":1}}]}`}
-	conflict := expectedRequest{method: http.MethodPost, path: "/_bulk", statusCode: 200, bodyContains: []string{`"if_seq_no":1`}, responseBody: `{"items":[{"index":{"status":409}}]}`}
-	reread := expectedRequest{method: http.MethodPost, path: "/_mget", statusCode: 200, responseBody: `{"docs":[{"found":true,"_seq_no":2,"_primary_term":1,"_source":{"value":2}}]}`}
-	success := expectedRequest{method: http.MethodPost, path: "/_bulk", statusCode: 200, bodyContains: []string{`"if_seq_no":2`}, responseBody: `{"items":[{"index":{"status":200,"_seq_no":3,"_primary_term":1}}]}`}
-	absent := expectedRequest{method: http.MethodPost, path: "/_mget", statusCode: 200, responseBody: `{"docs":[{"found":false}]}`}
+	read := expectedRequest{method: http.MethodPost, path: "/_mget", statusCode: 200, responseBody: `{"docs":[{"_index":"legacy-records","_id":"existing","found":true,"_seq_no":1,"_primary_term":1,"_source":{"value":1}}]}`}
+	conflict := expectedRequest{method: http.MethodPost, path: "/_bulk", statusCode: 200, bodyContains: []string{`"if_seq_no":1`}, responseBody: `{"items":[{"index":{"_index":"legacy-records","_id":"existing","status":409}}]}`}
+	reread := expectedRequest{method: http.MethodPost, path: "/_mget", statusCode: 200, responseBody: `{"docs":[{"_index":"legacy-records","_id":"existing","found":true,"_seq_no":2,"_primary_term":1,"_source":{"value":2}}]}`}
+	success := expectedRequest{method: http.MethodPost, path: "/_bulk", statusCode: 200, bodyContains: []string{`"if_seq_no":2`}, responseBody: `{"items":[{"index":{"_index":"legacy-records","_id":"existing","status":200,"_seq_no":3,"_primary_term":1}}]}`}
+	absent := expectedRequest{method: http.MethodPost, path: "/_mget", statusCode: 200, responseBody: `{"docs":[{"_index":"legacy-records","_id":"existing","found":false}]}`}
 	lost := expectedRequest{method: http.MethodPost, path: "/_bulk", statusCode: 503, responseBody: `{"error":{"type":"unavailable","reason":"unknown commit outcome"}}`}
 	for _, scenario := range []string{"rebase", "deleted", "exhausted", "explicit_revision", "lost_ack"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -133,9 +133,9 @@ func TestReplaceRetriesOnlyInternalRevisionConflicts(t *testing.T) {
 }
 
 func TestReplaceRetryDoesNotReplaySuccessfulSibling(t *testing.T) {
-	read := expectedRequest{method: http.MethodPost, path: "/_mget", statusCode: 200, responseBody: `{"docs":[{"found":true,"_seq_no":1,"_primary_term":1,"_source":{}}]}`}
-	first := expectedRequest{method: http.MethodPost, path: "/_bulk", statusCode: 200, responseBody: `{"items":[{"index":{"status":409}},{"index":{"status":201,"_seq_no":10,"_primary_term":1}}]}`}
-	last := expectedRequest{method: http.MethodPost, path: "/_bulk", statusCode: 200, responseBody: `{"items":[{"index":{"status":200,"_seq_no":2,"_primary_term":1}}]}`}
+	read := expectedRequest{method: http.MethodPost, path: "/_mget", statusCode: 200, responseBody: `{"docs":[{"_index":"legacy-records","_id":"existing","found":true,"_seq_no":1,"_primary_term":1,"_source":{}}]}`}
+	first := expectedRequest{method: http.MethodPost, path: "/_bulk", statusCode: 200, responseBody: `{"items":[{"index":{"_index":"legacy-records","_id":"existing","status":409}},{"index":{"_index":"legacy-records","_id":"sibling","status":201,"_seq_no":10,"_primary_term":1}}]}`}
+	last := expectedRequest{method: http.MethodPost, path: "/_bulk", statusCode: 200, responseBody: `{"items":[{"index":{"_index":"legacy-records","_id":"existing","status":200,"_seq_no":2,"_primary_term":1}}]}`}
 	requests := []expectedRequest{read, first, read, last}
 	store, handler := newScriptedStore(t, requests)
 	defer handler.verify()

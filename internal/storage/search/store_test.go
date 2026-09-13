@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -228,7 +229,7 @@ func TestStoreWritesCreateAndExistingWithBulkCAS(t *testing.T) {
 				`{"value":"new"}`,
 			},
 			statusCode:   http.StatusOK,
-			responseBody: `{"errors":false,"items":[{"create":{"status":201,"_seq_no":0,"_primary_term":1}},{"index":{"status":200,"_seq_no":6,"_primary_term":3}}]}`,
+			responseBody: `{"errors":false,"items":[{"create":{"_index":"legacy-records","_id":"created","status":201,"_seq_no":0,"_primary_term":1}},{"index":{"_index":"legacy-records","_id":"existing","status":200,"_seq_no":6,"_primary_term":3}}]}`,
 		},
 	}
 	store, handler := newScriptedStore(t, requests)
@@ -270,7 +271,7 @@ func TestStoreMapsBulkConflictsAndMissingDeletes(t *testing.T) {
 			contentType:  "application/x-ndjson",
 			bodyContains: []string{`"if_seq_no":1`, `"if_primary_term":1`},
 			statusCode:   http.StatusOK,
-			responseBody: `{"errors":true,"items":[{"index":{"status":409,"error":{"type":"version_conflict_engine_exception","reason":"stale"}}}]}`,
+			responseBody: `{"errors":true,"items":[{"index":{"_index":"legacy-records","_id":"stale","status":409,"error":{"type":"version_conflict_engine_exception","reason":"stale"}}}]}`,
 		},
 		{
 			method:       http.MethodPost,
@@ -279,7 +280,7 @@ func TestStoreMapsBulkConflictsAndMissingDeletes(t *testing.T) {
 			contentType:  "application/x-ndjson",
 			bodyContains: []string{`"delete":{"_index":"legacy-records","_id":"missing"}`},
 			statusCode:   http.StatusOK,
-			responseBody: `{"errors":false,"items":[{"delete":{"status":404}}]}`,
+			responseBody: `{"errors":false,"items":[{"delete":{"_index":"legacy-records","_id":"missing","status":404}}]}`,
 		},
 	}
 	store, handler := newScriptedStore(t, requests)
@@ -552,7 +553,7 @@ func TestReadSplitsOversizedMultiGetResponses(t *testing.T) {
 			_, _ = io.WriteString(w, strings.Repeat("x", 513))
 			return
 		}
-		_, _ = io.WriteString(w, `{"docs":[{"found":true,"_source":{"value":1},"_seq_no":0,"_primary_term":1}]}`)
+		_, _ = io.WriteString(w, fmt.Sprintf(`{"docs":[{"_index":%q,"_id":%q,"found":true,"_source":{"value":1},"_seq_no":0,"_primary_term":1}]}`, request.Documents[0].Index, request.Documents[0].ID))
 	}))
 	defer backend.Close()
 	opts := Options{Driver: DriverOpenSearch, Store: "primary", Endpoints: []string{backend.URL}, MaxResponseSize: 512}

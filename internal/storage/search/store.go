@@ -48,6 +48,7 @@ type Store struct {
 	client          *http.Client
 	maxResponseSize int64
 	nextEndpoint    atomic.Uint64
+	scanSizes       scanSizeCache
 }
 
 type endpointState struct {

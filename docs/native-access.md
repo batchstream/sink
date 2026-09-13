@@ -370,6 +370,10 @@ reservation and no background cursor to keep alive.
 
 Execute responses and returned Write documents share `service.max_read_bytes`
 semantics; returned-document budgets are per original RPC even after batching.
+Count uses a separate backend response budget of min(`service.max_read_bytes`,
+256 KiB), enforced by the adapter as well as admission. MongoDB counts still
+reserve the driver's 48 MiB wire ceiling. This keeps small count responses from
+reserving a full document page.
 Output space is reserved before committing a returned write. A candidate that
 cannot fit fails before its own write; earlier operations may already be applied.
 Scan pages use at most min(`service.max_read_bytes`, 4 MiB), with count and byte
@@ -379,6 +383,11 @@ page budgets plus 64 KiB of metadata, capped by the store response limit. It red
 when that buffer is exceeded, preserving one lookahead hit and validating the
 complete response before returning a smaller page. A stricter store response
 limit can still reject a page that cannot fit one hit plus its lookahead.
+Each search store remembers at most 256 recently used command/budget sizing
+hints for one minute. Later pages on the same instance start with the observed
+smaller hit count. Hints contain no document data or cursor sessions; existing
+cursors remain compatible across replicas and restarts. A different instance
+may need to learn the page size again.
 MongoDB driver wire buffers have separate conservative admission reservations; configured byte
 budgets are not an exact process memory limit.
 

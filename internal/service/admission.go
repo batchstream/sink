@@ -210,7 +210,7 @@ func (s *Server) writeExecutionBytes(req *sink.WriteRequest) int {
 }
 
 func (s *Server) writeExecutionBytesFor(req *sink.WriteRequest, callers int, returningCallers int) int {
-	bytes := req.SizeVT()
+	bytes := req.SizeVT() + failureResponseBytes(len(req.GetOperations()))
 	bytes += s.maxReadBytes * returningCallers
 	largestSource := 0
 	for _, program := range req.GetLuaPrograms() {

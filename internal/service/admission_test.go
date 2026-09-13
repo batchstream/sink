@@ -104,7 +104,7 @@ func TestFoldedConditionalPutsReserveSnapshotCapacity(t *testing.T) {
 			second.GetPut().Mode = sink.WriteMode_WRITE_MODE_REPLACE
 		}
 		request := &sink.WriteRequest{CompletionMode: sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, Operations: []*sink.WriteOperation{first, second}}
-		want := request.SizeVT() + 2*server.maxReadBytes
+		want := request.SizeVT() + failureResponseBytes(len(request.Operations)) + 2*server.maxReadBytes
 		if got := server.writeExecutionBytes(request); got != want {
 			t.Fatalf("conditional first=%t: admission bytes=%d want=%d", conditionalFirst, got, want)
 		}

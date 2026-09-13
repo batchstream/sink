@@ -24,13 +24,15 @@ type writeCompletion struct {
 	responses []*sink.WriteResponse
 	remaining []int
 	records   []map[recordIdentity]int
+	maximum   int
 }
 
 func newWriteCompletion(
 	calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse],
 	identity func(storage.Address) recordIdentity,
+	maximum int,
 ) *writeCompletion {
-	completion := &writeCompletion{calls: calls}
+	completion := &writeCompletion{calls: calls, maximum: maximum}
 	for caller, call := range calls {
 		operations := call.request.GetOperations()
 		response := &sink.WriteResponse{Results: make([]*sink.WriteResult, len(operations))}
@@ -61,6 +63,10 @@ func (c *writeCompletion) operation(index int, result *sink.WriteResult) {
 	// Returned protobufs must not share mutable result state with the executor.
 	cloned := proto.Clone(result).(*sink.WriteResult)
 	cloned.OperationIndex = uint32(owner.index)
+	if failure := cloned.GetFailure(); failure != nil {
+		limit := failureMessageLimit(len(c.responses[owner.caller].Results), c.maximum)
+		failure.Message = boundedFailureMessage(failure.Message, limit)
+	}
 	c.responses[owner.caller].Results[owner.index] = cloned
 	c.remaining[owner.caller]--
 	if owner.valid {

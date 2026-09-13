@@ -165,7 +165,7 @@ func TestMixedWriteBatchReservesOnlyReturningCallers(t *testing.T) {
 	}
 	calls[0].request.Operations[0].ReturnDocument = true
 	combined := combinedWriteRequest(calls)
-	server.server.maxInFlightBytes = combined.SizeVT() + server.server.maxReadBytes
+	server.server.maxInFlightBytes = combined.SizeVT() + failureResponseBytes(len(combined.Operations)) + server.server.maxReadBytes
 	server.executeWriteBatch(t.Context(), calls)
 	for index, call := range calls {
 		response := requireWriteResult(t, call)

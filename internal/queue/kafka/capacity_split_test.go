@@ -42,7 +42,8 @@ func TestWorkerSplitsCapacityRejectedPollAndCommits(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := memory.New()
-	coreOpts := service.Options{Storage: store, Lua: engine, MaxInFlightBytes: 1024}
+	// One 600-byte mutation plus its failure response fits; two do not.
+	coreOpts := service.Options{Storage: store, Lua: engine, MaxInFlightBytes: 2048}
 	core, err := service.New(coreOpts)
 	if err != nil {
 		t.Fatal(err)

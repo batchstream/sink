@@ -9,6 +9,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const maxCountResponseBytes = 256 << 10
+
 func (s *Server) Query(ctx context.Context, req *sink.QueryRequest) (*sink.QueryResponse, error) {
 	request, err := nativeRequest(req.GetCommand(), s.maxReadBytes)
 	if err != nil {
@@ -63,7 +65,9 @@ func (s *Server) Query(ctx context.Context, req *sink.QueryRequest) (*sink.Query
 }
 
 func (s *Server) Count(ctx context.Context, req *sink.CountRequest) (*sink.CountResponse, error) {
-	request, err := nativeRequest(req.GetCommand(), s.maxReadBytes)
+	// Count retains only totals and bounded backend metadata. Enforce the
+	// smaller buffer in the adapter as well as reserving it at admission.
+	request, err := nativeRequest(req.GetCommand(), min(s.maxReadBytes, maxCountResponseBytes))
 	if err != nil {
 		return nil, err
 	}

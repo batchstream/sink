@@ -216,8 +216,9 @@ remain per original RPC. Final failed writes release their returned-document
 reservation; successful CAS retries retain only the final document's charge.
 Read/Write/Delete also reserve up to 1 KiB of failure text plus a result envelope
 per operation before execution or publishing. Failure messages are valid UTF-8,
-limited to 1 KiB each, and further shortened to share `service.max_read_bytes`
-per original RPC; codes, retryability, and operation indexes remain intact.
+limited to 1 KiB each, and further shortened according to `service.max_read_bytes`
+per original RPC, retaining at least one byte to satisfy the client contract.
+Codes, retryability, and operation indexes remain intact.
 This error allowance is separate from the returned-document quota.
 Micro-batches split when their input, working-set, and response reservations
 exceed the process limit. Dispatched batches wait for admission within their deadlines; direct calls still fail fast.

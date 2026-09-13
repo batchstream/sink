@@ -16,7 +16,8 @@ func failureResponseBytes(operations int) int {
 }
 
 func failureMessageLimit(operations, maximum int) int {
-	return min(maxFailureMessageBytes, max(0, maximum/max(1, operations)-128))
+	// Even tiny document quotas must retain a nonempty protocol diagnostic.
+	return min(maxFailureMessageBytes, max(1, maximum/max(1, operations)-128))
 }
 
 func boundedFailureMessage(message string, maximum int) string {

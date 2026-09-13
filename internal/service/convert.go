@@ -212,6 +212,9 @@ func newFailure(code sink.FailureCode, err error, retryable bool) *sink.Failure 
 	if err != nil {
 		message = boundedFailureMessage(err.Error(), maxFailureMessageBytes)
 	}
+	if message == "" {
+		message = "operation failed"
+	}
 	failure := &sink.Failure{
 		Code:      code,
 		Message:   message,

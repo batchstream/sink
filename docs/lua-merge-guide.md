@@ -190,6 +190,15 @@ new tables and arrays. An equal ordinary string remains a string, even when it
 replaces a datetime at the same field. String transformations produce ordinary
 strings unless they return the original value unchanged.
 
+BSON-only scalar types such as ObjectID, Binary, Timestamp, MinKey, and MaxKey
+retain their native type when their Extended JSON view is passed through or
+moved to another field. Sink tracks that type separately from the view's field
+names. Editing a typed view must still produce the same valid BSON scalar type.
+Ordinary BSON documents and newly constructed Lua objects remain documents even
+when they contain keys such as `$numberInt`, `$date`, or `$oid`; these keys do not
+create a BSON scalar. BSON inputs with duplicate document fields or more than
+256 nested value levels are rejected before conversion.
+
 The common JSON helpers are:
 
 - `json.object()` creates an explicitly typed empty JSON object.

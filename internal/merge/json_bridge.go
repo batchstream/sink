@@ -26,6 +26,7 @@ type luaJSONBridge struct {
 	dateTimes     map[luaStringIdentity]struct{}
 	integerKinds  map[int64]uint8
 	integerFields map[*vm.Table]map[vm.Value]bsonInteger
+	bsonScalars   map[*vm.Table]bson.Type
 	outputBSON    bool
 }
 
@@ -62,6 +63,7 @@ func newLuaJSONBridge(luaVM *vm.VM) *luaJSONBridge {
 		dateTimes:     make(map[luaStringIdentity]struct{}),
 		integerKinds:  make(map[int64]uint8),
 		integerFields: make(map[*vm.Table]map[vm.Value]bsonInteger),
+		bsonScalars:   make(map[*vm.Table]bson.Type),
 	}
 	bridge.nullTable.SetMetatable(bridge.nullMeta)
 
@@ -113,24 +115,15 @@ func decodeJSONObject(document storage.Document) (decodedJSONObject, error) {
 	if err := storage.ValidateDocument(document); err != nil {
 		return result, err
 	}
-	encoded := document.Payload
+	var decoded any
+	var err error
 	if document.Encoding == storage.DocumentEncodingBSON {
-		// Canonical Extended JSON retains BSON numeric types before Lua conversion.
-		extended, err := bson.MarshalExtJSON(bson.Raw(document.Payload), true, false)
-		if err != nil {
-			return result, fmt.Errorf("encode BSON as Extended JSON: %w", err)
-		}
-		encoded = extended
+		decoded, err = decodeBSONObject(bson.Raw(document.Payload), 0)
+	} else {
+		decoded, err = decodeJSONValue(document.Payload)
 	}
-	decoded, err := decodeJSONValue(encoded)
 	if err != nil {
 		return result, err
-	}
-	if document.Encoding == storage.DocumentEncodingBSON {
-		decoded, err = normalizeExtendedJSON(decoded)
-		if err != nil {
-			return result, err
-		}
 	}
 	object, ok := decoded.(map[string]any)
 	if !ok {
@@ -155,98 +148,6 @@ func decodeJSONValue(encoded []byte) (any, error) {
 	return decoded, nil
 }
 
-func normalizeExtendedJSON(value any) (any, error) {
-	switch typed := value.(type) {
-	case []any:
-		for index, item := range typed {
-			converted, err := normalizeExtendedJSON(item)
-			if err != nil {
-				return nil, err
-			}
-			typed[index] = converted
-		}
-	case map[string]any:
-		dateTime, isDateTime, err := extendedJSONDateTime(typed)
-		if err != nil {
-			return nil, err
-		}
-		if isDateTime {
-			return bsonDateTime(dateTime), nil
-		}
-		if len(typed) == 1 {
-			for key, item := range typed {
-				text, ok := item.(string)
-				if !ok {
-					break
-				}
-				switch key {
-				case "$numberInt", "$numberLong":
-					integer, err := strconv.ParseInt(text, 10, 64)
-					if err != nil {
-						return nil, err
-					}
-					number := bsonInteger{value: integer, wide: key == "$numberLong"}
-					return number, nil
-				case "$numberDouble":
-					number, err := strconv.ParseFloat(text, 64)
-					if err != nil {
-						return nil, err
-					}
-					// Keep non-finite BSON doubles in their existing Extended JSON form.
-					if !math.IsNaN(number) && !math.IsInf(number, 0) {
-						return number, nil
-					}
-				}
-			}
-		}
-		for key, item := range typed {
-			converted, err := normalizeExtendedJSON(item)
-			if err != nil {
-				return nil, err
-			}
-			typed[key] = converted
-		}
-	}
-	return value, nil
-}
-
-func extendedJSONDateTime(value map[string]any) (string, bool, error) {
-	raw, exists := value["$date"]
-	if !exists || len(value) != 1 {
-		return "", false, nil
-	}
-	var timestamp time.Time
-	switch typed := raw.(type) {
-	case string:
-		parsed, err := time.Parse(time.RFC3339Nano, typed)
-		if err != nil {
-			return "", false, fmt.Errorf("parse BSON date-time: %w", err)
-		}
-		timestamp = parsed
-	case map[string]any:
-		number, ok := typed["$numberLong"].(string)
-		if !ok || len(typed) != 1 {
-			return "", false, errors.New("BSON date-time has an invalid $numberLong value")
-		}
-		milliseconds, err := strconv.ParseInt(number, 10, 64)
-		if err != nil {
-			return "", false, fmt.Errorf("parse BSON date-time milliseconds: %w", err)
-		}
-		timestamp = time.UnixMilli(milliseconds)
-	default:
-		return "", false, fmt.Errorf("BSON date-time has type %T", raw)
-	}
-	encoded, err := timestamp.UTC().MarshalJSON()
-	if err != nil {
-		return "", false, fmt.Errorf("encode BSON date-time: %w", err)
-	}
-	var text string
-	if err := json.Unmarshal(encoded, &text); err != nil {
-		return "", false, err
-	}
-	return text, true, nil
-}
-
 func (b *luaJSONBridge) goToLua(value any) (vm.Value, error) {
 	switch typed := value.(type) {
 	case nil:
@@ -259,6 +160,13 @@ func (b *luaJSONBridge) goToLua(value any) (vm.Value, error) {
 		text := strings.Clone(string(typed))
 		b.dateTimes[identityOfLuaString(text)] = struct{}{}
 		return vm.NewString(text), nil
+	case bsonScalar:
+		converted, err := b.goToLua(typed.view)
+		if err != nil {
+			return vm.Nil, err
+		}
+		b.bsonScalars[converted.AsTable().(*vm.Table)] = typed.kind
+		return converted, nil
 	case bsonInteger:
 		kind := uint8(1)
 		if typed.wide {
@@ -395,42 +303,34 @@ func (b *luaJSONBridge) encodeJSONObject(value vm.Value, encoding storage.Docume
 	if _, ok := decoded.(map[string]any); !ok {
 		return document, errors.New("merge result must be a JSON object")
 	}
-	encoded, err := json.Marshal(decoded)
-	if err != nil {
-		return document, fmt.Errorf("encode JSON: %w", err)
-	}
+	var encoded []byte
 	switch encoding {
 	case storage.DocumentEncodingJSON:
+		encoded, err = json.Marshal(decoded)
 	case storage.DocumentEncodingBSON:
-		var fields bson.D
-		if err := bson.UnmarshalExtJSON(encoded, false, &fields); err != nil {
-			return document, fmt.Errorf("decode BSON Extended JSON: %w", err)
-		}
-		encoded, err = bson.Marshal(fields)
-		if err != nil {
-			return document, fmt.Errorf("encode BSON: %w", err)
-		}
+		encoded, err = bson.Marshal(orderedBSONValue(decoded))
 	default:
 		return document, errors.New("merge result encoding is required")
+	}
+	if err != nil {
+		return document, fmt.Errorf("encode merge result: %w", err)
 	}
 	document.Encoding = encoding
 	document.Payload = encoded
 	return document, nil
 }
 
-func bsonIntegerJSON(value int64, wide bool) map[string]string {
-	name := "$numberInt"
+func bsonIntegerValue(value int64, wide bool) any {
 	if wide || value < math.MinInt32 || value > math.MaxInt32 {
-		name = "$numberLong"
+		return value
 	}
-	result := map[string]string{name: strconv.FormatInt(value, 10)}
-	return result
+	return int32(value)
 }
 
 func (b *luaJSONBridge) luaFieldToGo(table *vm.Table, key vm.Value, value vm.Value, active map[*vm.Table]bool) (any, error) {
 	if b.outputBSON && value.IsInt() {
 		if integer, exists := b.integerFields[table][key]; exists {
-			return bsonIntegerJSON(value.AsInt(), integer.wide), nil
+			return bsonIntegerValue(value.AsInt(), integer.wide), nil
 		}
 	}
 	return b.luaToGo(value, active)
@@ -445,8 +345,11 @@ func (b *luaJSONBridge) luaToGo(value vm.Value, active map[*vm.Table]bool) (any,
 	case value.IsString():
 		text := value.AsString()
 		if _, typed := b.dateTimes[identityOfLuaString(text)]; typed && b.outputBSON {
-			result := map[string]string{"$date": text}
-			return result, nil
+			timestamp, err := time.Parse(time.RFC3339Nano, text)
+			if err != nil {
+				return nil, err
+			}
+			return bson.NewDateTimeFromTime(timestamp), nil
 		}
 		return text, nil
 	case value.IsInt():
@@ -456,17 +359,13 @@ func (b *luaJSONBridge) luaToGo(value vm.Value, active map[*vm.Table]bool) (any,
 			if kind == 3 {
 				return nil, errors.New("copied BSON integer has ambiguous int32/int64 origins; retain its original document field")
 			}
-			return bsonIntegerJSON(number, kind == 2), nil
+			return bsonIntegerValue(number, kind == 2), nil
 		}
 		return json.Number(strconv.FormatInt(number, 10)), nil
 	case value.IsFloat():
 		number := value.AsFloat()
 		if math.IsInf(number, 0) || math.IsNaN(number) {
 			return nil, errors.New("lua result contains a non-finite number")
-		}
-		if b.outputBSON {
-			result := map[string]string{"$numberDouble": strconv.FormatFloat(number, 'g', -1, 64)}
-			return result, nil
 		}
 		return number, nil
 	case value.IsTable():
@@ -482,7 +381,26 @@ func (b *luaJSONBridge) luaToGo(value vm.Value, active map[*vm.Table]bool) (any,
 		}
 		active[table] = true
 		defer delete(active, table)
-		return b.luaTableToGo(table, active)
+		kind, typed := b.bsonScalars[table]
+		if typed && b.outputBSON && kind != bson.TypeCodeWithScope {
+			// Timestamp counters and MinKey/MaxKey markers are Extended JSON
+			// syntax, not business integers whose BSON widths need inference.
+			b.outputBSON = false
+			decoded, err := b.luaTableToGo(table, active)
+			b.outputBSON = true
+			if err != nil {
+				return nil, err
+			}
+			return encodeBSONScalar(kind, decoded)
+		}
+		decoded, err := b.luaTableToGo(table, active)
+		if err != nil {
+			return nil, err
+		}
+		if typed && b.outputBSON {
+			return encodeBSONScalar(kind, decoded)
+		}
+		return decoded, nil
 	default:
 		return nil, fmt.Errorf("lua result contains unsupported type %s", value.Type())
 	}

@@ -154,6 +154,7 @@ func (s *Store) writeWave(ctx context.Context, wave []writeWork, results []stora
 }
 
 func (s *Store) bulkWrite(ctx context.Context, group *writeGroup, results []storage.WriteResult) {
+	collation := &options.Collation{Locale: "simple"}
 	models := make([]mongo.WriteModel, 0, len(group.operations))
 	for _, operation := range group.operations {
 		if operation.precondition.Kind == storage.PreconditionRecordNotExists {
@@ -165,6 +166,7 @@ func (s *Store) bulkWrite(ctx context.Context, group *writeGroup, results []stor
 		filter := bson.D{{Key: "_id", Value: operation.id}}
 		model := mongo.NewReplaceOneModel()
 		model.SetFilter(filter)
+		model.SetCollation(collation)
 		model.SetReplacement(operation.replacement)
 		model.SetUpsert(true)
 		models = append(models, model)
@@ -213,7 +215,8 @@ func (s *Store) bulkWrite(ctx context.Context, group *writeGroup, results []stor
 
 func (s *Store) writeUpsert(ctx context.Context, operation writeWork, result *storage.WriteResult) {
 	filter := bson.D{{Key: "_id", Value: operation.id}}
-	replaceOptions := options.Replace().SetUpsert(true)
+	collation := &options.Collation{Locale: "simple"}
+	replaceOptions := options.Replace().SetUpsert(true).SetCollation(collation)
 	for range 3 {
 		replaced, err := operation.collection.value.ReplaceOne(ctx, filter, operation.replacement, replaceOptions)
 		if err != nil {
@@ -279,7 +282,9 @@ func (s *Store) writeOne(ctx context.Context, operation writeWork, result *stora
 		setWriteError(result, err)
 		return
 	}
-	replaced, err := operation.collection.value.ReplaceOne(ctx, filter, operation.replacement)
+	collation := &options.Collation{Locale: "simple"}
+	replaceOptions := options.Replace().SetCollation(collation)
+	replaced, err := operation.collection.value.ReplaceOne(ctx, filter, operation.replacement, replaceOptions)
 	if err != nil {
 		setWriteError(result, classifyOperationError(err))
 		return

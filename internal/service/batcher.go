@@ -319,7 +319,7 @@ func (b *requestBatcher[Request, Response]) selectReady(pending []*batchCall[Req
 	blocked := make(map[recordIdentity]bool)
 	operations, bytes := 0, 0
 	reason := "max_wait"
-	for _, call := range pending {
+	for index, call := range pending {
 		dependent := false
 		for _, key := range call.records {
 			if active[key] || blocked[key] {
@@ -330,9 +330,13 @@ func (b *requestBatcher[Request, Response]) selectReady(pending []*batchCall[Req
 		fits := len(selected) == 0 || (call.operationCount <= b.maxOperations-operations && call.encodedBytes <= b.maxBytes-bytes)
 		compatible := len(selected) == 0 || (!call.partition.isolated && !selected[0].partition.isolated && call.partition == selected[0].partition)
 		if dependent || !fits || !compatible {
-			remaining = append(remaining, call)
+			if len(selected) > 0 {
+				remaining = append(remaining, call)
+			}
 			for _, key := range call.records {
-				blocked[key] = true
+				if !active[key] {
+					blocked[key] = true
+				}
 			}
 			if !fits && !dependent {
 				if call.operationCount > b.maxOperations-operations {
@@ -343,9 +347,17 @@ func (b *requestBatcher[Request, Response]) selectReady(pending []*batchCall[Req
 			}
 			continue
 		}
+		if len(selected) == 0 {
+			// Until a call can run, the original queue is already the complete
+			// remainder. Avoid rebuilding a hot-key backlog on every wakeup.
+			remaining = append(remaining, pending[:index]...)
+		}
 		selected = append(selected, call)
 		operations += call.operationCount
 		bytes += call.encodedBytes
+	}
+	if len(selected) == 0 {
+		return selected, pending, reason
 	}
 	if operations >= b.maxOperations {
 		reason = "max_operations"

@@ -29,7 +29,7 @@ func TestStorageFailuresRemainRetryable(t *testing.T) {
 					action = "delete"
 				}
 				response := expectedRequest{method: http.MethodPost, path: "/_bulk", statusCode: 200,
-					responseBody: fmt.Sprintf(`{"items":[{%q:{"status":%d,"error":{"type":"cluster_block_exception","reason":"injected block"}}}]}`, action, status)}
+					responseBody: fmt.Sprintf(`{"items":[{%q:{"_index":"legacy-records","_id":"record","status":%d,"error":{"type":"cluster_block_exception","reason":"injected block"}}}]}`, action, status)}
 				assertStorageFailure(t, operation, response, true)
 			})
 		}
@@ -55,7 +55,7 @@ func TestOnlyConfirmedDocumentErrorsArePermanent(t *testing.T) {
 	for _, kind := range []string{"mapper_parsing_exception", "document_parsing_exception", "strict_dynamic_mapping_exception"} {
 		t.Run(kind, func(t *testing.T) {
 			response := expectedRequest{method: http.MethodPost, path: "/_bulk", statusCode: 200,
-				responseBody: fmt.Sprintf(`{"items":[{"index":{"status":400,"error":{"type":%q,"reason":"invalid document"}}}]}`, kind)}
+				responseBody: fmt.Sprintf(`{"items":[{"index":{"_index":"legacy-records","_id":"record","status":400,"error":{"type":%q,"reason":"invalid document"}}}]}`, kind)}
 			assertStorageFailure(t, "write", response, false)
 		})
 	}

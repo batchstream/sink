@@ -29,14 +29,15 @@ func (s *Store) Delete(ctx context.Context, req storage.DeleteRequest) (storage.
 	if len(works) == 0 {
 		return response, nil
 	}
-	payload, err := buildDeleteBulk(works)
+	request, err := buildDeleteBulk(works)
 	if err != nil {
 		for _, work := range works {
 			setDeleteError(&response.Results[work.resultIndex], err)
 		}
 		return response, nil
 	}
-	items, err := s.performBulk(ctx, payload, len(works), req.WaitUntilVisible)
+	request.waitUntilVisible = req.WaitUntilVisible
+	items, err := s.performBulk(ctx, request)
 	if err != nil {
 		for _, work := range works {
 			setDeleteError(&response.Results[work.resultIndex], err)
@@ -60,7 +61,8 @@ func (s *Store) Delete(ctx context.Context, req storage.DeleteRequest) (storage.
 	return response, nil
 }
 
-func buildDeleteBulk(works []deleteWork) ([]byte, error) {
+func buildDeleteBulk(works []deleteWork) (bulkRequest, error) {
+	request := bulkRequest{actions: make([]bulkAction, 0, len(works))}
 	var payload bytes.Buffer
 	for _, work := range works {
 		metadata := bulkActionMetadata{Index: work.document.index, ID: work.document.id}
@@ -68,12 +70,15 @@ func buildDeleteBulk(works []deleteWork) ([]byte, error) {
 		action["delete"] = metadata
 		encodedAction, err := json.Marshal(action)
 		if err != nil {
-			return nil, fmt.Errorf("encode search bulk delete action: %w", err)
+			return request, fmt.Errorf("encode search bulk delete action: %w", err)
 		}
 		payload.Write(encodedAction)
 		payload.WriteByte('\n')
+		expected := bulkAction{name: "delete", id: work.document.id}
+		request.actions = append(request.actions, expected)
 	}
-	return payload.Bytes(), nil
+	request.payload = payload.Bytes()
+	return request, nil
 }
 
 func setDeleteError(result *storage.DeleteResult, err error) {

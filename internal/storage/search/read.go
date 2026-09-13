@@ -131,6 +131,13 @@ func (s *Store) multiGet(ctx context.Context, works []readWork, source bool) ([]
 	if len(decoded.Documents) != len(works) {
 		return nil, fmt.Errorf("search returned %d multi-get results for %d operations", len(decoded.Documents), len(works))
 	}
+	for index, document := range decoded.Documents {
+		// An alias request returns the concrete index name, which need not
+		// equal the requested name. IDs must still match in request order.
+		if document.Index == "" || document.ID != works[index].document.id {
+			return nil, fmt.Errorf("search multi-get result %d has a missing index or mismatched document ID", index)
+		}
+	}
 	return decoded.Documents, nil
 }
 

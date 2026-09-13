@@ -32,7 +32,7 @@ func TestReplaceReadsOnlyMetadataAndSplitsOversizedMetadata(t *testing.T) {
 					}
 					docs := make([]map[string]any, 0, len(body.Documents))
 					for _, reference := range body.Documents {
-						result := map[string]any{"found": true, "_seq_no": 1, "_primary_term": 1}
+						result := map[string]any{"_index": reference.Index, "_id": reference.ID, "found": true, "_seq_no": 1, "_primary_term": 1}
 						if reference.Source == nil || *reference.Source {
 							t.Error("Replace requested the old source")
 							result["_source"] = map[string]string{"value": strings.Repeat("x", 2048)}
@@ -55,8 +55,15 @@ func TestReplaceReadsOnlyMetadataAndSplitsOversizedMetadata(t *testing.T) {
 					}
 					count := bytes.Count(payload, []byte{'\n'}) / 2
 					items := make([]map[string]any, count)
+					lines := bytes.Split(payload, []byte{'\n'})
 					for i := range items {
-						items[i] = map[string]any{"index": map[string]any{"status": 200, "_seq_no": 2, "_primary_term": 1}}
+						var action map[string]bulkActionMetadata
+						if err := json.Unmarshal(lines[2*i], &action); err != nil {
+							t.Error(err)
+							return
+						}
+						metadata := action["index"]
+						items[i] = map[string]any{"index": map[string]any{"_index": metadata.Index, "_id": metadata.ID, "status": 200, "_seq_no": 2, "_primary_term": 1}}
 					}
 					response := map[string]any{"items": items}
 					if err := json.NewEncoder(w).Encode(response); err != nil {

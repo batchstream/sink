@@ -454,9 +454,9 @@ counts multiply capacity. Configure the same Kafka policy on servers and workers
 | --- | --- | --- |
 | `service.request_timeout_seconds` | `30` | Unary request timeout including batching queue wait and each Scan page; at most 300 seconds. A shorter caller deadline wins. |
 | `service.max_in_flight_requests` | `128` | Storage execution request count, at most 10000, including cross-store calls. Asynchronous publishing uses its own pool. |
-| `service.max_in_flight_bytes` | `268435456` | Admitted request/output reservation bytes, at most 16 GiB. Reads reserve snapshot and response budgets; Merge and folded conditional Put chains reserve current and output budgets; Lua source expansion is charged. This is not an RSS or VM heap limit. |
+| `service.max_in_flight_bytes` | `268435456` | Admitted request/output reservation bytes, at most 16 GiB. Reads reserve snapshot and response budgets; Merge and folded conditional Put chains reserve current and output budgets; Lua source expansion and bounded per-operation failure responses are charged. This is not an RSS or VM heap limit. |
 | `service.max_publish_requests` | `32` | Concurrent asynchronous Write/Delete requests, at most 10000, independent of storage execution. |
-| `service.max_publish_bytes` | `268435456` | Asynchronous request and expanded-source reservations, at most 16 GiB, additional to `max_in_flight_bytes`. Kafka producer buffers are additional. |
+| `service.max_publish_bytes` | `268435456` | Asynchronous request, expanded-source, and bounded failure-response reservations, at most 16 GiB, additional to `max_in_flight_bytes`. Kafka producer buffers are additional. |
 | `service.max_store_requests` | `32` | Requests per configured store in each admission pool independently, at most 10000. |
 | `service.max_scan_requests` | half `max_in_flight_requests`, at least 1 | Scan-only request sublimit, no greater than the total request limit. |
 | `service.max_scan_bytes` | half `max_in_flight_bytes`, at least 1 | Scan-only byte sublimit; global byte admission still applies. BSON Scan reserves 48 MiB driver wire space plus page copies. |
@@ -584,9 +584,10 @@ limits protect the service. Call depth is fixed at 256 and VM stack slots at
 65,536; the other limits are configurable above. The embedded runtime does not
 provide a strict per-VM heap quota, so normal container or pod memory limits
 remain required.
-`string.pack` and `table.concat` also check each intermediate result against
-`max_result_bytes` before constructing the string. This bounds those library
-calls, not cumulative allocations or the complete VM heap.
+`string.pack`, `table.concat`, and `string.gsub` also bound each intermediate
+result by `max_result_bytes`, checking before allocating or appending strings.
+This bounds those library calls, not cumulative allocations or the complete VM
+heap.
 The Go client automatically deduplicates identical programs within a synchronous
 batch. Before publishing an asynchronous mutation, Sink expands the reference
 so every Kafka record contains the full program and remains independently

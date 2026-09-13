@@ -153,3 +153,38 @@ func TestWriteReturningOnlyAttachesSuccessfulCASResult(t *testing.T) {
 		t.Fatalf("failed CAS returned a document: %v err=%v", response, err)
 	}
 }
+
+func TestFailedWriteReturningReleasesQuota(t *testing.T) {
+	backend := memory.New()
+	luaOptions := merge.LuaOptions{}
+	lua, err := merge.NewLuaEngine(luaOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := service.Options{Storage: backend, Lua: lua, MaxReadBytes: 400}
+	server, err := service.New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := putWriteOperation("same", "seed")
+	request := &sink.WriteRequest{CompletionMode: sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, Operations: []*sink.WriteOperation{seed}}
+	if _, err := server.Write(t.Context(), request); err != nil {
+		t.Fatal(err)
+	}
+	first := putWriteOperation("same", strings.Repeat("x", 100))
+	first.GetPut().Mode = sink.WriteMode_WRITE_MODE_CREATE
+	first.ReturnDocument = true
+	second := putWriteOperation("same", strings.Repeat("y", 100))
+	second.ReturnDocument = true
+	request.Operations = []*sink.WriteOperation{first, second}
+	response, err := server.Write(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Results[0].Status != sink.WriteStatus_WRITE_STATUS_PRECONDITION_FAILED {
+		t.Fatal(response)
+	}
+	if response.Results[1].Status != sink.WriteStatus_WRITE_STATUS_APPLIED || response.Results[1].Document == nil || response.Results[0].Document != nil {
+		t.Fatalf("known failed write consumed the only returned document quota: %v", response)
+	}
+}

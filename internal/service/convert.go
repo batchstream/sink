@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"unicode/utf8"
 
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/storage"
@@ -23,6 +24,9 @@ func convertAddress(address *sink.RecordAddress) (storage.Address, error) {
 	}
 	if address.GetDataset() == "" {
 		return emptyAddress, errors.New("record address dataset is required")
+	}
+	if !utf8.ValidString(address.GetStore()) || !utf8.ValidString(address.GetNamespace()) || !utf8.ValidString(address.GetDataset()) {
+		return emptyAddress, errors.New("record address fields must contain valid UTF-8")
 	}
 
 	key, err := convertKey(address.GetKey())
@@ -47,6 +51,9 @@ func convertKey(key *sink.RecordKey) (storage.Key, error) {
 	converted := storage.Key{}
 	switch kind := key.GetKind().(type) {
 	case *sink.RecordKey_StringValue:
+		if !utf8.ValidString(kind.StringValue) {
+			return emptyKey, errors.New("string record key must contain valid UTF-8; use a bytes key for binary data")
+		}
 		converted.Type = "string"
 		converted.Data = []byte(kind.StringValue)
 	case *sink.RecordKey_Int64Value:
@@ -59,6 +66,9 @@ func convertKey(key *sink.RecordKey) (storage.Key, error) {
 	case *sink.RecordKey_OpaqueValue:
 		if kind.OpaqueValue == nil || kind.OpaqueValue.GetType() == "" {
 			return emptyKey, errors.New("opaque record key type is required")
+		}
+		if !utf8.ValidString(kind.OpaqueValue.GetType()) {
+			return emptyKey, errors.New("opaque record key type must contain valid UTF-8")
 		}
 		converted.Type = "opaque:" + kind.OpaqueValue.GetType()
 		converted.Data = bytes.Clone(kind.OpaqueValue.GetData())

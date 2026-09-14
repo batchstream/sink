@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/storage"
@@ -18,6 +19,11 @@ func nativeRequest(req *sink.Command, maximum int) (storage.NativeRequest, error
 	request := storage.NativeRequest{MaxBytes: maximum}
 	if req == nil || strings.TrimSpace(req.GetStore()) == "" {
 		return request, status.Error(codes.InvalidArgument, "native request requires a store")
+	}
+	for _, value := range []string{req.GetStore(), req.GetNamespace(), req.GetMethod(), req.GetPath(), req.GetQuery(), req.GetContentType()} {
+		if !utf8.ValidString(value) {
+			return request, status.Error(codes.InvalidArgument, "native command fields must contain valid UTF-8")
+		}
 	}
 	if len(req.GetPayload()) > 0 && req.GetContentType() == "" {
 		return request, status.Error(codes.InvalidArgument, "native payload requires content_type")
@@ -31,6 +37,14 @@ func nativeRequest(req *sink.Command, maximum int) (storage.NativeRequest, error
 	for _, header := range req.GetHeaders() {
 		if header == nil || header.GetName() == "" || len(header.GetValues()) == 0 {
 			return request, status.Error(codes.InvalidArgument, "native header requires a name and values")
+		}
+		if !utf8.ValidString(header.GetName()) {
+			return request, status.Error(codes.InvalidArgument, "native header name must contain valid UTF-8")
+		}
+		for _, value := range header.GetValues() {
+			if !utf8.ValidString(value) {
+				return request, status.Error(codes.InvalidArgument, "native header values must contain valid UTF-8")
+			}
 		}
 		headers[header.GetName()] = append(headers[header.GetName()], header.GetValues()...)
 	}
@@ -87,6 +101,9 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 	if err != nil {
 		return nil, nativeStatus(err)
 	}
+	if !utf8.ValidString(result.ContentType) {
+		return nil, status.Error(codes.Internal, "native response content type must contain valid UTF-8")
+	}
 	response := &sink.ExecuteResponse{ContentType: result.ContentType, Payload: result.Payload,
 		Success: result.Success, StatusCode: uint32(result.StatusCode)}
 	names := make([]string, 0, len(result.Headers))
@@ -95,6 +112,14 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 	}
 	sort.Strings(names)
 	for _, name := range names {
+		if !utf8.ValidString(name) {
+			return nil, status.Error(codes.Internal, "native response header names must contain valid UTF-8")
+		}
+		for _, value := range result.Headers[name] {
+			if !utf8.ValidString(value) {
+				return nil, status.Error(codes.Internal, "native response header values must contain valid UTF-8")
+			}
+		}
 		header := &sink.Header{Name: name, Values: result.Headers[name]}
 		response.Headers = append(response.Headers, header)
 	}

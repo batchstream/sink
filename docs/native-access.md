@@ -23,6 +23,10 @@ All four native RPCs share `Command`: `store`, `namespace`, `method`, `path`,
 `query`, `headers`, `content_type`, and `payload`. The configured store selects
 the adapter. MongoDB reads namespace and the BSON payload; HTTP search reads
 method/path/query/headers and the original body. Unused fields must be empty.
+Command string fields, including header names and values, must contain valid
+UTF-8 even when a client uses the VT protobuf codec.
+Native response content types and headers must also contain valid UTF-8;
+malformed backend metadata returns `INTERNAL` consistently across codecs.
 There are no database-specific protobuf branches or extra payload envelopes.
 Sink selects the connection and authentication;
 callers cannot supply a URI, endpoint host, or credentials. Unknown stores return
@@ -189,6 +193,9 @@ Sort entries contain `field` and `descending`. Projection contains `fields` and
 preserves native sorting; absent projection preserves native projection. An
 explicit projection with no fields selects all fields. Duplicate or blank fields
 are rejected. HTTP projection applies to `_source`; hit metadata is retained.
+Sort and projection fields, and the JSON bodies decoded by managed search
+Query, Count and Scan, must contain valid UTF-8; invalid text is rejected before
+it can be replaced or merge distinct field names during JSON conversion.
 MongoDB retains its native `_id` projection rules.
 
 MongoDB Query supports `find` and read-only `aggregate`. For find, Query replaces

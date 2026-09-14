@@ -586,6 +586,8 @@ provide a strict per-VM heap quota, so normal container or pod memory limits
 remain required.
 `string.pack`, `table.concat`, and `string.gsub` also bound each intermediate
 result by `max_result_bytes`, checking before allocating or appending strings.
+`table.concat` and `table.move` also check cancellation and consume an instruction
+checkpoint per element, including empty strings and nil values.
 This bounds those library calls, not cumulative allocations or the complete VM
 heap.
 The Go client automatically deduplicates identical programs within a synchronous

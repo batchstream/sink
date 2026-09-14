@@ -2,6 +2,7 @@ package merge_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/liran/sink/internal/merge"
@@ -38,6 +39,23 @@ func TestLuaBoundsNativeIntermediateResults(t *testing.T) {
 				t.Fatalf("unbounded native result: %v", err)
 			}
 		})
+	}
+}
+
+func TestLuaTableLoopsExhaustMergeBudget(t *testing.T) {
+	for _, body := range []string{
+		`table.move({}, 1, 100, 1)`,
+		`table.concat(incoming.values)`,
+	} {
+		opts := merge.LuaOptions{MaxInstructions: 50}
+		source := []byte("return function(current, incoming) " + body + "; return {ok=true} end")
+		merger := compileTestProgram(t, source, opts)
+		incoming := jsonDocument(`{"values":[` + strings.Repeat(`"",`, 99) + `""]}`)
+		request := merge.Request{Incoming: incoming}
+		result, err := merger.Merge(t.Context(), request)
+		if !errors.Is(err, merge.ErrExecutionExhausted) || len(result.Document.Payload) != 0 {
+			t.Fatalf("native table loop escaped merge budget: result=%s error=%v", result.Document.Payload, err)
+		}
 	}
 }
 

@@ -315,10 +315,15 @@ Go maps, slices, or serialized output. Current/incoming payloads are also limite
 by `max_result_bytes`.
 
 The embedded VM still has no strict allocation-byte quota during execution.
-`string.pack` and `table.concat` preflight the size of each intermediate string
-against `max_result_bytes` before allocating it, even if the script discards it
-or returns only its length. Valid packing formats, alignment, variable strings,
-and concatenation ranges retain their ordinary behavior within that bound.
+`string.pack` preflights the size of each intermediate string against
+`max_result_bytes` before allocating it. `table.concat` checks each append
+against the same bound without retaining a separate list of string fragments,
+even if the script discards the result or returns only its length. Valid packing
+formats, alignment, variable strings, and concatenation ranges retain their
+ordinary behavior within that bound. `table.concat` and `table.move` check
+cancellation and charge an instruction checkpoint for each element, including
+empty strings and nil values. Overlapping moves preserve their copy direction;
+an interrupted move may leave its Lua destination partially updated.
 `string.gsub` checks each output append, including capture expansion and
 function/table replacements, against the same limit. Patterns use `string.find`
 capture validation, so unfinished captures are rejected. Substitution loops also

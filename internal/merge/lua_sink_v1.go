@@ -275,33 +275,26 @@ func (l sinkV1Library) requireJSONArrayValue(state *vm.VM, options requireJSONAr
 	if !ok || table.Metatable() != l.bridge.arrayMeta {
 		panic(fmt.Sprintf("%s %s must be a JSON array%s", options.functionName, options.label, nilAllowance(options.allowNil)))
 	}
-	count, array := inspectSinkV1JSONArray(state, options.functionName, options.label, table)
+	count, array := inspectSinkV1JSONArray(state, options.functionName, table)
 	if !array || table.Len() != count {
 		panic(fmt.Sprintf("%s %s must have contiguous integer keys starting at one", options.functionName, options.label))
 	}
 	return table
 }
 
-func inspectSinkV1JSONArray(state *vm.VM, functionName string, label string, table *vm.Table) (int, bool) {
+func inspectSinkV1JSONArray(state *vm.VM, functionName string, table *vm.Table) (int, bool) {
 	count := 0
 	array := true
-	key := vm.Nil
-	for {
-		next, _, err := table.Next(key)
-		if err != nil {
-			panic(fmt.Sprintf("%s inspect %s: %v", functionName, label, err))
-		}
-		if next.IsNil() {
-			return count, array
-		}
+	table.ForEach(func(key, _ vm.Value) bool {
 		count++
 		requireSinkV1WorkWithinLimit(state, functionName, count)
 		checkSinkV1Context(state, count)
-		if !next.IsInt() || next.AsInt() < 1 {
+		if !key.IsInt() || key.AsInt() < 1 {
 			array = false
 		}
-		key = next
-	}
+		return true
+	})
+	return count, array
 }
 
 func (l sinkV1Library) requireJSONObject(state *vm.VM, functionName string, index int) *vm.Table {

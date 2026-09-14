@@ -349,6 +349,10 @@ runtime's direct substring-search path.
 expansion before each conversion, including strings used repeatedly. Formatting
 loops also check cancellation and instruction limits. Numeric widths and
 precision retain the runtime's existing limits.
+`string.unpack` reserves its complete return frame, including the next-position
+value, within the VM stack limit before decoding. Its format preflight also
+checks cancellation and charges instruction checkpoints for format bytes,
+including padding and zero-width fields.
 These limits do not make arbitrary Lua safe to run in a shared trusted process.
 Use reviewed business scripts, isolate stores/workers into containers with
 memory limits, and test the largest permitted documents. See

@@ -27,6 +27,11 @@ func boundLuaAllocations(luaVM *vm.VM, maximum int) {
 	}))
 	pack := stringsTable.GetString("pack")
 	packSize := stringsTable.GetString("packsize")
+	unpack := stringsTable.GetString("unpack")
+	stringsTable.SetString("unpack", vm.NewNativeFunc(func(state *vm.VM) int {
+		prepareLuaUnpack(state)
+		return unpack.AsNativeFunc()(state)
+	}))
 	stringsTable.SetString("pack", vm.NewNativeFunc(func(state *vm.VM) int {
 		arguments := luaArguments(state)
 		format, err := sizedPackFormat(arguments)

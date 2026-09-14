@@ -12,12 +12,13 @@ import (
 	"github.com/liran/sink/internal/storage/memory"
 )
 
-func TestLuaTableBudgetFailureDoesNotCommitPartialMutation(t *testing.T) {
+func TestLuaNativeBudgetFailureDoesNotCommitPartialMutation(t *testing.T) {
 	for _, body := range []string{
 		`table.insert(current.values, 1, "inserted")`,
 		`table.remove(current.values, 1)`,
 		`table.sort(current.values)`,
 		`table.unpack(current.values)`,
+		`string.unpack("` + strings.Repeat(" ", 100) + `", "")`,
 	} {
 		t.Run(body, func(t *testing.T) {
 			backend := memory.New()
@@ -44,7 +45,7 @@ func TestLuaTableBudgetFailureDoesNotCommitPartialMutation(t *testing.T) {
 			}
 			result := response.Results[0]
 			if result.Status != sink.WriteStatus_WRITE_STATUS_FAILED || result.GetFailure().GetCode() != sink.FailureCode_FAILURE_CODE_RESOURCE_EXHAUSTED {
-				t.Fatalf("table work escaped its budget: %v", result)
+				t.Fatalf("native work escaped its budget: %v", result)
 			}
 			if response.Results[1].Status != sink.WriteStatus_WRITE_STATUS_APPLIED {
 				t.Fatalf("budget failure affected a sibling record: %v", response.Results[1])

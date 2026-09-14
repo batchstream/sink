@@ -42,14 +42,10 @@ func boundLuaAllocations(luaVM *vm.VM, maximum int) {
 		return callLuaLibrary(state, pack, arguments)
 	}))
 	tables := luaVM.GetGlobal("table").AsTable().(*vm.Table)
-	concat := tables.GetString("concat")
 	tables.SetString("concat", vm.NewNativeFunc(func(state *vm.VM) int {
-		arguments := luaArguments(state)
-		if err := checkConcatSize(arguments, maximum); err != nil {
-			panic(err)
-		}
-		return callLuaLibrary(state, concat, arguments)
+		return boundedLuaConcat(state, maximum)
 	}))
+	tables.SetString("move", vm.NewNativeFunc(boundedLuaMove))
 }
 
 func luaArguments(state *vm.VM) []vm.Value {
@@ -141,53 +137,4 @@ func sizedPackFormat(arguments []vm.Value) (string, error) {
 		sized.WriteString(directive)
 	}
 	return sized.String(), nil
-}
-
-func checkConcatSize(arguments []vm.Value, maximum int) error {
-	if len(arguments) == 0 || !arguments[0].IsTable() {
-		return nil // The original function reports invalid arguments.
-	}
-	table, ok := arguments[0].AsTable().(*vm.Table)
-	if !ok {
-		return errors.New("table.concat requires an ordinary table")
-	}
-	separator := ""
-	if len(arguments) > 1 && !arguments[1].IsNil() {
-		var err error
-		separator, err = luaPackString(arguments[1])
-		if err != nil {
-			return nil
-		}
-	}
-	first, last := int64(1), int64(table.Len())
-	if len(arguments) > 2 && !arguments[2].IsNil() {
-		first, ok = arguments[2].ToInt()
-		if !ok {
-			return nil
-		}
-	}
-	if len(arguments) > 3 && !arguments[3].IsNil() {
-		last, ok = arguments[3].ToInt()
-		if !ok {
-			return nil
-		}
-	}
-	remaining := maximum
-	for index := first; index <= last; index++ {
-		value, err := luaPackString(table.GetInt(int(index)))
-		if err != nil {
-			return nil
-		}
-		if index != first {
-			remaining -= len(separator)
-		}
-		if len(value) > remaining {
-			return errors.New(nativeAllocationLimit)
-		}
-		remaining -= len(value)
-		if index == last {
-			break
-		}
-	}
-	return nil
 }

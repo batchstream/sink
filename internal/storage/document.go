@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-
-	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 func CloneDocument(document Document) Document {
@@ -25,8 +23,7 @@ func ValidateDocument(document Document) error {
 			return errors.New("document payload must contain a valid JSON object")
 		}
 	case DocumentEncodingBSON:
-		raw := bson.Raw(document.Payload)
-		if err := raw.Validate(); err != nil {
+		if err := ValidateBSONDocument(document.Payload); err != nil {
 			return fmt.Errorf("document payload must contain a valid BSON document: %w", err)
 		}
 	default:

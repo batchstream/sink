@@ -40,6 +40,11 @@ including item failures inside `_msearch` and `_bulk` responses.
 MongoDB payloads are raw BSON, including BSON datetimes, numeric widths, ObjectIDs,
 binary values, and database error fields. Search payloads retain the native HTTP
 entity bytes and framing, including NDJSON, JSON whitespace, and non-JSON output.
+
+BSON record documents, native commands and scan positions must contain exactly
+one complete document. Sink validates nested documents, array indexes and scalar
+framing, and rejects nesting deeper than 256 before decoding or enqueueing work.
+
 HTTP transport may decode compression and normalize header names; this is not
 byte-for-byte forwarding of HTTP packets. Redirects are returned without being
 followed. Request headers are forwarded except transport-owned headers:

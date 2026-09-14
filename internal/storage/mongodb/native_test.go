@@ -1,11 +1,31 @@
 package mongodb
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/liran/sink/internal/storage"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
+
+func TestNativeCommandRejectsInvalidBSONBeforeDecoding(t *testing.T) {
+	command := bson.D{{Key: "find", Value: "documents"}, {Key: "filter", Value: bson.D{}}}
+	payload, err := bson.Marshal(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := storage.NativeRequest{Namespace: "database", ContentType: "application/bson", Payload: append(bytes.Clone(payload), 0)}
+	if _, err := validateNativeCommand(request, true); err == nil {
+		t.Fatal("native command silently ignored trailing bytes")
+	}
+	// Preserve the outer document but corrupt the embedded filter terminator.
+	request.Payload = bytes.Clone(payload)
+	request.Payload[len(request.Payload)-2] = 1
+	if _, err := validateNativeCommand(request, true); err == nil || !strings.Contains(err.Error(), "invalid BSON command") {
+		t.Fatalf("malformed nested command reached decoding: %v", err)
+	}
+}
 
 func TestNativeCommandAllowsWritesAndRejectsCursorSessionState(t *testing.T) {
 	tests := []struct {

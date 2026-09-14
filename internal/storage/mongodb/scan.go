@@ -94,7 +94,7 @@ func scanFind(command bson.D, req storage.ScanRequest, position []byte) (bson.D,
 	}
 	if len(position) != 0 {
 		raw := bson.Raw(position)
-		if err := raw.Validate(); err != nil {
+		if err := storage.ValidateBSONDocument(position); err != nil {
 			return empty, false, errors.New("invalid BSON scan position")
 		}
 		elements, err := raw.Elements()

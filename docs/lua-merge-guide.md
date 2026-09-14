@@ -324,10 +324,14 @@ characters and at completion, even for unchanged strings or discarded results.
 against the same bound without retaining a separate list of string fragments,
 even if the script discards the result or returns only its length. Valid packing
 formats, alignment, variable strings, and concatenation ranges retain their
-ordinary behavior within that bound. `table.concat` and `table.move` check
-cancellation and charge an instruction checkpoint for each element, including
-empty strings and nil values. Overlapping moves preserve their copy direction;
-an interrupted move may leave its Lua destination partially updated.
+ordinary behavior within that bound. `table.concat`, `table.move`, `table.insert`,
+`table.remove`, `table.pack` and `table.unpack` check cancellation and charge
+instruction checkpoints while traversing elements, including empty strings and
+nil values. `table.sort` checks each comparison, including default comparisons
+that execute no Lua bytecode, while retaining the runtime's sorting algorithm.
+Overlapping moves preserve their copy direction. Interrupted table mutations
+may leave the execution's Lua table partially updated; failed merges do not
+commit that intermediate state to storage.
 `string.gsub` checks each output append, including capture expansion and
 function/table replacements, against the same limit. Patterns use `string.find`
 capture validation, so unfinished captures are rejected. Substitution loops also

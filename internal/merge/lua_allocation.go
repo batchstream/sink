@@ -48,6 +48,11 @@ func boundLuaAllocations(luaVM *vm.VM, maximum int) {
 		return boundedLuaConcat(state, maximum)
 	}))
 	tables.SetString("move", vm.NewNativeFunc(boundedLuaMove))
+	tables.SetString("insert", vm.NewNativeFunc(boundedLuaInsert))
+	tables.SetString("remove", vm.NewNativeFunc(boundedLuaRemove))
+	tables.SetString("pack", vm.NewNativeFunc(boundedLuaPack))
+	tables.SetString("unpack", vm.NewNativeFunc(boundedLuaUnpack))
+	tables.SetString("sort", vm.NewNativeFunc(boundedLuaSort))
 }
 
 func luaArguments(state *vm.VM) []vm.Value {

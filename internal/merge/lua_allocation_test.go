@@ -78,6 +78,10 @@ func TestLuaTableLoopsExhaustMergeBudget(t *testing.T) {
 	for _, body := range []string{
 		`table.move({}, 1, 100, 1)`,
 		`table.concat(incoming.values)`,
+		`table.insert(incoming.values, 1, "inserted")`,
+		`table.remove(incoming.values, 1)`,
+		`table.sort(incoming.values)`,
+		`table.unpack(incoming.values)`,
 	} {
 		opts := merge.LuaOptions{MaxInstructions: 50}
 		source := []byte("return function(current, incoming) " + body + "; return {ok=true} end")

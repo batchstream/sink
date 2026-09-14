@@ -2,7 +2,6 @@ package storage
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
 	"unicode/utf8"
 
@@ -36,7 +35,7 @@ func validateBSONContainer(payload []byte, depth int, array bool) error {
 			return errors.New("BSON field name contains invalid UTF-8")
 		}
 		if array && element.Key() != strconv.Itoa(index) {
-			return fmt.Errorf("BSON array key %q is out of order or invalid", element.Key())
+			return errors.New("BSON array keys must be consecutive decimal indexes starting at zero")
 		}
 		if err := validateBSONValue(element.Value(), depth); err != nil {
 			return err

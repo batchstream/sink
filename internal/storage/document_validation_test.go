@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"encoding/binary"
+	"strings"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -64,6 +65,18 @@ func TestValidateBSONDepthBoundary(t *testing.T) {
 	payload = bsonEnvelope(bson.TypeEmbeddedDocument, payload)
 	if err := ValidateBSONDocument(payload); err == nil {
 		t.Fatal("document beyond depth limit accepted")
+	}
+}
+
+func TestValidateBSONBoundsMalformedArrayDiagnostic(t *testing.T) {
+	array := bson.D{{Key: strings.Repeat("x", 64<<10), Value: int32(1)}}
+	payload, err := bson.Marshal(array)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ValidateBSONDocument(bsonEnvelope(bson.TypeArray, payload))
+	if err == nil || len(err.Error()) > 256 {
+		t.Fatal("malformed BSON array diagnostic must be nonempty and bounded")
 	}
 }
 

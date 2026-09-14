@@ -13,6 +13,7 @@ const nativeAllocationLimit = "lua native allocation exceeds document byte limit
 // Preflight allocating library calls before the runtime builds their result.
 // These per-call bounds complement, but do not provide, a VM heap quota.
 func boundLuaAllocations(luaVM *vm.VM, maximum int) {
+	addUnicodeTextFunctions(luaVM, maximum)
 	stringsTable := luaVM.GetGlobal("string").AsTable().(*vm.Table)
 	format := stringsTable.GetString("format")
 	stringsTable.SetString("format", vm.NewNativeFunc(func(state *vm.VM) int {

@@ -584,10 +584,13 @@ limits protect the service. Call depth is fixed at 256 and VM stack slots at
 65,536; the other limits are configurable above. The embedded runtime does not
 provide a strict per-VM heap quota, so normal container or pod memory limits
 remain required.
-`string.pack`, `table.concat`, and `string.gsub` also bound each intermediate
-result by `max_result_bytes`, checking before allocating or appending strings.
+`string.pack`, `string.format`, `table.concat`, `string.gsub`, and `utf8.upper`
+bound each intermediate result by `max_result_bytes`, checking before allocating
+or appending strings.
 `table.concat` and `table.move` also check cancellation and consume an instruction
 checkpoint per element, including empty strings and nil values.
+`utf8.upper` checks cancellation and consumes an instruction checkpoint every
+1024 input characters and at completion, including when the text is unchanged.
 This bounds those library calls, not cumulative allocations or the complete VM
 heap.
 The Go client automatically deduplicates identical programs within a synchronous

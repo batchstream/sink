@@ -59,6 +59,22 @@ func TestLuaTableLoopsExhaustMergeBudget(t *testing.T) {
 	}
 }
 
+func TestLuaUnicodeUpperBoundsDiscardedIntermediateResult(t *testing.T) {
+	opts := merge.LuaOptions{MaxResultBytes: 1024}
+	source := []byte(`return function(current, incoming)
+    local scratch = utf8.upper(incoming.value)
+    return {ok=true}
+end`)
+	merger := compileTestProgram(t, source, opts)
+	// U+023F occupies two UTF-8 bytes; its uppercase U+2C7E occupies three.
+	incoming := jsonDocument(`{"value":"` + strings.Repeat("ȿ", 400) + `"}`)
+	request := merge.Request{Incoming: incoming}
+	result, err := merger.Merge(t.Context(), request)
+	if !errors.Is(err, merge.ErrExecutionExhausted) || len(result.Document.Payload) != 0 {
+		t.Fatalf("uppercase intermediate escaped byte budget: result=%s error=%v", result.Document.Payload, err)
+	}
+}
+
 func TestLuaBoundedLibrariesPreserveNormalCalls(t *testing.T) {
 	source := []byte(`return function(current, incoming)
     local packed = string.pack("!8 b s2 z Xh h c3", 1, "abc", "xyz", 2, "end")

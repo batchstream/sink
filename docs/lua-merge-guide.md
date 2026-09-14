@@ -315,6 +315,10 @@ Go maps, slices, or serialized output. Current/incoming payloads are also limite
 by `max_result_bytes`.
 
 The embedded VM still has no strict allocation-byte quota during execution.
+`utf8.upper` bounds the converted UTF-8 byte length by `max_result_bytes` before
+each append, including characters whose uppercase form requires more bytes.
+It checks cancellation and charges an instruction checkpoint every 1024 input
+characters and at completion, even for unchanged strings or discarded results.
 `string.pack` preflights the size of each intermediate string against
 `max_result_bytes` before allocating it. `table.concat` checks each append
 against the same bound without retaining a separate list of string fragments,

@@ -18,8 +18,14 @@ func pageOptions(req storage.NativeRequest) (requestOptions, map[string]json.Raw
 	if err != nil {
 		return opts, nil, err
 	}
-	if !strings.HasSuffix(opts.path, "/_search") || (opts.method != http.MethodGet && opts.method != http.MethodPost) {
-		return opts, nil, errors.New("Query and Count require a _search request")
+	index, endpoint, _ := strings.Cut(strings.TrimPrefix(opts.path, "/"), "/")
+	indexed := index != "" && (!strings.HasPrefix(index, "_") || index == "_all" || strings.ContainsAny(index, ",:*?"))
+	searchPath := opts.path == "/_search" || (indexed && endpoint == "_search")
+	// A document ID or administrative resource can also end in /_search.
+	// Reject encoded separators so decoding cannot change the route shape.
+	if !searchPath || strings.Count(opts.path, "/") != strings.Count(opts.rawPath, "/") ||
+		(opts.method != http.MethodGet && opts.method != http.MethodPost) {
+		return opts, nil, errors.New("Query, Count and Scan require /_search or /{index}/_search")
 	}
 	mediaType, _, _ := mime.ParseMediaType(opts.contentType)
 	if opts.contentType != "" && mediaType != ContentTypeJSON && !strings.HasSuffix(mediaType, "+json") {

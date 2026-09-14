@@ -206,6 +206,10 @@ additional batches only when the backend's byte limit splits that result.
 For aggregate, explicit sort and projection follow the supplied pipeline, then
 skip/limit apply to its output. HTTP Query requires `_search`, replaces from/size,
 and maps explicit sort/projection to sort and `_source` selection.
+Search Query, Count and Scan accept only `/_search` or `/{index}/_search`, including
+index lists, wildcards and cross-cluster targets. Document or administrative
+paths that merely end in `/_search`, and paths with encoded separators, are
+rejected before transport.
 It fetches exactly `page_size` hits and overrides `track_total_hits` with a
 threshold just beyond the page end to prove `has_more` from the same response.
 This avoids fetching another document's source and keeps the final page within

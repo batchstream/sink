@@ -331,8 +331,16 @@ an interrupted move may leave its Lua destination partially updated.
 `string.gsub` checks each output append, including capture expansion and
 function/table replacements, against the same limit. Patterns use `string.find`
 capture validation, so unfinished captures are rejected. Substitution loops also
-check cancellation and instruction limits. The runtime still performs individual
-pattern matches; these checks do not interrupt a native match mid-search.
+check cancellation and instruction limits. The runtime's pattern syntax is
+retained by a local copy of its matcher with VM checkpoints.
+`string.find`, `string.match`, `string.gmatch` and the matching phase of
+`string.gsub` check cancellation and charge instruction checkpoints during
+search, backtracking, balanced matches, backreferences, and character-set
+parsing and matching. A checkpoint runs at entry and every 256 units of native
+matching work, including searches that produce no matches. Timeouts and
+instruction exhaustion therefore stop an active pattern search without waiting
+for the entire native call to finish. Literal `string.find` searches retain the
+runtime's direct substring-search path.
 `string.format` bounds the combined output and checks string/quoted-string
 expansion before each conversion, including strings used repeatedly. Formatting
 loops also check cancellation and instruction limits. Numeric widths and

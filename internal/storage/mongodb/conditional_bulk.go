@@ -36,8 +36,10 @@ func (s *Store) supportsClientBulk(ctx context.Context) bool {
 	if hello.MaxWireVersion >= 25 {
 		capability = clientBulkAvailable
 	}
-	s.clientBulkCapability.Store(capability)
-	return capability == clientBulkAvailable
+	// An older discovery response must not undo a bulkWrite rejection that
+	// disabled this path while hello was in flight.
+	s.clientBulkCapability.CompareAndSwap(0, capability)
+	return s.clientBulkCapability.Load() == clientBulkAvailable
 }
 
 func (s *Store) writeConditionalBulk(ctx context.Context, operations []writeWork, results []storage.WriteResult) {

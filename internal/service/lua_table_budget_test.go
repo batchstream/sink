@@ -161,3 +161,48 @@ func TestSinkV1CumulativeBudgetFailureDoesNotCommitMutation(t *testing.T) {
 		})
 	}
 }
+
+func TestLuaPatternCaptureStackFailureDoesNotCommitMutation(t *testing.T) {
+	pattern := strings.Repeat("()", 32)
+	for _, call := range []string{
+		`string.find("", "` + pattern + `")`,
+		`string.match("", "` + pattern + `")`,
+		`local matches = string.gmatch("", "` + pattern + `"); matches()`,
+	} {
+		t.Run(call, func(t *testing.T) {
+			backend := memory.New()
+			document := storageJSONDocument(`{"value":0}`)
+			seed := memory.SeedRequest{Address: storageAddress("limited"), Document: document}
+			backend.Seed(seed)
+			luaOptions := merge.LuaOptions{MaxStackSlots: 32}
+			engine, err := merge.NewLuaEngine(luaOptions)
+			if err != nil {
+				t.Fatal(err)
+			}
+			options := service.Options{Storage: backend, Lua: engine}
+			server, err := service.New(options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			source := "return function(current, incoming) current.value=1; " + call + "; return current end"
+			limited := foldingMerge("limited", source, `{}`)
+			healthy := foldingPut("healthy", sink.WriteMode_WRITE_MODE_UPSERT, 2)
+			request := foldingRequest(limited, healthy)
+			response, err := server.Write(t.Context(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if response.Results[0].Status != sink.WriteStatus_WRITE_STATUS_FAILED ||
+				response.Results[0].GetFailure().GetCode() != sink.FailureCode_FAILURE_CODE_RESOURCE_EXHAUSTED ||
+				response.Results[1].Status != sink.WriteStatus_WRITE_STATUS_APPLIED {
+				t.Fatalf("capture stack budget did not isolate the failing write: %v", response)
+			}
+			read := storage.ReadOperation{Address: seed.Address}
+			readRequest := storage.ReadRequest{Operations: []storage.ReadOperation{read}}
+			stored, err := backend.Read(t.Context(), readRequest)
+			if err != nil || !bytes.Equal(stored.Results[0].Document.Payload, document.Payload) {
+				t.Fatalf("capture stack failure persisted a mutation: response=%v error=%v", stored, err)
+			}
+		})
+	}
+}

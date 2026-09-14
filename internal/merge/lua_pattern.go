@@ -62,6 +62,8 @@ func boundedLuaFind(state *vm.VM) int {
 		return 1
 	}
 	checkCaptures(captures)
+	// Native return slots are not reserved by the caller's argument frame.
+	state.EnsureStack(state.Base() + len(captures) + 1)
 	state.Set(0, vm.NewInt(int64(start+1)))
 	state.Set(1, vm.NewInt(int64(end)))
 	for index, capture := range captures {
@@ -107,6 +109,7 @@ func boundedLuaGmatch(state *vm.VM) int {
 
 func returnPatternMatch(state *vm.VM, whole string, captures []captureValue) int {
 	checkCaptures(captures)
+	state.EnsureStack(state.Base() + max(1, len(captures)) - 1)
 	if len(captures) == 0 {
 		state.Set(0, vm.NewString(whole))
 		return 1

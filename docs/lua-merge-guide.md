@@ -258,6 +258,9 @@ across all `sink.v1` calls, including discarded intermediate results. Script
 syntax, arguments, types, callbacks, resources, and result errors fail only the
 corresponding Write operation and return a structured failure.
 
+Pattern captures from `string.find`, `string.match`, and `string.gmatch` reserve
+their full return stack and obey the stack limit even if the caller discards them.
+
 Chunk initialization during compilation also observes the enclosing request's
 deadline and cancellation. A canceled request stops validation before publishing
 or committing writes; it is not reported as an invalid script. Parsing and

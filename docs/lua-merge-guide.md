@@ -324,6 +324,10 @@ function/table replacements, against the same limit. Patterns use `string.find`
 capture validation, so unfinished captures are rejected. Substitution loops also
 check cancellation and instruction limits. The runtime still performs individual
 pattern matches; these checks do not interrupt a native match mid-search.
+`string.format` bounds the combined output and checks string/quoted-string
+expansion before each conversion, including strings used repeatedly. Formatting
+loops also check cancellation and instruction limits. Numeric widths and
+precision retain the runtime's existing limits.
 These limits do not make arbitrary Lua safe to run in a shared trusted process.
 Use reviewed business scripts, isolate stores/workers into containers with
 memory limits, and test the largest permitted documents. See

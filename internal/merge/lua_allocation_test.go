@@ -22,6 +22,10 @@ func TestLuaBoundsNativeIntermediateResults(t *testing.T) {
 		{name: "concat", body: `local value = string.pack("c600", ""); local scratch = table.concat({value, value})`},
 		{name: "concat numeric bounds", body: `local value = string.pack("c600", ""); local scratch = table.concat({value, value}, "", "1", "2")`},
 		{name: "concat separator", body: `local value = string.pack("c600", ""); local scratch = table.concat({"a", "b", "c"}, value)`},
+		{name: "format repeated strings", body: `local value = string.pack("c600", ""); local scratch = string.format("%s%s", value, value)`},
+		{name: "format quoted string", body: `local value = string.pack("c600", ""); local scratch = string.format("%q", value)`},
+		{name: "format modifiers", body: `local value = string.gsub(string.pack("c600", ""), "%z", "a"); local scratch = string.format("%-1s%-1s", value, value)`},
+		{name: "format literal suffix", body: `local value = string.pack("c1024", ""); local scratch = string.format("%s!", value)`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -49,6 +53,12 @@ func TestLuaBoundedLibrariesPreserveNormalCalls(t *testing.T) {
     assert(not pcall(string.pack, "c1025", ""))
     assert(not pcall(string.pack, "z", {}))
     assert(not pcall(table.concat, {true}))
+    assert(#string.format("%s", string.pack("c1024", "")) == 1024)
+    assert(#string.format("%q", string.pack("c511", "")) == 1024)
+    assert(string.format("%.2s", "abcd") == "ab")
+    assert(type(string.gsub(123, "x", "y")) == "string")
+    assert(type(string.gsub(123, ".", "%0")) == "string")
+    assert(type(string.gsub(123, ".", function() return false end)) == "string")
     return {ok = true}
 end`)
 	options := merge.LuaOptions{MaxResultBytes: 1024}

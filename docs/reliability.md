@@ -176,6 +176,10 @@ sink dlq replay --config /etc/sink/config.yaml --store primary \
   --partition 0 --offset 12 --count 3 > dlq-replay.jsonl
 ```
 
+Replay uses the configured store's normal publisher routing: search keys exclude
+namespace, while MongoDB keys include it. This keeps replayed and newly accepted
+operations for the same record on the same partition when its partition count
+is unchanged. Replay does not recover an operation's original position in time.
 Replay reports `accepted` or `failed_or_unknown` for each selected position and
 returns failure if any publication fails. If the command or output file is
 interrupted, outcomes may be unknown. Never repeatedly replay a whole range to

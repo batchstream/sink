@@ -30,7 +30,6 @@ func newLuaEnvironment() *luaEnvironment {
 	luaVM := vm.New()
 	defer luaVM.Close(context.Background())
 	stdlib.Open(luaVM)
-	addUnicodeTextFunctions(luaVM)
 	restrictLuaEnvironment(luaVM)
 	captured := make(map[vm.LuaTable]*luaEnvironmentTable)
 	environment := &luaEnvironment{

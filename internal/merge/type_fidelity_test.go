@@ -95,6 +95,7 @@ func TestLuaMergeDateTimesFollowValuesInsteadOfPaths(t *testing.T) {
 		`return function(current, incoming) current.value = incoming.value; return current end`,
 		`return function(current, incoming) return {value = incoming.value} end`,
 		`return function(current, incoming) return {value = table.concat({incoming.value})} end`,
+		`return function(current, incoming) return {value = utf8.upper(incoming.value)} end`,
 		`return function(current, incoming) local copied = table.move({incoming.value}, 1, 1, 1, {}); return {value = copied[1]} end`,
 	} {
 		for _, incomingDate := range []bool{false, true} {

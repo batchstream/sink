@@ -119,8 +119,10 @@ to the requested alias.
 Search response byte limits trigger read splitting without retrying the same
 oversized batch on other endpoints. Byte limits and caller cancellation do not
 mark an endpoint unhealthy. Transport failures and temporary HTTP errors still
-cool down the affected endpoint and allow record reads to fail over while their
-request context remains active.
+cool down the affected endpoint and allow record reads and managed Query, Count
+and Scan requests to fail over while their request context remains active.
+Native Execute commands retain a single attempt because they may mutate data
+or manage backend cursors.
 
 Processing defaults to 20 seconds. A pending rebalance cancels backend work and
 allows at most five additional seconds for DLQ/offset settlement before releasing

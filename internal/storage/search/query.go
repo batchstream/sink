@@ -46,6 +46,9 @@ func pageOptions(req storage.NativeRequest) (requestOptions, map[string]json.Raw
 	opts.query.Del("from")
 	opts.query.Del("size")
 	opts.method = http.MethodPost
+	// Managed pages never open backend cursors and can safely retry the same
+	// query on another endpoint after a transport or temporary HTTP failure.
+	opts.retrySafe = true
 	opts.contentType = ContentTypeJSON
 	opts.headers.Set("Accept", ContentTypeJSON)
 	return opts, body, nil

@@ -116,6 +116,12 @@ otherwise report success, absence or a permanent failure. Index aliases can
 return concrete index names, so those names are required but are not compared
 to the requested alias.
 
+Search response byte limits trigger read splitting without retrying the same
+oversized batch on other endpoints. Byte limits and caller cancellation do not
+mark an endpoint unhealthy. Transport failures and temporary HTTP errors still
+cool down the affected endpoint and allow record reads to fail over while their
+request context remains active.
+
 Processing defaults to 20 seconds. A pending rebalance cancels backend work and
 allows at most five additional seconds for DLQ/offset settlement before releasing
 rebalance callbacks. This improves bounded handover but is not storage fencing.

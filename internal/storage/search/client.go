@@ -67,6 +67,9 @@ func (s *Store) perform(ctx context.Context, opts requestOptions) (apiResponse, 
 	}
 	var lastErr error
 	for range attempts {
+		if err := ctx.Err(); err != nil {
+			return empty, storage.BackendError(err)
+		}
 		state, endpoint := s.endpoint(opts.path)
 		if opts.rawPath != "" {
 			endpoint.RawPath = strings.TrimRight(state.value.EscapedPath(), "/") + opts.rawPath
@@ -74,6 +77,11 @@ func (s *Store) perform(ctx context.Context, opts requestOptions) (apiResponse, 
 		endpoint.RawQuery = opts.query.Encode()
 		response, err := s.performOnce(ctx, opts, endpoint)
 		if err != nil {
+			// Caller cancellation and local response limits say nothing about
+			// endpoint health. Let reads split oversized batches immediately.
+			if ctx.Err() != nil || errors.Is(err, errResponseTooLarge) {
+				return empty, err
+			}
 			state.retryAfter.Store(time.Now().Add(defaultEndpointCooldown).UnixNano())
 			lastErr = err
 			if opts.retrySafe {

@@ -74,12 +74,11 @@ func (l sinkV1Library) arrayAppendAll(state *vm.VM) int {
 	}
 	targetLength := target.Len()
 	sourceLength := source.Len()
-	requireSinkV1WorkWithinLimit(state, sinkV1ArrayAppendAll, sourceLength)
 	if sourceLength > math.MaxInt-targetLength {
 		panic(fmt.Sprintf("%s result is too large", sinkV1ArrayAppendAll))
 	}
 	for index := 1; index <= sourceLength; index++ {
-		checkSinkV1Context(state, index)
+		checkSinkV1Work(state)
 		target.SetInt(targetLength+index, source.GetInt(index))
 	}
 	state.Set(0, vm.NewTable(target))
@@ -96,9 +95,8 @@ func (l sinkV1Library) arrayDeduplicate(state *vm.VM) int {
 
 	result := l.bridge.newArray(items.Len())
 	seen := vm.NewEmptyTable()
-	requireSinkV1WorkWithinLimit(state, sinkV1ArrayDeduplicate, items.Len())
 	for index := 1; index <= items.Len(); index++ {
-		checkSinkV1Context(state, index)
+		checkSinkV1Work(state)
 		item := items.GetInt(index)
 		arguments := []vm.Value{item}
 		keys, err := state.ProtectedCall(keyFunction, arguments)
@@ -145,10 +143,9 @@ func (l sinkV1Library) arrayKeepTail(state *vm.VM) int {
 	if limit == 0 {
 		resultLength = 0
 	}
-	requireSinkV1WorkWithinLimit(state, sinkV1ArrayKeepTail, resultLength)
 	result := l.bridge.newArray(resultLength)
 	for index := start; index <= length && limit != 0; index++ {
-		checkSinkV1Context(state, index-start+1)
+		checkSinkV1Work(state)
 		result.SetInt(result.Len()+1, items.GetInt(index))
 	}
 	state.Set(0, vm.NewTable(result))
@@ -169,7 +166,6 @@ func (l sinkV1Library) arrayUnionStrings(state *vm.VM) int {
 		}
 		capacity += right.Len()
 	}
-	requireSinkV1WorkWithinLimit(state, sinkV1ArrayUnionStrings, capacity)
 
 	result := l.bridge.newArray(capacity)
 	seen := make(map[string]struct{}, capacity)
@@ -193,7 +189,7 @@ func (l sinkV1Library) appendUniqueStrings(state *vm.VM, options appendUniqueStr
 		return
 	}
 	for index := 1; index <= options.source.Len(); index++ {
-		checkSinkV1Context(state, index)
+		checkSinkV1Work(state)
 		item := options.source.GetInt(index)
 		if !item.IsString() {
 			panic(fmt.Sprintf("bad argument #%d to '%s' (array item %d must be a string, got %s)", options.argumentIndex, sinkV1ArrayUnionStrings, index, item.Type()))
@@ -275,20 +271,19 @@ func (l sinkV1Library) requireJSONArrayValue(state *vm.VM, options requireJSONAr
 	if !ok || table.Metatable() != l.bridge.arrayMeta {
 		panic(fmt.Sprintf("%s %s must be a JSON array%s", options.functionName, options.label, nilAllowance(options.allowNil)))
 	}
-	count, array := inspectSinkV1JSONArray(state, options.functionName, table)
+	count, array := inspectSinkV1JSONArray(state, table)
 	if !array || table.Len() != count {
 		panic(fmt.Sprintf("%s %s must have contiguous integer keys starting at one", options.functionName, options.label))
 	}
 	return table
 }
 
-func inspectSinkV1JSONArray(state *vm.VM, functionName string, table *vm.Table) (int, bool) {
+func inspectSinkV1JSONArray(state *vm.VM, table *vm.Table) (int, bool) {
 	count := 0
 	array := true
 	table.ForEach(func(key, _ vm.Value) bool {
 		count++
-		requireSinkV1WorkWithinLimit(state, functionName, count)
-		checkSinkV1Context(state, count)
+		checkSinkV1Work(state)
 		if !key.IsInt() || key.AsInt() < 1 {
 			array = false
 		}
@@ -339,20 +334,10 @@ func nilAllowance(allowNil bool) string {
 	return ""
 }
 
-func requireSinkV1WorkWithinLimit(state *vm.VM, functionName string, items int) {
-	limit := state.GetLimits().MaxInstructions
-	if limit > 0 && int64(items) > limit {
-		panic(fmt.Sprintf("%s instruction limit exceeded: %d items exceeds limit %d", functionName, items, limit))
+// Validation and copying consume the same cumulative budget as bytecode and
+// other native functions, even when each individual call visits few items.
+func checkSinkV1Work(state *vm.VM) {
+	if err := state.CheckInterrupt(); err != nil {
+		panic(err)
 	}
-}
-
-func checkSinkV1Context(state *vm.VM, position int) {
-	if position%256 != 0 {
-		return
-	}
-	ctx := state.Context()
-	if ctx == nil || ctx.Err() == nil {
-		return
-	}
-	panic(ctx.Err())
 }

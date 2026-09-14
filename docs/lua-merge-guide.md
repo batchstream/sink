@@ -253,9 +253,10 @@ stack size, source size, and result size. The time budget includes input
 decoding and result encoding. Go document converters cannot be interrupted
 mid-call, but a result completed after the deadline is rejected before storage
 commit. Native `sink.v1` array loops also enforce the execution deadline and
-work limit. Script syntax, arguments, types,
-callbacks, resources, and result errors fail only the corresponding Write
-operation and return a structured failure.
+work limit. Array validation and copying consume the shared instruction budget
+across all `sink.v1` calls, including discarded intermediate results. Script
+syntax, arguments, types, callbacks, resources, and result errors fail only the
+corresponding Write operation and return a structured failure.
 
 Before rollout, business tests should cover at least:
 

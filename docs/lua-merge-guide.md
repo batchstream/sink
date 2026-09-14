@@ -170,6 +170,11 @@ JSON values and the JSON-compatible view of BSON values use this mapping:
 | boolean | boolean |
 | null | `json.null` |
 
+JSON document bytes and Lua result strings and object keys must be valid UTF-8.
+Invalid bytes are rejected instead of being replaced with U+FFFD during JSON
+conversion, which can otherwise change values or collapse distinct object keys.
+Binary data must use an explicit encoding or a BSON binary value.
+
 JSON integers must fit the signed 64-bit range, including integral values
 written with a decimal point or exponent. Sink rejects an out-of-range integer
 instead of rounding it through a floating-point conversion. Fractional JSON

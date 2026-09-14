@@ -9,6 +9,21 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
+func TestValidateJSONDocumentUTF8AndWhitespace(t *testing.T) {
+	for _, payload := range []string{"{\"value\":\"\xff\"}", "{\"\xff\":1,\"\xfe\":2}", "{\"value\":\"\xc0\xaf\"}", "\u00a0{}\u00a0", "\v{}\v"} {
+		document := Document{Encoding: DocumentEncodingJSON, Payload: []byte(payload)}
+		if err := ValidateDocument(document); err == nil {
+			t.Errorf("malformed JSON was accepted: %q", payload)
+		}
+	}
+	for _, payload := range []string{" \t\r\n{\"中文😀\":\"�\"}\t\r\n ", `{"value":"\ud83d\ude00"}`} {
+		document := Document{Encoding: DocumentEncodingJSON, Payload: []byte(payload)}
+		if err := ValidateDocument(document); err != nil {
+			t.Errorf("valid Unicode JSON rejected: %v", err)
+		}
+	}
+}
+
 func bsonEnvelope(kind bson.Type, payload []byte) []byte {
 	encoded := make([]byte, 0, len(payload)+8)
 	encoded = append(encoded, 0, 0, 0, 0, byte(kind), 'v', 0)

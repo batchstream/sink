@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 	"unsafe"
 
 	"github.com/iceisfun/golua/vm"
@@ -344,6 +345,9 @@ func (b *luaJSONBridge) luaToGo(value vm.Value, active map[*vm.Table]bool) (any,
 		return value.AsBool(), nil
 	case value.IsString():
 		text := value.AsString()
+		if !utf8.ValidString(text) {
+			return nil, errors.New("lua result contains an invalid UTF-8 string")
+		}
 		if _, typed := b.dateTimes[identityOfLuaString(text)]; typed && b.outputBSON {
 			timestamp, err := time.Parse(time.RFC3339Nano, text)
 			if err != nil {
@@ -479,6 +483,9 @@ func (b *luaJSONBridge) luaObjectToGo(table *vm.Table, active map[*vm.Table]bool
 		}
 		if !next.IsString() {
 			return nil, fmt.Errorf("lua JSON object has a non-string key of type %s", next.Type())
+		}
+		if !utf8.ValidString(next.AsString()) {
+			return nil, errors.New("lua JSON object contains an invalid UTF-8 key")
 		}
 		converted, err := b.luaFieldToGo(table, next, value, active)
 		if err != nil {

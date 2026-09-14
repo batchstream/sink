@@ -10,23 +10,23 @@ import (
 )
 
 func TestRequestQueueMetricsCoverLongTailAndExitOutcomes(t *testing.T) {
-	observed, err := sinkmetrics.New("test")
+	observed, err := sinkmetrics.New("test", "search")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, outcome := range []string{"execute", "canceled", "shutdown"} {
-		observation := sinkmetrics.RequestQueueObservation{Method: "Write", Outcome: outcome, Duration: 12 * time.Second}
+		observation := sinkmetrics.RequestQueueObservation{Store: "search", Method: "Write", Outcome: outcome, Duration: 12 * time.Second}
 		observed.ObserveRequestQueue(observation)
 	}
 	body := scrape(t, observed)
 	wanted := []string{
-		`sink_batcher_request_queue_duration_seconds_count{method="Write"} 3`,
-		`sink_batcher_request_queue_duration_seconds_sum{method="Write"} 36`,
-		`sink_batcher_request_queue_duration_seconds_bucket{method="Write",le="10"} 0`,
-		`sink_batcher_request_queue_duration_seconds_bucket{method="Write",le="30"} 3`,
-		`sink_batcher_request_queue_exits_total{method="Write",outcome="execute"} 1`,
-		`sink_batcher_request_queue_exits_total{method="Write",outcome="canceled"} 1`,
-		`sink_batcher_request_queue_exits_total{method="Write",outcome="shutdown"} 1`,
+		`sink_batcher_request_queue_duration_seconds_count{method="Write",store="search"} 3`,
+		`sink_batcher_request_queue_duration_seconds_sum{method="Write",store="search"} 36`,
+		`sink_batcher_request_queue_duration_seconds_bucket{method="Write",store="search",le="10"} 0`,
+		`sink_batcher_request_queue_duration_seconds_bucket{method="Write",store="search",le="30"} 3`,
+		`sink_batcher_request_queue_exits_total{method="Write",outcome="execute",store="search"} 1`,
+		`sink_batcher_request_queue_exits_total{method="Write",outcome="canceled",store="search"} 1`,
+		`sink_batcher_request_queue_exits_total{method="Write",outcome="shutdown",store="search"} 1`,
 	}
 	for _, line := range wanted {
 		if !strings.Contains(body, line) {
@@ -36,7 +36,7 @@ func TestRequestQueueMetricsCoverLongTailAndExitOutcomes(t *testing.T) {
 }
 
 func TestWriteSlowPhaseCounterKeepsStoreAndVisibilityAttribution(t *testing.T) {
-	observed, err := sinkmetrics.New("test")
+	observed, err := sinkmetrics.New("test", "search")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,8 +50,8 @@ func TestWriteSlowPhaseCounterKeepsStoreAndVisibilityAttribution(t *testing.T) {
 	for _, phase := range []string{"storage_write_applied", "storage_write_visible"} {
 		wanted := []string{
 			`sink_write_slow_phases_total{phase="` + phase + `",store="search"} 1`,
-			`sink_write_phase_duration_seconds_count{phase="` + phase + `"} 2`,
-			`sink_write_phase_duration_seconds_bucket{phase="` + phase + `",le="5"} 1`,
+			`sink_write_phase_duration_seconds_count{phase="` + phase + `",store="search"} 2`,
+			`sink_write_phase_duration_seconds_bucket{phase="` + phase + `",store="search",le="5"} 1`,
 		}
 		for _, line := range wanted {
 			if !strings.Contains(body, line) {

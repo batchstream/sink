@@ -252,7 +252,7 @@ func TestConcurrentMergeDoesNotLoseSuccessfulUpdates(t *testing.T) {
 }
 
 func TestMergeConflictMetricsRecordRetriesAndExhaustion(t *testing.T) {
-	observed, err := sinkmetrics.New("test")
+	observed, err := sinkmetrics.New("test", "primary")
 	if err != nil {
 		t.Fatalf("metrics.New() error = %v", err)
 	}
@@ -286,10 +286,10 @@ func TestMergeConflictMetricsRecordRetriesAndExhaustion(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	observed.Handler().ServeHTTP(recorder, httpRequest)
 	body := recorder.Body.String()
-	if !strings.Contains(body, "sink_merge_conflicts_total 2") {
+	if !strings.Contains(body, `sink_merge_conflicts_total{store="primary"} 2`) {
 		t.Fatal("metrics do not contain two merge conflicts")
 	}
-	if !strings.Contains(body, "sink_merge_exhausted_total 1") {
+	if !strings.Contains(body, `sink_merge_exhausted_total{store="primary"} 1`) {
 		t.Fatal("metrics do not contain one exhausted merge")
 	}
 }

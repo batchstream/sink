@@ -165,9 +165,13 @@ func newApplication(ctx context.Context, loaded config) (*application, error) {
 		storage:      opened.value,
 		healthChecks: opened.healthChecks,
 	}
+	storeNames := make([]string, len(loaded.storages))
+	for index, configured := range loaded.storages {
+		storeNames[index] = configured.name
+	}
 	var observed *sinkmetrics.Metrics
 	if loaded.prometheusAddress != "" {
-		observed, err = sinkmetrics.New(version)
+		observed, err = sinkmetrics.New(version, storeNames...)
 		if err != nil {
 			app.close()
 			return nil, err
@@ -202,6 +206,7 @@ func newApplication(ctx context.Context, loaded config) (*application, error) {
 				continue
 			}
 			publisherOptions := queuekafka.PublisherOptions{
+				Store:            configured.name,
 				Brokers:          configured.kafka.brokers,
 				Topics:           app.topics[configured.name],
 				MaxRecordBytes:   configured.kafka.maxRecordBytes,
@@ -239,10 +244,6 @@ func newApplication(ctx context.Context, loaded config) (*application, error) {
 	if err != nil {
 		app.close()
 		return nil, err
-	}
-	storeNames := make([]string, len(loaded.storages))
-	for index, configured := range loaded.storages {
-		storeNames[index] = configured.name
 	}
 	serverOptions := service.Options{
 		StoreNames:           storeNames,

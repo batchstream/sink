@@ -3,12 +3,15 @@ package kafka_test
 import (
 	"context"
 	"crypto/sha256"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
+	sinkmetrics "github.com/liran/sink/internal/metrics"
 	"github.com/liran/sink/internal/queue"
 	"github.com/liran/sink/internal/queue/kafka"
 	"github.com/liran/sink/internal/service"
@@ -37,6 +40,10 @@ func (h *blockingHandler) HandleBatch(ctx context.Context, mutations []queue.Mut
 }
 
 func TestKafkaPublisherWorkerAppliesAsyncMutations(t *testing.T) {
+	observed, err := sinkmetrics.New("test", "primary", "archive")
+	if err != nil {
+		t.Fatal(err)
+	}
 	const topic = "sink-mutations"
 	const deadLetterTopic = "sink-mutations.dlq"
 	numBrokers := kfake.NumBrokers(1)
@@ -48,6 +55,8 @@ func TestKafkaPublisherWorkerAppliesAsyncMutations(t *testing.T) {
 	t.Cleanup(cluster.Close)
 
 	publisherOptions := kafka.PublisherOptions{
+		Store:   "primary",
+		Metrics: observed,
 		Brokers: cluster.ListenAddrs(),
 		Topic:   topic,
 	}
@@ -82,6 +91,7 @@ func TestKafkaPublisherWorkerAppliesAsyncMutations(t *testing.T) {
 		t.Fatalf("worker.NewProcessor() error = %v", err)
 	}
 	workerOptions := kafka.WorkerOptions{
+		Metrics:         observed,
 		Brokers:         cluster.ListenAddrs(),
 		Store:           "primary",
 		Topic:           topic,
@@ -209,6 +219,24 @@ func TestKafkaPublisherWorkerAppliesAsyncMutations(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Worker.Run() did not stop")
+	}
+	metricsRequest := httptest.NewRequest("GET", "/metrics", nil)
+	recorder := httptest.NewRecorder()
+	observed.Handler().ServeHTTP(recorder, metricsRequest)
+	body := recorder.Body.String()
+	for _, line := range []string{
+		`sink_kafka_publisher_records_total{status="accepted",store="primary"} 3`,
+		`sink_kafka_publisher_duration_seconds_count{store="primary"} 3`,
+		`sink_kafka_worker_mutations_total{status="applied",store="primary"} 3`,
+		`sink_kafka_worker_mutations_total{status="failed",store="primary"} 2`,
+		`sink_kafka_worker_dead_letters_total{store="primary"} 2`,
+	} {
+		if !strings.Contains(body, line) {
+			t.Errorf("missing metric: %s", line)
+		}
+	}
+	if strings.Contains(body, `store="archive"`) {
+		t.Fatal("misrouted mutation was attributed to the payload store instead of the configured worker")
 	}
 }
 

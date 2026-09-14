@@ -248,7 +248,7 @@ func (s *Server) executeWriteWave(
 	puts := make([]writeGroup, 0, len(groups))
 	conditional := make([]writeGroup, 0, len(groups))
 	for _, group := range groups {
-		s.metrics.ObserveMergeFold(group.merges)
+		s.metrics.ObserveMergeFold(group.operations[0].address.Store, group.merges)
 		if group.directPut() {
 			puts = append(puts, group)
 		} else {
@@ -334,14 +334,14 @@ func (s *Server) executeConditionalWrites(
 		}
 		for _, group := range next {
 			if group.merges > 0 {
-				s.metrics.ObserveMergeConflict(1)
+				s.metrics.ObserveMergeConflict(group.operations[0].address.Store, 1)
 			}
 		}
 		pending = next
 	}
 
 	for _, group := range pending {
-		s.metrics.ObserveMergeExhausted(group.merges)
+		s.metrics.ObserveMergeExhausted(group.operations[0].address.Store, group.merges)
 		for _, operation := range group.operations {
 			result := results[operation.index]
 			result.Status = sink.WriteStatus_WRITE_STATUS_PRECONDITION_FAILED

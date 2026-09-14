@@ -18,6 +18,7 @@ import (
 const namespace = "sink"
 
 type Metrics struct {
+	stores                 map[string]struct{}
 	registry               *prometheus.Registry
 	requests               *prometheus.CounterVec
 	requestDuration        *prometheus.HistogramVec
@@ -35,15 +36,15 @@ type Metrics struct {
 	writeExecutionRounds   *prometheus.HistogramVec
 	requestQueueExits      *prometheus.CounterVec
 	writeSlowPhases        *prometheus.CounterVec
-	mergeConflicts         prometheus.Counter
-	mergeExhausted         prometheus.Counter
-	mergeFoldedChains      prometheus.Counter
-	mergeFoldedOperations  prometheus.Counter
+	mergeConflicts         *prometheus.CounterVec
+	mergeExhausted         *prometheus.CounterVec
+	mergeFoldedChains      *prometheus.CounterVec
+	mergeFoldedOperations  *prometheus.CounterVec
 	kafkaPublished         *prometheus.CounterVec
-	kafkaPublishDuration   prometheus.Histogram
+	kafkaPublishDuration   *prometheus.HistogramVec
 	kafkaWorkerMutations   *prometheus.CounterVec
-	kafkaWorkerRetries     prometheus.Counter
-	kafkaWorkerDeadLetters prometheus.Counter
+	kafkaWorkerRetries     *prometheus.CounterVec
+	kafkaWorkerDeadLetters *prometheus.CounterVec
 	admissionRequests      prometheus.Gauge
 	admissionBytes         prometheus.Gauge
 	admissionRejected      prometheus.Counter
@@ -62,6 +63,7 @@ type Metrics struct {
 }
 
 type BatchObservation struct {
+	Store             string
 	Method            string
 	Reason            string
 	Operations        int
@@ -70,14 +72,20 @@ type BatchObservation struct {
 	ExecutionDuration time.Duration
 }
 
-func New(version string) (*Metrics, error) {
+func New(version string, storeNames ...string) (*Metrics, error) {
+	stores := make(map[string]struct{}, len(storeNames))
+	for _, store := range storeNames {
+		if store != "" {
+			stores[store] = struct{}{}
+		}
+	}
 	requestOptions := prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: "grpc_server",
 		Name:      "requests_total",
 		Help:      "Total number of completed Sink gRPC requests.",
 	}
-	requests := prometheus.NewCounterVec(requestOptions, []string{"method", "code"})
+	requests := prometheus.NewCounterVec(requestOptions, []string{"store", "method", "code"})
 	durationOptions := prometheus.HistogramOpts{
 		Namespace: namespace,
 		Subsystem: "grpc_server",
@@ -85,21 +93,21 @@ func New(version string) (*Metrics, error) {
 		Help:      "Duration of completed Sink gRPC requests in seconds.",
 		Buckets:   prometheus.DefBuckets,
 	}
-	requestDuration := prometheus.NewHistogramVec(durationOptions, []string{"method"})
+	requestDuration := prometheus.NewHistogramVec(durationOptions, []string{"store", "method"})
 	resultOptions := prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: "grpc_server",
 		Name:      "operation_results_total",
 		Help:      "Total number of per-operation results returned by Sink gRPC requests.",
 	}
-	operationResults := prometheus.NewCounterVec(resultOptions, []string{"method", "status"})
+	operationResults := prometheus.NewCounterVec(resultOptions, []string{"store", "method", "status"})
 	batchOptions := prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: "batcher",
 		Name:      "batches_total",
 		Help:      "Total number of synchronous batches by flush reason.",
 	}
-	batcherBatches := prometheus.NewCounterVec(batchOptions, []string{"method", "reason"})
+	batcherBatches := prometheus.NewCounterVec(batchOptions, []string{"store", "method", "reason"})
 	batchOperationOptions := prometheus.HistogramOpts{
 		Namespace: namespace,
 		Subsystem: "batcher",
@@ -107,7 +115,7 @@ func New(version string) (*Metrics, error) {
 		Help:      "Number of operations in each synchronous batch.",
 		Buckets:   prometheus.ExponentialBuckets(1, 2, 11),
 	}
-	batcherOperations := prometheus.NewHistogramVec(batchOperationOptions, []string{"method"})
+	batcherOperations := prometheus.NewHistogramVec(batchOperationOptions, []string{"store", "method"})
 	batchByteOptions := prometheus.HistogramOpts{
 		Namespace: namespace,
 		Subsystem: "batcher",
@@ -115,7 +123,7 @@ func New(version string) (*Metrics, error) {
 		Help:      "Encoded request bytes represented by each synchronous batch.",
 		Buckets:   prometheus.ExponentialBuckets(1024, 4, 9),
 	}
-	batcherBytes := prometheus.NewHistogramVec(batchByteOptions, []string{"method"})
+	batcherBytes := prometheus.NewHistogramVec(batchByteOptions, []string{"store", "method"})
 	batchQueueDurationOptions := prometheus.HistogramOpts{
 		Namespace: namespace,
 		Subsystem: "batcher",
@@ -123,7 +131,7 @@ func New(version string) (*Metrics, error) {
 		Help:      "Oldest request queue duration before a synchronous batch starts.",
 		Buckets:   prometheus.ExponentialBuckets(0.00025, 2, 12),
 	}
-	batcherQueueDuration := prometheus.NewHistogramVec(batchQueueDurationOptions, []string{"method"})
+	batcherQueueDuration := prometheus.NewHistogramVec(batchQueueDurationOptions, []string{"store", "method"})
 	batchExecutionOptions := prometheus.HistogramOpts{
 		Namespace: namespace,
 		Subsystem: "batcher",
@@ -131,48 +139,48 @@ func New(version string) (*Metrics, error) {
 		Help:      "Execution duration of synchronous batches.",
 		Buckets:   prometheus.DefBuckets,
 	}
-	batcherExecution := prometheus.NewHistogramVec(batchExecutionOptions, []string{"method"})
+	batcherExecution := prometheus.NewHistogramVec(batchExecutionOptions, []string{"store", "method"})
 	queuedOperationOptions := prometheus.GaugeOpts{
 		Namespace: namespace,
 		Subsystem: "batcher",
 		Name:      "queued_operations",
 		Help:      "Current number of synchronous operations waiting for execution.",
 	}
-	batcherQueuedOps := prometheus.NewGaugeVec(queuedOperationOptions, []string{"method"})
+	batcherQueuedOps := prometheus.NewGaugeVec(queuedOperationOptions, []string{"store", "method"})
 	queuedByteOptions := prometheus.GaugeOpts{
 		Namespace: namespace,
 		Subsystem: "batcher",
 		Name:      "queued_bytes",
 		Help:      "Current encoded request bytes waiting for synchronous execution.",
 	}
-	batcherQueuedBytes := prometheus.NewGaugeVec(queuedByteOptions, []string{"method"})
+	batcherQueuedBytes := prometheus.NewGaugeVec(queuedByteOptions, []string{"store", "method"})
 	rejectedOptions := prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: "batcher",
 		Name:      "rejected_total",
 		Help:      "Total number of synchronous requests rejected before batching.",
 	}
-	batcherRejected := prometheus.NewCounterVec(rejectedOptions, []string{"method", "reason"})
-	// Seven finite latency buckets retain the 5s/10s thresholds without
-	// multiplying every store, completion mode, and exit outcome by every bucket.
+	batcherRejected := prometheus.NewCounterVec(rejectedOptions, []string{"store", "method", "reason"})
+	// Seven finite latency buckets retain the 5s/10s thresholds per store;
+	// completion modes and queue exit outcomes do not multiply histogram buckets.
 	latencyBuckets := []float64{0.001, 0.01, 0.1, 1, 5, 10, 30}
 	requestQueueOptions := prometheus.HistogramOpts{
 		Namespace: namespace, Subsystem: "batcher", Name: "request_queue_duration_seconds",
 		Help:    "Queue residence of each RPC leaving the synchronous queue, including cancellation and shutdown.",
 		Buckets: latencyBuckets,
 	}
-	requestQueueDuration := prometheus.NewHistogramVec(requestQueueOptions, []string{"method"})
+	requestQueueDuration := prometheus.NewHistogramVec(requestQueueOptions, []string{"store", "method"})
 	queueExitOptions := prometheus.CounterOpts{
 		Namespace: namespace, Subsystem: "batcher", Name: "request_queue_exits_total",
 		Help: "RPCs leaving the synchronous queue by exit outcome.",
 	}
-	requestQueueExits := prometheus.NewCounterVec(queueExitOptions, []string{"method", "outcome"})
+	requestQueueExits := prometheus.NewCounterVec(queueExitOptions, []string{"store", "method", "outcome"})
 	writePhaseOptions := prometheus.HistogramOpts{
 		Namespace: namespace, Subsystem: "write", Name: "phase_duration_seconds",
-		Help:    "Synchronous core write phase durations aggregated across stores; storage_write_visible includes visibility waiting.",
+		Help:    "Synchronous core write phase durations by configured store; storage_write_visible includes visibility waiting.",
 		Buckets: latencyBuckets,
 	}
-	writePhaseDuration := prometheus.NewHistogramVec(writePhaseOptions, []string{"phase"})
+	writePhaseDuration := prometheus.NewHistogramVec(writePhaseOptions, []string{"store", "phase"})
 	slowPhaseOptions := prometheus.CounterOpts{
 		Namespace: namespace, Subsystem: "write", Name: "slow_phases_total",
 		Help: "Synchronous write phase observations exceeding 5 seconds, by configured store and phase.",
@@ -180,35 +188,35 @@ func New(version string) (*Metrics, error) {
 	writeSlowPhases := prometheus.NewCounterVec(slowPhaseOptions, []string{"store", "phase"})
 	roundOptions := prometheus.HistogramOpts{
 		Namespace: namespace, Subsystem: "write", Name: "execution_rounds",
-		Help:    "Storage read/write calls per synchronous core write execution, including conflict retries, aggregated across stores.",
+		Help:    "Storage read/write calls per synchronous core write execution, including conflict retries, by configured store.",
 		Buckets: []float64{0, 1, 2, 4, 8, 16},
 	}
-	writeExecutionRounds := prometheus.NewHistogramVec(roundOptions, []string{"phase"})
+	writeExecutionRounds := prometheus.NewHistogramVec(roundOptions, []string{"store", "phase"})
 	mergeConflictOptions := prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: "merge",
 		Name:      "conflicts_total",
 		Help:      "Total number of revision conflicts retried by Lua merges.",
 	}
-	mergeConflicts := prometheus.NewCounter(mergeConflictOptions)
+	mergeConflicts := prometheus.NewCounterVec(mergeConflictOptions, []string{"store"})
 	mergeExhaustedOptions := prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: "merge",
 		Name:      "exhausted_total",
 		Help:      "Total number of Lua merges that exhausted the configured revision-conflict attempts.",
 	}
-	mergeExhausted := prometheus.NewCounter(mergeExhaustedOptions)
+	mergeExhausted := prometheus.NewCounterVec(mergeExhaustedOptions, []string{"store"})
 	foldedChainOptions := prometheus.CounterOpts{Namespace: namespace, Subsystem: "merge", Name: "folded_chains_total", Help: "Ordered merge runs with multiple operations planned for one conditional commit, excluding retries."}
-	mergeFoldedChains := prometheus.NewCounter(foldedChainOptions)
+	mergeFoldedChains := prometheus.NewCounterVec(foldedChainOptions, []string{"store"})
 	foldedOperationOptions := prometheus.CounterOpts{Namespace: namespace, Subsystem: "merge", Name: "folded_operations_total", Help: "Logical operations in folded merge runs, excluding retries; not a commit success count."}
-	mergeFoldedOperations := prometheus.NewCounter(foldedOperationOptions)
+	mergeFoldedOperations := prometheus.NewCounterVec(foldedOperationOptions, []string{"store"})
 	publishedOptions := prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: "kafka_publisher",
 		Name:      "records_total",
 		Help:      "Total number of Kafka mutation records by publish result.",
 	}
-	kafkaPublished := prometheus.NewCounterVec(publishedOptions, []string{"status"})
+	kafkaPublished := prometheus.NewCounterVec(publishedOptions, []string{"store", "status"})
 	publishDurationOptions := prometheus.HistogramOpts{
 		Namespace: namespace,
 		Subsystem: "kafka_publisher",
@@ -216,28 +224,28 @@ func New(version string) (*Metrics, error) {
 		Help:      "Duration of synchronous Kafka publish batches in seconds.",
 		Buckets:   prometheus.DefBuckets,
 	}
-	kafkaPublishDuration := prometheus.NewHistogram(publishDurationOptions)
+	kafkaPublishDuration := prometheus.NewHistogramVec(publishDurationOptions, []string{"store"})
 	workerOptions := prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: "kafka_worker",
 		Name:      "mutations_total",
 		Help:      "Total number of Kafka mutations by processing result.",
 	}
-	kafkaWorkerMutations := prometheus.NewCounterVec(workerOptions, []string{"status"})
+	kafkaWorkerMutations := prometheus.NewCounterVec(workerOptions, []string{"store", "status"})
 	retryOptions := prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: "kafka_worker",
 		Name:      "retries_total",
 		Help:      "Total number of Kafka mutation retry attempts.",
 	}
-	kafkaWorkerRetries := prometheus.NewCounter(retryOptions)
+	kafkaWorkerRetries := prometheus.NewCounterVec(retryOptions, []string{"store"})
 	deadLetterOptions := prometheus.CounterOpts{
 		Namespace: namespace,
 		Subsystem: "kafka_worker",
 		Name:      "dead_letters_total",
 		Help:      "Total number of Kafka mutations published to the dead-letter topic.",
 	}
-	kafkaWorkerDeadLetters := prometheus.NewCounter(deadLetterOptions)
+	kafkaWorkerDeadLetters := prometheus.NewCounterVec(deadLetterOptions, []string{"store"})
 	buildOptions := prometheus.GaugeOpts{
 		Namespace: namespace,
 		Name:      "build_info",
@@ -259,11 +267,11 @@ func New(version string) (*Metrics, error) {
 	admissionRejectedOptions := prometheus.CounterOpts{Namespace: namespace, Name: "admission_rejected_total", Help: "Requests rejected by global or configured-store execution limits."}
 	admissionRejected := prometheus.NewCounter(admissionRejectedOptions)
 	poolRequestsOptions := prometheus.GaugeOpts{Namespace: namespace, Name: "admission_pool_requests", Help: "Executing requests in each independently bounded admission pool."}
-	admissionPoolRequests := prometheus.NewGaugeVec(poolRequestsOptions, []string{"pool"})
+	admissionPoolRequests := prometheus.NewGaugeVec(poolRequestsOptions, []string{"store", "pool"})
 	poolBytesOptions := prometheus.GaugeOpts{Namespace: namespace, Name: "admission_pool_bytes", Help: "Bytes reserved in each independently bounded admission pool."}
-	admissionPoolBytes := prometheus.NewGaugeVec(poolBytesOptions, []string{"pool"})
+	admissionPoolBytes := prometheus.NewGaugeVec(poolBytesOptions, []string{"store", "pool"})
 	poolRejectedOptions := prometheus.CounterOpts{Namespace: namespace, Name: "admission_pool_rejected_total", Help: "Admission rejections by pool and capacity reason."}
-	admissionPoolRejected := prometheus.NewCounterVec(poolRejectedOptions, []string{"pool", "reason"})
+	admissionPoolRejected := prometheus.NewCounterVec(poolRejectedOptions, []string{"store", "pool", "reason"})
 	lastPollOptions := prometheus.GaugeOpts{Namespace: namespace, Name: "kafka_worker_last_poll_timestamp_seconds", Help: "Last completed Kafka poll by configured store."}
 	workerLastPoll := prometheus.NewGaugeVec(lastPollOptions, []string{"store"})
 	lastCommitOptions := prometheus.GaugeOpts{Namespace: namespace, Name: "kafka_worker_last_commit_timestamp_seconds", Help: "Last successful source offset commit by configured store."}
@@ -321,6 +329,7 @@ func New(version string) (*Metrics, error) {
 		admissionPoolRejected:  admissionPoolRejected,
 		workerOffsetGap:        workerOffsetGap,
 		workerQuarantined:      workerQuarantined,
+		stores:                 stores,
 		registry:               registry,
 		requests:               requests,
 		requestDuration:        requestDuration,
@@ -371,29 +380,29 @@ func (m *Metrics) ObserveAdmissionRejected() {
 	m.admissionRejected.Inc()
 }
 
-func (m *Metrics) AdjustAdmissionPool(pool string, requests int, bytes int) {
+func (m *Metrics) AdjustAdmissionPool(store string, pool string, requests int, bytes int) {
 	if m == nil {
 		return
 	}
 	m.AdjustAdmission(requests, bytes)
-	m.admissionPoolRequests.WithLabelValues(pool).Add(float64(requests))
-	m.admissionPoolBytes.WithLabelValues(pool).Add(float64(bytes))
+	m.admissionPoolRequests.WithLabelValues(m.storeLabel(store), pool).Add(float64(requests))
+	m.admissionPoolBytes.WithLabelValues(m.storeLabel(store), pool).Add(float64(bytes))
 }
 
-func (m *Metrics) ObserveAdmissionPoolRejected(pool string, reason string) {
+func (m *Metrics) ObserveAdmissionPoolRejected(store string, pool string, reason string) {
 	if m == nil {
 		return
 	}
 	m.ObserveAdmissionRejected()
-	m.admissionPoolRejected.WithLabelValues(pool, reason).Inc()
+	m.admissionPoolRejected.WithLabelValues(m.storeLabel(store), pool, reason).Inc()
 }
 
 func (m *Metrics) ObserveWorkerPoll(store string, errors int) {
 	if m == nil {
 		return
 	}
-	m.workerLastPoll.WithLabelValues(store).SetToCurrentTime()
-	m.workerFetchErrors.WithLabelValues(store).Add(float64(errors))
+	m.workerLastPoll.WithLabelValues(m.storeLabel(store)).SetToCurrentTime()
+	m.workerFetchErrors.WithLabelValues(m.storeLabel(store)).Add(float64(errors))
 }
 
 func (m *Metrics) SetWorkerPending(store string, oldest time.Time, count int) {
@@ -404,109 +413,109 @@ func (m *Metrics) SetWorkerPending(store string, oldest time.Time, count int) {
 	if !oldest.IsZero() {
 		timestamp = float64(oldest.UnixMilli()) / 1000
 	}
-	m.workerOldest.WithLabelValues(store).Set(timestamp)
-	m.workerPending.WithLabelValues(store).Set(float64(count))
+	m.workerOldest.WithLabelValues(m.storeLabel(store)).Set(timestamp)
+	m.workerPending.WithLabelValues(m.storeLabel(store)).Set(float64(count))
 }
 
 func (m *Metrics) ObserveWorkerRecovery(store string) {
 	if m == nil {
 		return
 	}
-	m.workerRecoveries.WithLabelValues(store).Inc()
+	m.workerRecoveries.WithLabelValues(m.storeLabel(store)).Inc()
 }
 
 func (m *Metrics) ObserveWorkerCommitted(store string, oldest time.Time) {
 	if m == nil {
 		return
 	}
-	m.workerLastCommit.WithLabelValues(store).SetToCurrentTime()
+	m.workerLastCommit.WithLabelValues(m.storeLabel(store)).SetToCurrentTime()
 	if !oldest.IsZero() {
-		m.workerDelivery.WithLabelValues(store).Observe(max(0, time.Since(oldest).Seconds()))
+		m.workerDelivery.WithLabelValues(m.storeLabel(store)).Observe(max(0, time.Since(oldest).Seconds()))
 	}
 	var cleared time.Time
 	m.SetWorkerPending(store, cleared, 0)
 }
 
-func (m *Metrics) ObserveMergeConflict(count int) {
+func (m *Metrics) ObserveMergeConflict(store string, count int) {
 	if m == nil || count <= 0 {
 		return
 	}
-	m.mergeConflicts.Add(float64(count))
+	m.mergeConflicts.WithLabelValues(m.storeLabel(store)).Add(float64(count))
 }
 
-func (m *Metrics) ObserveMergeFold(operations int) {
+func (m *Metrics) ObserveMergeFold(store string, operations int) {
 	if m == nil || operations < 2 {
 		return
 	}
-	m.mergeFoldedChains.Inc()
-	m.mergeFoldedOperations.Add(float64(operations))
+	m.mergeFoldedChains.WithLabelValues(m.storeLabel(store)).Inc()
+	m.mergeFoldedOperations.WithLabelValues(m.storeLabel(store)).Add(float64(operations))
 }
 
-func (m *Metrics) ObserveMergeExhausted(count int) {
+func (m *Metrics) ObserveMergeExhausted(store string, count int) {
 	if m == nil || count <= 0 {
 		return
 	}
-	m.mergeExhausted.Add(float64(count))
+	m.mergeExhausted.WithLabelValues(m.storeLabel(store)).Add(float64(count))
 }
 
-func (m *Metrics) AdjustBatchQueue(method string, operations int, bytes int) {
+func (m *Metrics) AdjustBatchQueue(store string, method string, operations int, bytes int) {
 	if m == nil {
 		return
 	}
-	m.batcherQueuedOps.WithLabelValues(method).Add(float64(operations))
-	m.batcherQueuedBytes.WithLabelValues(method).Add(float64(bytes))
+	m.batcherQueuedOps.WithLabelValues(m.storeLabel(store), method).Add(float64(operations))
+	m.batcherQueuedBytes.WithLabelValues(m.storeLabel(store), method).Add(float64(bytes))
 }
 
 func (m *Metrics) ObserveBatch(observation BatchObservation) {
 	if m == nil {
 		return
 	}
-	m.batcherBatches.WithLabelValues(observation.Method, observation.Reason).Inc()
-	m.batcherOperations.WithLabelValues(observation.Method).Observe(float64(observation.Operations))
-	m.batcherBytes.WithLabelValues(observation.Method).Observe(float64(observation.Bytes))
-	m.batcherQueueDuration.WithLabelValues(observation.Method).Observe(observation.QueueDuration.Seconds())
-	m.batcherExecution.WithLabelValues(observation.Method).Observe(observation.ExecutionDuration.Seconds())
+	m.batcherBatches.WithLabelValues(m.storeLabel(observation.Store), observation.Method, observation.Reason).Inc()
+	m.batcherOperations.WithLabelValues(m.storeLabel(observation.Store), observation.Method).Observe(float64(observation.Operations))
+	m.batcherBytes.WithLabelValues(m.storeLabel(observation.Store), observation.Method).Observe(float64(observation.Bytes))
+	m.batcherQueueDuration.WithLabelValues(m.storeLabel(observation.Store), observation.Method).Observe(observation.QueueDuration.Seconds())
+	m.batcherExecution.WithLabelValues(m.storeLabel(observation.Store), observation.Method).Observe(observation.ExecutionDuration.Seconds())
 }
 
-func (m *Metrics) ObserveBatchRejected(method string, reason string) {
+func (m *Metrics) ObserveBatchRejected(store string, method string, reason string) {
 	if m == nil {
 		return
 	}
-	m.batcherRejected.WithLabelValues(method, reason).Inc()
+	m.batcherRejected.WithLabelValues(m.storeLabel(store), method, reason).Inc()
 }
 
-func (m *Metrics) ObserveKafkaPublish(duration time.Duration, accepted int, failed int) {
+func (m *Metrics) ObserveKafkaPublish(store string, duration time.Duration, accepted int, failed int) {
 	if m == nil {
 		return
 	}
-	m.kafkaPublishDuration.Observe(duration.Seconds())
+	m.kafkaPublishDuration.WithLabelValues(m.storeLabel(store)).Observe(duration.Seconds())
 	if accepted > 0 {
-		m.kafkaPublished.WithLabelValues("accepted").Add(float64(accepted))
+		m.kafkaPublished.WithLabelValues(m.storeLabel(store), "accepted").Add(float64(accepted))
 	}
 	if failed > 0 {
-		m.kafkaPublished.WithLabelValues("failed").Add(float64(failed))
+		m.kafkaPublished.WithLabelValues(m.storeLabel(store), "failed").Add(float64(failed))
 	}
 }
 
-func (m *Metrics) ObserveKafkaWorker(status string, count int) {
+func (m *Metrics) ObserveKafkaWorker(store string, status string, count int) {
 	if m == nil || count <= 0 {
 		return
 	}
-	m.kafkaWorkerMutations.WithLabelValues(status).Add(float64(count))
+	m.kafkaWorkerMutations.WithLabelValues(m.storeLabel(store), status).Add(float64(count))
 }
 
-func (m *Metrics) ObserveKafkaRetry(count int) {
+func (m *Metrics) ObserveKafkaRetry(store string, count int) {
 	if m == nil || count <= 0 {
 		return
 	}
-	m.kafkaWorkerRetries.Add(float64(count))
+	m.kafkaWorkerRetries.WithLabelValues(m.storeLabel(store)).Add(float64(count))
 }
 
-func (m *Metrics) ObserveKafkaDeadLetter(count int) {
+func (m *Metrics) ObserveKafkaDeadLetter(store string, count int) {
 	if m == nil || count <= 0 {
 		return
 	}
-	m.kafkaWorkerDeadLetters.Add(float64(count))
+	m.kafkaWorkerDeadLetters.WithLabelValues(m.storeLabel(store)).Add(float64(count))
 }
 
 func (m *Metrics) Handler() http.Handler {
@@ -526,13 +535,14 @@ func (m *Metrics) UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 			return handler(ctx, req)
 		}
 
+		store := m.RequestStore(req)
 		started := time.Now()
 		response, err := handler(ctx, req)
 		code := status.Code(err).String()
-		m.requests.WithLabelValues(method, code).Inc()
-		m.requestDuration.WithLabelValues(method).Observe(time.Since(started).Seconds())
+		m.requests.WithLabelValues(store, method, code).Inc()
+		m.requestDuration.WithLabelValues(m.storeLabel(store), method).Observe(time.Since(started).Seconds())
 		if err == nil {
-			m.observeOperationResults(method, response)
+			m.observeOperationResults(method, req, response)
 		}
 		return response, err
 	}
@@ -566,35 +576,39 @@ func (m *Metrics) StreamServerInterceptor() grpc.StreamServerInterceptor {
 		if !observed {
 			return handler(server, stream)
 		}
+		store := unconfiguredStore
 		started := time.Now()
 		err := handler(server, stream)
-		m.requests.WithLabelValues(method, status.Code(err).String()).Inc()
-		m.requestDuration.WithLabelValues(method).Observe(time.Since(started).Seconds())
+		m.requests.WithLabelValues(store, method, status.Code(err).String()).Inc()
+		m.requestDuration.WithLabelValues(m.storeLabel(store), method).Observe(time.Since(started).Seconds())
 		return err
 	}
 	return interceptor
 }
 
-func (m *Metrics) observeOperationResults(method string, response any) {
+func (m *Metrics) observeOperationResults(method string, request any, response any) {
 	switch typed := response.(type) {
 	case *sink.ReadResponse:
-		for _, result := range typed.GetResults() {
-			m.operationResults.WithLabelValues(method, readStatus(result.GetStatus())).Inc()
+		req, _ := request.(*sink.ReadRequest)
+		for index, result := range typed.GetResults() {
+			m.operationResults.WithLabelValues(operationStore(m, req.GetOperations(), index), method, readStatus(result.GetStatus())).Inc()
 		}
 	case *sink.WriteResponse:
-		for _, result := range typed.GetResults() {
-			m.operationResults.WithLabelValues(method, writeStatus(result.GetStatus())).Inc()
+		req, _ := request.(*sink.WriteRequest)
+		for index, result := range typed.GetResults() {
+			m.operationResults.WithLabelValues(operationStore(m, req.GetOperations(), index), method, writeStatus(result.GetStatus())).Inc()
 		}
 	case *sink.DeleteResponse:
-		for _, result := range typed.GetResults() {
-			m.operationResults.WithLabelValues(method, deleteStatus(result.GetStatus())).Inc()
+		req, _ := request.(*sink.DeleteRequest)
+		for index, result := range typed.GetResults() {
+			m.operationResults.WithLabelValues(operationStore(m, req.GetOperations(), index), method, deleteStatus(result.GetStatus())).Inc()
 		}
 	case *sink.ExecuteResponse:
 		result := "failed"
 		if typed.GetSuccess() {
 			result = "succeeded"
 		}
-		m.operationResults.WithLabelValues(method, result).Inc()
+		m.operationResults.WithLabelValues(m.RequestStore(request), method, result).Inc()
 	}
 }
 
@@ -641,7 +655,7 @@ func deleteStatus(value sink.DeleteStatus) string {
 
 func (m *Metrics) ObserveQuarantined(store string) {
 	if m != nil {
-		m.workerQuarantined.WithLabelValues(store).Inc()
+		m.workerQuarantined.WithLabelValues(m.storeLabel(store)).Inc()
 	}
 }
 
@@ -653,5 +667,5 @@ func (m *Metrics) SetWorkerOffsetGap(store string, gap bool) {
 	if gap {
 		value = 1
 	}
-	m.workerOffsetGap.WithLabelValues(store).Set(value)
+	m.workerOffsetGap.WithLabelValues(m.storeLabel(store)).Set(value)
 }

@@ -16,27 +16,30 @@ func TestWriteDiagnosticsSeriesBudget(t *testing.T) {
 	// A label or bucket expansion must be reviewed against this fixed budget.
 	for _, stores := range []int{1, 3, 16} {
 		t.Run(fmt.Sprintf("stores_%d", stores), func(t *testing.T) {
-			observed, err := sinkmetrics.New("test")
+			names := make([]string, stores)
+			for index := range stores {
+				names[index] = fmt.Sprintf("configured-%d", index)
+			}
+			observed, err := sinkmetrics.New("test", names...)
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, method := range []string{"Read", "Write", "Delete"} {
-				for _, outcome := range []string{"execute", "canceled", "shutdown"} {
-					observation := sinkmetrics.RequestQueueObservation{Method: method, Outcome: outcome, Duration: 12 * time.Second}
-					observed.ObserveRequestQueue(observation)
+			for _, store := range names {
+				for _, method := range []string{"Read", "Write", "Delete"} {
+					for _, outcome := range []string{"execute", "canceled", "shutdown"} {
+						observation := sinkmetrics.RequestQueueObservation{Store: store, Method: method, Outcome: outcome, Duration: 12 * time.Second}
+						observed.ObserveRequestQueue(observation)
+					}
 				}
 			}
-			names := []string{"_multiple", "_unconfigured"}
-			for index := range stores {
-				names = append(names, fmt.Sprintf("configured-%d", index))
-			}
+			names = append(names, "_multiple", "_unconfigured")
 			for _, store := range names {
 				for _, mode := range []sink.CompletionMode{sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE} {
 					for _, phase := range []string{"admission", "parse", "storage_read", "lua", "storage_write"} {
 						observation := sinkmetrics.WritePhaseObservation{Store: store, Completion: mode, Phase: phase, Duration: 12 * time.Second}
 						observed.ObserveWritePhase(observation)
 					}
-					observed.ObserveWriteRounds(32, 32)
+					observed.ObserveWriteRounds(store, 32, 32)
 				}
 			}
 			// Invalid categories must not create new dimensions.
@@ -69,10 +72,10 @@ func TestWriteDiagnosticsSeriesBudget(t *testing.T) {
 					counts[name]++
 				}
 				wanted := map[string]int{
-					"sink_batcher_request_queue_duration_seconds": 30,
-					"sink_batcher_request_queue_exits_total":      9,
-					"sink_write_phase_duration_seconds":           60,
-					"sink_write_execution_rounds":                 18,
+					"sink_batcher_request_queue_duration_seconds": 30 * stores,
+					"sink_batcher_request_queue_exits_total":      9 * stores,
+					"sink_write_phase_duration_seconds":           60 * (stores + 2),
+					"sink_write_execution_rounds":                 18 * (stores + 2),
 					"sink_write_slow_phases_total":                6 * (stores + 2),
 				}
 				total := 0
@@ -82,7 +85,7 @@ func TestWriteDiagnosticsSeriesBudget(t *testing.T) {
 						t.Errorf("%s: %s has %d series, budget %d", accept, name, count, wanted[name])
 					}
 				}
-				if len(counts) != len(wanted) || total != 129+6*stores || strings.Contains(body, "unbounded-") {
+				if len(counts) != len(wanted) || total != 123*stores+168 || strings.Contains(body, "unbounded-") {
 					t.Fatalf("%s: unexpected series cardinality: %v, total %d", accept, counts, total)
 				}
 				t.Logf("%s: %d configured stores, %d added series per Pod", accept, stores, total)

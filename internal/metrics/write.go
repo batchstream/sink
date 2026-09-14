@@ -9,13 +9,14 @@ import (
 const slowWritePhaseThreshold = 5 * time.Second
 
 type RequestQueueObservation struct {
+	Store    string
 	Method   string
 	Outcome  string
 	Duration time.Duration
 }
 
 type WritePhaseObservation struct {
-	// Store must be a configured name or a fixed fallback from the service.
+	// Store identifies the configured store or a fixed request fallback.
 	Store      string
 	Completion sink.CompletionMode
 	Phase      string
@@ -36,8 +37,8 @@ func (m *Metrics) ObserveRequestQueue(observation RequestQueueObservation) {
 	default:
 		return
 	}
-	m.requestQueueDuration.WithLabelValues(observation.Method).Observe(observation.Duration.Seconds())
-	m.requestQueueExits.WithLabelValues(observation.Method, observation.Outcome).Inc()
+	m.requestQueueDuration.WithLabelValues(m.storeLabel(observation.Store), observation.Method).Observe(observation.Duration.Seconds())
+	m.requestQueueExits.WithLabelValues(m.storeLabel(observation.Store), observation.Method, observation.Outcome).Inc()
 }
 
 func (m *Metrics) ObserveWritePhase(observation WritePhaseObservation) {
@@ -59,17 +60,15 @@ func (m *Metrics) ObserveWritePhase(observation WritePhaseObservation) {
 	default:
 		return
 	}
-	m.writePhaseDuration.WithLabelValues(phase).Observe(observation.Duration.Seconds())
-	// Store attribution is needed for slow phases, without multiplying the
-	// entire histogram by the number of stores.
+	m.writePhaseDuration.WithLabelValues(m.storeLabel(observation.Store), phase).Observe(observation.Duration.Seconds())
 	if observation.Duration > slowWritePhaseThreshold {
-		m.writeSlowPhases.WithLabelValues(observation.Store, phase).Inc()
+		m.writeSlowPhases.WithLabelValues(m.storeLabel(observation.Store), phase).Inc()
 	}
 }
 
-func (m *Metrics) ObserveWriteRounds(reads, writes int) {
+func (m *Metrics) ObserveWriteRounds(store string, reads, writes int) {
 	if m != nil {
-		m.writeExecutionRounds.WithLabelValues("storage_read").Observe(float64(reads))
-		m.writeExecutionRounds.WithLabelValues("storage_write").Observe(float64(writes))
+		m.writeExecutionRounds.WithLabelValues(m.storeLabel(store), "storage_read").Observe(float64(reads))
+		m.writeExecutionRounds.WithLabelValues(m.storeLabel(store), "storage_write").Observe(float64(writes))
 	}
 }

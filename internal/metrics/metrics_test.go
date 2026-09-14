@@ -17,7 +17,7 @@ import (
 )
 
 func TestMetricsExposeBuildRequestAndOperationResults(t *testing.T) {
-	observed, err := sinkmetrics.New("test-version")
+	observed, err := sinkmetrics.New("test-version", "primary")
 	if err != nil {
 		t.Fatalf("metrics.New() error = %v", err)
 	}
@@ -72,14 +72,15 @@ func TestMetricsExposeBuildRequestAndOperationResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("interceptor(Delete) error = %v", err)
 	}
-	observed.ObserveKafkaPublish(time.Second, 2, 1)
-	observed.ObserveKafkaWorker("applied", 2)
-	observed.ObserveKafkaWorker("failed", 1)
-	observed.ObserveKafkaRetry(3)
-	observed.ObserveKafkaDeadLetter(1)
-	observed.AdjustBatchQueue("Read", 7, 4096)
-	observed.AdjustBatchQueue("Read", -7, -4096)
+	observed.ObserveKafkaPublish("primary", time.Second, 2, 1)
+	observed.ObserveKafkaWorker("primary", "applied", 2)
+	observed.ObserveKafkaWorker("primary", "failed", 1)
+	observed.ObserveKafkaRetry("primary", 3)
+	observed.ObserveKafkaDeadLetter("primary", 1)
+	observed.AdjustBatchQueue("primary", "Read", 7, 4096)
+	observed.AdjustBatchQueue("primary", "Read", -7, -4096)
 	batchObservation := sinkmetrics.BatchObservation{
+		Store:             "primary",
 		Method:            "Read",
 		Reason:            "max_wait",
 		Operations:        7,
@@ -88,60 +89,60 @@ func TestMetricsExposeBuildRequestAndOperationResults(t *testing.T) {
 		ExecutionDuration: 2 * time.Millisecond,
 	}
 	observed.ObserveBatch(batchObservation)
-	observed.ObserveBatchRejected("Read", "queue_full")
-	observed.ObserveMergeConflict(4)
-	observed.ObserveMergeExhausted(1)
-	observed.ObserveMergeFold(1)
-	observed.ObserveMergeFold(16)
-	observed.ObserveMergeFold(4)
-	observed.AdjustAdmissionPool("execution", 1, 100)
-	observed.AdjustAdmissionPool("publish", 1, 20)
-	observed.AdjustAdmissionPool("publish", -1, -20)
-	observed.ObserveAdmissionPoolRejected("execution", "fairness")
-	observed.ObserveAdmissionPoolRejected("publish", "bytes")
+	observed.ObserveBatchRejected("primary", "Read", "queue_full")
+	observed.ObserveMergeConflict("primary", 4)
+	observed.ObserveMergeExhausted("primary", 1)
+	observed.ObserveMergeFold("primary", 1)
+	observed.ObserveMergeFold("primary", 16)
+	observed.ObserveMergeFold("primary", 4)
+	observed.AdjustAdmissionPool("primary", "execution", 1, 100)
+	observed.AdjustAdmissionPool("primary", "publish", 1, 20)
+	observed.AdjustAdmissionPool("primary", "publish", -1, -20)
+	observed.ObserveAdmissionPoolRejected("primary", "execution", "fairness")
+	observed.ObserveAdmissionPoolRejected("primary", "publish", "bytes")
 
 	body := scrape(t, observed)
 	wanted := []string{
 		`sink_in_flight_requests 1`,
 		`sink_in_flight_bytes 100`,
 		`sink_admission_rejected_total 2`,
-		`sink_admission_pool_requests{pool="execution"} 1`,
-		`sink_admission_pool_bytes{pool="publish"} 0`,
-		`sink_admission_pool_rejected_total{pool="execution",reason="fairness"} 1`,
-		`sink_admission_pool_rejected_total{pool="publish",reason="bytes"} 1`,
+		`sink_admission_pool_requests{pool="execution",store="primary"} 1`,
+		`sink_admission_pool_bytes{pool="publish",store="primary"} 0`,
+		`sink_admission_pool_rejected_total{pool="execution",reason="fairness",store="primary"} 1`,
+		`sink_admission_pool_rejected_total{pool="publish",reason="bytes",store="primary"} 1`,
 		`sink_build_info{version="test-version"} 1`,
-		`sink_grpc_server_requests_total{code="OK",method="Read"} 1`,
-		`sink_grpc_server_operation_results_total{method="Read",status="found"} 1`,
-		`sink_grpc_server_operation_results_total{method="Read",status="not_found"} 1`,
-		`sink_grpc_server_request_duration_seconds_count{method="Read"} 1`,
-		`sink_grpc_server_requests_total{code="OK",method="Write"} 1`,
-		`sink_grpc_server_operation_results_total{method="Write",status="applied"} 1`,
-		`sink_grpc_server_operation_results_total{method="Write",status="accepted"} 1`,
-		`sink_grpc_server_operation_results_total{method="Write",status="precondition_failed"} 1`,
-		`sink_grpc_server_operation_results_total{method="Write",status="failed"} 1`,
-		`sink_grpc_server_requests_total{code="OK",method="Delete"} 1`,
-		`sink_grpc_server_operation_results_total{method="Delete",status="applied"} 1`,
-		`sink_grpc_server_operation_results_total{method="Delete",status="accepted"} 1`,
-		`sink_grpc_server_operation_results_total{method="Delete",status="failed"} 1`,
-		`sink_kafka_publisher_records_total{status="accepted"} 2`,
-		`sink_kafka_publisher_records_total{status="failed"} 1`,
-		`sink_kafka_publisher_duration_seconds_count 1`,
-		`sink_kafka_worker_mutations_total{status="applied"} 2`,
-		`sink_kafka_worker_mutations_total{status="failed"} 1`,
-		`sink_kafka_worker_retries_total 3`,
-		`sink_kafka_worker_dead_letters_total 1`,
-		`sink_batcher_batches_total{method="Read",reason="max_wait"} 1`,
-		`sink_batcher_operations_count{method="Read"} 1`,
-		`sink_batcher_bytes_count{method="Read"} 1`,
-		`sink_batcher_queue_duration_seconds_count{method="Read"} 1`,
-		`sink_batcher_execution_duration_seconds_count{method="Read"} 1`,
-		`sink_batcher_queued_operations{method="Read"} 0`,
-		`sink_batcher_queued_bytes{method="Read"} 0`,
-		`sink_batcher_rejected_total{method="Read",reason="queue_full"} 1`,
-		`sink_merge_conflicts_total 4`,
-		`sink_merge_exhausted_total 1`,
-		`sink_merge_folded_chains_total 2`,
-		`sink_merge_folded_operations_total 20`,
+		`sink_grpc_server_requests_total{code="OK",method="Read",store="_unconfigured"} 1`,
+		`sink_grpc_server_operation_results_total{method="Read",status="found",store="_unconfigured"} 1`,
+		`sink_grpc_server_operation_results_total{method="Read",status="not_found",store="_unconfigured"} 1`,
+		`sink_grpc_server_request_duration_seconds_count{method="Read",store="_unconfigured"} 1`,
+		`sink_grpc_server_requests_total{code="OK",method="Write",store="_unconfigured"} 1`,
+		`sink_grpc_server_operation_results_total{method="Write",status="applied",store="_unconfigured"} 1`,
+		`sink_grpc_server_operation_results_total{method="Write",status="accepted",store="_unconfigured"} 1`,
+		`sink_grpc_server_operation_results_total{method="Write",status="precondition_failed",store="_unconfigured"} 1`,
+		`sink_grpc_server_operation_results_total{method="Write",status="failed",store="_unconfigured"} 1`,
+		`sink_grpc_server_requests_total{code="OK",method="Delete",store="_unconfigured"} 1`,
+		`sink_grpc_server_operation_results_total{method="Delete",status="applied",store="_unconfigured"} 1`,
+		`sink_grpc_server_operation_results_total{method="Delete",status="accepted",store="_unconfigured"} 1`,
+		`sink_grpc_server_operation_results_total{method="Delete",status="failed",store="_unconfigured"} 1`,
+		`sink_kafka_publisher_records_total{status="accepted",store="primary"} 2`,
+		`sink_kafka_publisher_records_total{status="failed",store="primary"} 1`,
+		`sink_kafka_publisher_duration_seconds_count{store="primary"} 1`,
+		`sink_kafka_worker_mutations_total{status="applied",store="primary"} 2`,
+		`sink_kafka_worker_mutations_total{status="failed",store="primary"} 1`,
+		`sink_kafka_worker_retries_total{store="primary"} 3`,
+		`sink_kafka_worker_dead_letters_total{store="primary"} 1`,
+		`sink_batcher_batches_total{method="Read",reason="max_wait",store="primary"} 1`,
+		`sink_batcher_operations_count{method="Read",store="primary"} 1`,
+		`sink_batcher_bytes_count{method="Read",store="primary"} 1`,
+		`sink_batcher_queue_duration_seconds_count{method="Read",store="primary"} 1`,
+		`sink_batcher_execution_duration_seconds_count{method="Read",store="primary"} 1`,
+		`sink_batcher_queued_operations{method="Read",store="primary"} 0`,
+		`sink_batcher_queued_bytes{method="Read",store="primary"} 0`,
+		`sink_batcher_rejected_total{method="Read",reason="queue_full",store="primary"} 1`,
+		`sink_merge_conflicts_total{store="primary"} 4`,
+		`sink_merge_exhausted_total{store="primary"} 1`,
+		`sink_merge_folded_chains_total{store="primary"} 2`,
+		`sink_merge_folded_operations_total{store="primary"} 20`,
 	}
 	for _, value := range wanted {
 		if !strings.Contains(body, value) {
@@ -174,10 +175,10 @@ func TestMetricsObserveNativeFailureAndScanTermination(t *testing.T) {
 	}
 	body := scrape(t, observed)
 	for _, want := range []string{
-		`sink_grpc_server_requests_total{code="OK",method="Execute"} 1`,
-		`sink_grpc_server_operation_results_total{method="Execute",status="failed"} 1`,
-		`sink_grpc_server_requests_total{code="DeadlineExceeded",method="Scan"} 1`,
-		`sink_grpc_server_request_duration_seconds_count{method="Scan"} 1`,
+		`sink_grpc_server_requests_total{code="OK",method="Execute",store="_unconfigured"} 1`,
+		`sink_grpc_server_operation_results_total{method="Execute",status="failed",store="_unconfigured"} 1`,
+		`sink_grpc_server_requests_total{code="DeadlineExceeded",method="Scan",store="_unconfigured"} 1`,
+		`sink_grpc_server_request_duration_seconds_count{method="Scan",store="_unconfigured"} 1`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing metric %s", want)
@@ -186,7 +187,7 @@ func TestMetricsObserveNativeFailureAndScanTermination(t *testing.T) {
 }
 
 func TestMetricsRecordGRPCFailuresAndIgnoreOtherServices(t *testing.T) {
-	observed, err := sinkmetrics.New("test-version")
+	observed, err := sinkmetrics.New("test-version", "primary")
 	if err != nil {
 		t.Fatalf("metrics.New() error = %v", err)
 	}
@@ -208,7 +209,7 @@ func TestMetricsRecordGRPCFailuresAndIgnoreOtherServices(t *testing.T) {
 	_, _ = interceptor(t.Context(), nil, healthInfo, healthHandler)
 
 	body := scrape(t, observed)
-	if !strings.Contains(body, `sink_grpc_server_requests_total{code="InvalidArgument",method="Write"} 1`) {
+	if !strings.Contains(body, `sink_grpc_server_requests_total{code="InvalidArgument",method="Write",store="_unconfigured"} 1`) {
 		t.Fatal("metrics body does not contain the failed Write request")
 	}
 	if strings.Contains(body, "Health") {

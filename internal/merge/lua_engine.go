@@ -180,9 +180,19 @@ func (m *luaMerger) Merge(ctx context.Context, req Request) (Result, error) {
 	if len(req.Incoming.Payload) > m.engine.options.MaxResultBytes || (req.Current != nil && len(req.Current.Payload) > m.engine.options.MaxResultBytes) {
 		return empty, fmt.Errorf("%w: merge input exceeds the document byte limit", ErrExecutionExhausted)
 	}
+	// Document conversion is part of the execution budget, even when the
+	// script itself returns immediately.
+	executionContext, cancel := context.WithTimeout(ctx, m.engine.options.Timeout)
+	defer cancel()
+	if err := executionContext.Err(); err != nil {
+		return empty, classifyExecutionError(executionContext, err)
+	}
 	incoming, err := decodeJSONObject(req.Incoming)
 	if err != nil {
 		return empty, fmt.Errorf("%w: %v", ErrInvalidIncoming, err)
+	}
+	if err := executionContext.Err(); err != nil {
+		return empty, classifyExecutionError(executionContext, err)
 	}
 
 	var current decodedJSONObject
@@ -196,8 +206,9 @@ func (m *luaMerger) Merge(ctx context.Context, req Request) (Result, error) {
 		}
 	}
 
-	executionContext, cancel := context.WithTimeout(ctx, m.engine.options.Timeout)
-	defer cancel()
+	if err := executionContext.Err(); err != nil {
+		return empty, classifyExecutionError(executionContext, err)
+	}
 	luaVM, bridge := m.engine.newVM(executionContext, req.ObservedAt)
 	defer luaVM.Close(context.Background())
 
@@ -232,6 +243,11 @@ func (m *luaMerger) Merge(ctx context.Context, req Request) (Result, error) {
 		return empty, err
 	}
 	document, err := bridge.encodeJSONObject(merged[0], incoming.encoding)
+	// Go's encoders do not observe the context. Never return a document that
+	// finished encoding after the deadline to the write commit path.
+	if deadlineErr := executionContext.Err(); deadlineErr != nil {
+		return empty, classifyExecutionError(executionContext, deadlineErr)
+	}
 	if err != nil {
 		return empty, fmt.Errorf("%w: %v", ErrInvalidResult, err)
 	}

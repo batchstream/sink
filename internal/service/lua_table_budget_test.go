@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
@@ -57,6 +58,56 @@ func TestLuaNativeBudgetFailureDoesNotCommitPartialMutation(t *testing.T) {
 			stored, err := backend.Read(t.Context(), readRequest)
 			if err != nil || !bytes.Equal(stored.Results[0].Document.Payload, document.Payload) {
 				t.Fatalf("failed merge persisted its partial mutation: response=%v error=%v", stored, err)
+			}
+		})
+	}
+}
+
+func TestLuaConversionDeadlineDoesNotCommitMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		body     string
+		incoming string
+	}{
+		{name: "decode input", incoming: `{}` + strings.Repeat(" ", 8<<20)},
+		{name: "encode result", body: `current.padding=string.pack("c2097152", "");`, incoming: `{}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := memory.New()
+			document := storageJSONDocument(`{"value":0}`)
+			seed := memory.SeedRequest{Address: storageAddress("limited"), Document: document}
+			backend.Seed(seed)
+			luaOptions := merge.LuaOptions{Timeout: 5 * time.Millisecond}
+			engine, err := merge.NewLuaEngine(luaOptions)
+			if err != nil {
+				t.Fatal(err)
+			}
+			options := service.Options{Storage: backend, Lua: engine}
+			server, err := service.New(options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			source := "return function(current, incoming) current.value=1; " + tc.body + "return current end"
+			limited := foldingMerge("limited", source, tc.incoming)
+			healthy := foldingPut("healthy", sink.WriteMode_WRITE_MODE_UPSERT, 2)
+			request := foldingRequest(limited, healthy)
+			response, err := server.Write(t.Context(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := response.Results[0]
+			if result.Status != sink.WriteStatus_WRITE_STATUS_FAILED || result.GetFailure().GetCode() != sink.FailureCode_FAILURE_CODE_DEADLINE_EXCEEDED {
+				t.Fatalf("conversion escaped deadline: status=%v failure=%v", result.Status, result.Failure)
+			}
+			if response.Results[1].Status != sink.WriteStatus_WRITE_STATUS_APPLIED {
+				t.Fatalf("deadline failure affected a sibling record: %v", response.Results[1])
+			}
+			read := storage.ReadOperation{Address: seed.Address}
+			readRequest := storage.ReadRequest{Operations: []storage.ReadOperation{read}}
+			stored, err := backend.Read(t.Context(), readRequest)
+			if err != nil || !bytes.Equal(stored.Results[0].Document.Payload, document.Payload) {
+				t.Fatalf("timed-out merge persisted its mutation: error=%v", err)
 			}
 		})
 	}

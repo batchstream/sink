@@ -249,8 +249,11 @@ repeat effects are unsafe. CAS alone does not provide this guarantee.
 ## Resource limits and errors
 
 Each execution has limits for wall-clock time, instructions, call depth, VM
-stack size, source size, and result size. Native `sink.v1` array loops also
-enforce the execution deadline and work limit. Script syntax, arguments, types,
+stack size, source size, and result size. The time budget includes input
+decoding and result encoding. Go document converters cannot be interrupted
+mid-call, but a result completed after the deadline is rejected before storage
+commit. Native `sink.v1` array loops also enforce the execution deadline and
+work limit. Script syntax, arguments, types,
 callbacks, resources, and result errors fail only the corresponding Write
 operation and return a structured failure.
 

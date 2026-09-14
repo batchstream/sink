@@ -104,7 +104,9 @@ func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.Qu
 	if req.Request.Store != s.store {
 		return empty, storage.InvalidArgumentError(errors.New("MongoDB store does not match request"))
 	}
-	command = scanCommand(command, req.PageSize)
+	// Include the lookahead in the first batch to avoid a separate getMore
+	// for every full page. Byte-limited batches still use the cursor normally.
+	command = scanCommand(command, req.PageSize+1)
 	cursor, err := s.client.Database(req.Request.Namespace).RunCommandCursor(ctx, command)
 	if err != nil {
 		return empty, storage.BackendError(err)

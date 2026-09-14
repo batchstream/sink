@@ -66,8 +66,10 @@ func TestMongoQueryClosesCursorAfterCancellationOrBudgetFailure(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			fixture := newIntegrationFixture(t)
 			var documents []any
-			for i := range 4 {
-				document := bson.D{{Key: "_id", Value: i}, {Key: "value", Value: strings.Repeat("x", 1024)}}
+			// Exceed MongoDB's first-batch byte limit so there is still an
+			// open cursor even when the requested batch includes the lookahead.
+			for i := range 3 {
+				document := bson.D{{Key: "_id", Value: i}, {Key: "value", Value: strings.Repeat("x", 6<<20)}}
 				documents = append(documents, document)
 			}
 			if _, err := fixture.collection.InsertMany(t.Context(), documents); err != nil {
@@ -101,6 +103,7 @@ func TestMongoQueryClosesCursorAfterCancellationOrBudgetFailure(t *testing.T) {
 			}
 			command := bson.D{{Key: "find", Value: "documents"}}
 			request := storage.QueryRequest{Request: mongoNativeRequest(t, fixture.database, command), PageSize: 2}
+			request.Request.MaxBytes = 16 << 20
 			if !cancelRequest {
 				request.Request.MaxBytes = 512
 			}

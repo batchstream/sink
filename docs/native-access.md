@@ -196,6 +196,8 @@ literal values. The same validation applies to Count and Scan.
 `allowPartialResults: true` is rejected: a page must not silently omit unavailable
 shards. The lookahead document used only for `has_more` does not consume MongoDB's
 returned-document byte budget; the driver wire limit still applies.
+MongoDB requests the page and lookahead in the same initial batch. It fetches
+additional batches only when the backend's byte limit splits that result.
 For aggregate, explicit sort and projection follow the supplied pipeline, then
 skip/limit apply to its output. HTTP Query requires `_search`, replaces from/size,
 and maps explicit sort/projection to sort and `_source` selection.

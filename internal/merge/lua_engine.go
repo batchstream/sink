@@ -89,7 +89,10 @@ func NewLuaEngine(options LuaOptions) (*LuaEngine, error) {
 	return engine, nil
 }
 
-func (e *LuaEngine) Compile(program Program) (Merger, error) {
+func (e *LuaEngine) Compile(ctx context.Context, program Program) (Merger, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(program.Source) == 0 {
 		return nil, fmt.Errorf("%w: source is required", ErrInvalidProgram)
 	}
@@ -112,14 +115,20 @@ func (e *LuaEngine) Compile(program Program) (Merger, error) {
 		return merger, nil
 	}
 	block, err := parser.Parse(luaProgramFilename, string(program.Source))
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: parse source: %v", ErrInvalidProgram, err)
 	}
 	compiled, err := compiler.Compile(luaProgramFilename, block)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: compile source: %v", ErrInvalidProgram, err)
 	}
-	if err := e.validate(compiled); err != nil {
+	if err := e.validate(ctx, compiled); err != nil {
 		return nil, err
 	}
 	compiled = e.store(digest, compiled)
@@ -127,13 +136,16 @@ func (e *LuaEngine) Compile(program Program) (Merger, error) {
 	return merger, nil
 }
 
-func (e *LuaEngine) validate(compiled *compiler.Proto) error {
-	ctx, cancel := context.WithTimeout(context.Background(), e.options.Timeout)
+func (e *LuaEngine) validate(parent context.Context, compiled *compiler.Proto) error {
+	ctx, cancel := context.WithTimeout(parent, e.options.Timeout)
 	defer cancel()
 	validationTime := time.Unix(0, 0).UTC()
 	luaVM, _ := e.newVM(ctx, validationTime)
 	defer luaVM.Close(context.Background())
 	results, err := luaVM.Run(compiled)
+	if err := parent.Err(); err != nil {
+		return err
+	}
 	if err != nil {
 		return fmt.Errorf("%w: initialize chunk: %v", ErrInvalidProgram, classifyExecutionError(ctx, err))
 	}

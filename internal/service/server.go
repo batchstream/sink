@@ -216,7 +216,11 @@ func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *req
 			observation.phase("parse", started)
 			return nil, err
 		}
-		parsed, err := s.parseWrite(index, operation, luaPrograms)
+		parsed, err := s.parseWrite(ctx, index, operation, luaPrograms)
+		if err := contextError(ctx); err != nil {
+			observation.phase("parse", started)
+			return nil, err
+		}
 		if err != nil {
 			setWriteFailure(result, sink.FailureCode_FAILURE_CODE_INVALID_ARGUMENT, err, false)
 			completion.operation(index, result)

@@ -258,6 +258,11 @@ across all `sink.v1` calls, including discarded intermediate results. Script
 syntax, arguments, types, callbacks, resources, and result errors fail only the
 corresponding Write operation and return a structured failure.
 
+Chunk initialization during compilation also observes the enclosing request's
+deadline and cancellation. A canceled request stops validation before publishing
+or committing writes; it is not reported as an invalid script. Parsing and
+bytecode compilation check cancellation between their synchronous phases.
+
 Before rollout, business tests should cover at least:
 
 1. Existing and missing records.

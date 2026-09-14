@@ -61,7 +61,7 @@ func (o writeExecutionOptions) complete(group writeGroup, results []*sink.WriteR
 	o.completion.group(group, results)
 }
 
-func (s *Server) parseWrite(index int, operation *sink.WriteOperation, programs luaPrograms) (parsedWrite, error) {
+func (s *Server) parseWrite(ctx context.Context, index int, operation *sink.WriteOperation, programs luaPrograms) (parsedWrite, error) {
 	parsed := parsedWrite{}
 	if operation == nil {
 		return parsed, errors.New("write operation is required")
@@ -83,7 +83,7 @@ func (s *Server) parseWrite(index int, operation *sink.WriteOperation, programs 
 		}
 		parsed.put = &put
 	case *sink.WriteOperation_Merge:
-		mergeOperation, parseErr := s.parseMerge(action.Merge, programs)
+		mergeOperation, parseErr := s.parseMerge(ctx, action.Merge, programs)
 		if parseErr != nil {
 			return parsed, parseErr
 		}
@@ -118,7 +118,7 @@ func parsePut(operation *sink.PutOperation) (parsedPut, error) {
 	return parsed, nil
 }
 
-func (s *Server) parseMerge(operation *sink.MergeOperation, programs luaPrograms) (parsedMerge, error) {
+func (s *Server) parseMerge(ctx context.Context, operation *sink.MergeOperation, programs luaPrograms) (parsedMerge, error) {
 	parsed := parsedMerge{}
 	if operation == nil {
 		return parsed, errors.New("merge operation is required")
@@ -135,7 +135,7 @@ func (s *Server) parseMerge(operation *sink.MergeOperation, programs luaPrograms
 	if err != nil {
 		return parsed, err
 	}
-	merger, err := s.lua.Compile(mergeProgram)
+	merger, err := s.lua.Compile(ctx, mergeProgram)
 	if err != nil {
 		return parsed, err
 	}

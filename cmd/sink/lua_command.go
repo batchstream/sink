@@ -94,7 +94,7 @@ func runLuaTestCommand(args []string, stdout io.Writer, stderr io.Writer) error 
 		return fmt.Errorf("create Lua test engine: %w", err)
 	}
 	program := merge.Program{Source: source}
-	merger, err := engine.Compile(program)
+	merger, err := engine.Compile(context.Background(), program)
 	if err != nil {
 		return fmt.Errorf("compile Lua script %q: %w", parsed.script, err)
 	}

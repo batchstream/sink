@@ -1,6 +1,7 @@
 package merge_test
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -8,6 +9,28 @@ import (
 
 	"github.com/liran/sink/internal/merge"
 )
+
+func TestLuaCompileHonorsCancellationBeforeCacheLookup(t *testing.T) {
+	opts := merge.LuaOptions{}
+	engine, err := merge.NewLuaEngine(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program := merge.Program{Source: []byte(`return function(current, incoming) return incoming end`)}
+	for _, cached := range []bool{false, true} {
+		if cached {
+			if _, err := engine.Compile(t.Context(), program); err != nil {
+				t.Fatal(err)
+			}
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		merger, err := engine.Compile(ctx, program)
+		if !errors.Is(err, context.Canceled) || merger != nil {
+			t.Fatalf("canceled compile returned a program: cached=%t merger=%v error=%v", cached, merger, err)
+		}
+	}
+}
 
 func TestLuaMergeDeadlineIncludesDocumentConversion(t *testing.T) {
 	cases := []struct {

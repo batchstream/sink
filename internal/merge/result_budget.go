@@ -51,21 +51,14 @@ func (b *resultBudget) visit(value vm.Value, depth int) error {
 	}
 	b.active[table] = true
 	defer delete(b.active, table)
-	key := vm.Nil
-	for {
-		next, item, err := table.Next(key)
-		if err != nil {
-			return err
+	var visitErr error
+	table.ForEach(func(key, item vm.Value) bool {
+		visitErr = b.visit(key, depth+1)
+		if visitErr != nil {
+			return false
 		}
-		if next.IsNil() {
-			return nil
-		}
-		if err := b.visit(next, depth+1); err != nil {
-			return err
-		}
-		if err := b.visit(item, depth+1); err != nil {
-			return err
-		}
-		key = next
-	}
+		visitErr = b.visit(item, depth+1)
+		return visitErr == nil
+	})
+	return visitErr
 }

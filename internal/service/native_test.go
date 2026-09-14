@@ -22,11 +22,13 @@ import (
 
 type nativeFixtureStorage struct {
 	*memory.Store
-	stopped chan struct{}
-	silent  bool
-	started chan struct{}
-	queries chan storage.QueryRequest
-	counts  chan storage.CountRequest
+	stopped         chan struct{}
+	silent          bool
+	started         chan struct{}
+	queries         chan storage.QueryRequest
+	counts          chan storage.CountRequest
+	executeErr      error
+	executeResponse *storage.NativeResponse
 }
 
 func (s *nativeFixtureStorage) Query(_ context.Context, req storage.QueryRequest) (storage.QueryResponse, error) {
@@ -46,9 +48,12 @@ func (s *nativeFixtureStorage) Count(_ context.Context, req storage.CountRequest
 }
 
 func (s *nativeFixtureStorage) Execute(_ context.Context, _ storage.NativeRequest) (storage.NativeResponse, error) {
+	if s.executeResponse != nil {
+		return *s.executeResponse, s.executeErr
+	}
 	response := storage.NativeResponse{ContentType: "application/json", Payload: []byte("{\"error\":\"native\"}\n"), StatusCode: 400,
 		Headers: http.Header{"Warning": {"first", "second"}}}
-	return response, nil
+	return response, s.executeErr
 }
 
 func (s *nativeFixtureStorage) Scan(ctx context.Context, _ storage.ScanRequest) (storage.ScanResponse, error) {

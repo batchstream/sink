@@ -6,11 +6,84 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/liran/sink/internal/storage"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 type luaCommandFixture struct {
 	directory string
 	script    string
+}
+
+func TestLuaTestCommandAcceptsEquivalentJSONNumberNotation(t *testing.T) {
+	fixture := newLuaCommandFixture(t, `return function(current, incoming) return incoming end`)
+	document := fixture.write(t, "numbers.json", `{"values":[1.0,1.5e1,9007199254740993.0,-0.0]}`)
+	args := []string{
+		"--script", fixture.script,
+		"--encoding", "json",
+		"--incoming", document,
+		"--expected", document,
+		"--observed-at", "2026-08-31T10:20:30Z",
+	}
+	var stdout, stderr bytes.Buffer
+	if err := runLuaTestCommand(args, &stdout, &stderr); err != nil {
+		t.Fatalf("unchanged JSON values failed their own fixture: %v", err)
+	}
+	if stdout.String() != "PASS single\n" {
+		t.Fatalf("unexpected test output: %q", stdout.String())
+	}
+}
+
+func TestLuaTestNumberComparisonIsExact(t *testing.T) {
+	cases := []struct {
+		name     string
+		expected string
+		actual   string
+		equal    bool
+	}{
+		{name: "decimal", expected: `1.25`, actual: `125e-2`, equal: true},
+		{name: "nested", expected: `[{"n":1e+2}]`, actual: `[{"n":100.0}]`, equal: true},
+		{name: "negative", expected: `-1200.00`, actual: `-12e2`, equal: true},
+		{name: "zero", expected: `-0.0e999999999999999999999`, actual: `0`, equal: true},
+		{name: "huge exponent", expected: `1e9223372036854775808`, actual: `10e9223372036854775807`, equal: true},
+		{name: "adjacent large integers", expected: `9007199254740992`, actual: `9007199254740993`},
+		{name: "precise fraction", expected: `1.0000000000000001`, actual: `1`},
+		{name: "tiny nonzero", expected: `1e-9223372036854775808`, actual: `0`},
+		{name: "different type", expected: `"1"`, actual: `1`},
+		{name: "missing field", expected: `{"n":null}`, actual: `{}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			expected := storage.Document{Encoding: storage.DocumentEncodingJSON, Payload: []byte(`{"value":` + tc.expected + `}`)}
+			actual := storage.Document{Encoding: storage.DocumentEncodingJSON, Payload: []byte(`{"value":` + tc.actual + `}`)}
+			err := compareLuaTestDocuments(expected, actual)
+			if (err == nil) != tc.equal {
+				t.Fatalf("numeric comparison: equal=%t error=%v", tc.equal, err)
+			}
+		})
+	}
+}
+
+func TestLuaTestNumberComparisonPreservesBSONTypes(t *testing.T) {
+	documents := make([]storage.Document, 0, 4)
+	for _, value := range []any{int32(1), int64(1), float64(1), "1"} {
+		fields := bson.D{{Key: "value", Value: value}}
+		payload, err := bson.Marshal(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+		document := storage.Document{Encoding: storage.DocumentEncodingBSON, Payload: payload}
+		documents = append(documents, document)
+	}
+	for expected, left := range documents {
+		for actual, right := range documents {
+			err := compareLuaTestDocuments(left, right)
+			if (err == nil) != (expected == actual) {
+				t.Fatalf("BSON types were lost: expected=%d actual=%d error=%v", expected, actual, err)
+			}
+		}
+	}
 }
 
 func TestLuaTestCommandRunsSingleJSONCase(t *testing.T) {

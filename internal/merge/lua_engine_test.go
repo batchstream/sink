@@ -507,7 +507,7 @@ func TestLuaEngineValidatesProgram(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := engine.Compile(test.program)
+			_, err := engine.Compile(t.Context(), test.program)
 			if !errors.Is(err, merge.ErrInvalidProgram) {
 				t.Fatalf("Compile() error = %v", err)
 			}
@@ -613,7 +613,7 @@ func compileTestProgram(t testing.TB, source []byte, options merge.LuaOptions) m
 	}
 	digest := sha256.Sum256(source)
 	program := merge.Program{Source: source, SHA256: digest[:]}
-	merger, err := engine.Compile(program)
+	merger, err := engine.Compile(t.Context(), program)
 	if err != nil {
 		t.Fatalf("Compile() error = %v", err)
 	}

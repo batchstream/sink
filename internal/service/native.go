@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/storage"
@@ -18,6 +19,11 @@ func nativeRequest(req *sink.Command, maximum int) (storage.NativeRequest, error
 	request := storage.NativeRequest{MaxBytes: maximum}
 	if req == nil || strings.TrimSpace(req.GetStore()) == "" {
 		return request, status.Error(codes.InvalidArgument, "native request requires a store")
+	}
+	for _, value := range []string{req.GetStore(), req.GetNamespace(), req.GetMethod(), req.GetPath(), req.GetQuery(), req.GetContentType()} {
+		if !utf8.ValidString(value) {
+			return request, status.Error(codes.InvalidArgument, "native command fields must contain valid UTF-8")
+		}
 	}
 	if len(req.GetPayload()) > 0 && req.GetContentType() == "" {
 		return request, status.Error(codes.InvalidArgument, "native payload requires content_type")
@@ -32,6 +38,14 @@ func nativeRequest(req *sink.Command, maximum int) (storage.NativeRequest, error
 		if header == nil || header.GetName() == "" || len(header.GetValues()) == 0 {
 			return request, status.Error(codes.InvalidArgument, "native header requires a name and values")
 		}
+		if !utf8.ValidString(header.GetName()) {
+			return request, status.Error(codes.InvalidArgument, "native header name must contain valid UTF-8")
+		}
+		for _, value := range header.GetValues() {
+			if !utf8.ValidString(value) {
+				return request, status.Error(codes.InvalidArgument, "native header values must contain valid UTF-8")
+			}
+		}
 		headers[header.GetName()] = append(headers[header.GetName()], header.GetValues()...)
 	}
 	request = storage.NativeRequest{Store: req.GetStore(), Namespace: req.GetNamespace(),
@@ -44,28 +58,34 @@ func nativeStatus(err error) error {
 	if err == nil {
 		return nil
 	}
-	if _, ok := status.FromError(err); ok {
-		return err
+	grpcStatus, ok := status.FromError(err)
+	if !ok {
+		code := codes.Internal
+		switch {
+		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+			code = status.FromContextError(err).Code()
+		case errors.Is(err, storage.ErrNativeUnsupported):
+			code = codes.Unimplemented
+		default:
+			storageCode, _ := storage.ErrorDetails(err)
+			switch storageCode {
+			case storage.ErrorCodeInvalidArgument:
+				code = codes.InvalidArgument
+			case storage.ErrorCodeResourceExhausted:
+				code = codes.ResourceExhausted
+			case storage.ErrorCodeUnavailable:
+				code = codes.Unavailable
+			case storage.ErrorCodeDeadlineExceeded:
+				code = codes.DeadlineExceeded
+			}
+		}
+		grpcStatus = status.New(code, err.Error())
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return status.FromContextError(err).Err()
-	}
-	if errors.Is(err, storage.ErrNativeUnsupported) {
-		return status.Error(codes.Unimplemented, err.Error())
-	}
-	code, _ := storage.ErrorDetails(err)
-	switch code {
-	case storage.ErrorCodeInvalidArgument:
-		return status.Error(codes.InvalidArgument, err.Error())
-	case storage.ErrorCodeResourceExhausted:
-		return status.Error(codes.ResourceExhausted, err.Error())
-	case storage.ErrorCodeUnavailable:
-		return status.Error(codes.Unavailable, err.Error())
-	case storage.ErrorCodeDeadlineExceeded:
-		return status.Error(codes.DeadlineExceeded, err.Error())
-	default:
-		return status.Error(codes.Internal, err.Error())
-	}
+	// Backend diagnostics travel in gRPC trailers, outside payload size checks.
+	// Bound them like ordinary operation failures while retaining status details.
+	encoded := grpcStatus.Proto()
+	encoded.Message = boundedFailureMessage(encoded.Message, maxFailureMessageBytes)
+	return status.FromProto(encoded).Err()
 }
 
 func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.ExecuteResponse, error) {
@@ -87,6 +107,9 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 	if err != nil {
 		return nil, nativeStatus(err)
 	}
+	if !utf8.ValidString(result.ContentType) {
+		return nil, status.Error(codes.Internal, "native response content type must contain valid UTF-8")
+	}
 	response := &sink.ExecuteResponse{ContentType: result.ContentType, Payload: result.Payload,
 		Success: result.Success, StatusCode: uint32(result.StatusCode)}
 	names := make([]string, 0, len(result.Headers))
@@ -95,6 +118,14 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 	}
 	sort.Strings(names)
 	for _, name := range names {
+		if !utf8.ValidString(name) {
+			return nil, status.Error(codes.Internal, "native response header names must contain valid UTF-8")
+		}
+		for _, value := range result.Headers[name] {
+			if !utf8.ValidString(value) {
+				return nil, status.Error(codes.Internal, "native response header values must contain valid UTF-8")
+			}
+		}
 		header := &sink.Header{Name: name, Values: result.Headers[name]}
 		response.Headers = append(response.Headers, header)
 	}

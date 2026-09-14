@@ -107,10 +107,12 @@ multiple YAML documents are rejected.
 | `expected` | Yes | Expected result path. |
 | `observed_at` | Yes | RFC3339/RFC3339Nano time used for every `sink.v1.time.now()` call and retry-equivalent execution. |
 
-Comparison ignores object-member order and insignificant JSON whitespace. It
-does not ignore values or types. BSON documents are compared through canonical
-Extended JSON, so a BSON datetime is different from a string containing the
-same timestamp.
+Comparison ignores object-member order and insignificant JSON whitespace. JSON
+numbers are compared by exact decimal value, so `1`, `1.0`, and `1e0` match
+without rounding large integers. Other values and types must match. BSON
+documents are compared through canonical Extended JSON, preserving numeric
+types and distinguishing a BSON datetime from a string containing the same
+timestamp.
 
 ## JSON and BSON fixture formats
 

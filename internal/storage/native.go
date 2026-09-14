@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 )
 
 var ErrNativeUnsupported = errors.New("native operation is not supported")
@@ -84,16 +85,16 @@ func (r QueryRequest) Validate() error {
 	}
 	seen := make(map[string]bool)
 	for _, field := range r.Sort {
-		if strings.TrimSpace(field.Field) == "" || seen[field.Field] {
-			return InvalidArgumentError(errors.New("sort fields must be nonempty and unique"))
+		if strings.TrimSpace(field.Field) == "" || !utf8.ValidString(field.Field) || seen[field.Field] {
+			return InvalidArgumentError(errors.New("sort fields must be nonempty, valid UTF-8 and unique"))
 		}
 		seen[field.Field] = true
 	}
 	if r.Projection != nil {
 		seen = make(map[string]bool)
 		for _, field := range r.Projection.Fields {
-			if strings.TrimSpace(field) == "" || seen[field] {
-				return InvalidArgumentError(errors.New("projection fields must be nonempty and unique"))
+			if strings.TrimSpace(field) == "" || !utf8.ValidString(field) || seen[field] {
+				return InvalidArgumentError(errors.New("projection fields must be nonempty, valid UTF-8 and unique"))
 			}
 			seen[field] = true
 		}

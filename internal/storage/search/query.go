@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/liran/sink/internal/storage"
 )
@@ -18,8 +19,14 @@ func pageOptions(req storage.NativeRequest) (requestOptions, map[string]json.Raw
 	if err != nil {
 		return opts, nil, err
 	}
-	if !strings.HasSuffix(opts.path, "/_search") || (opts.method != http.MethodGet && opts.method != http.MethodPost) {
-		return opts, nil, errors.New("Query and Count require a _search request")
+	index, endpoint, _ := strings.Cut(strings.TrimPrefix(opts.path, "/"), "/")
+	indexed := index != "" && (!strings.HasPrefix(index, "_") || index == "_all" || strings.ContainsAny(index, ",:*?"))
+	searchPath := opts.path == "/_search" || (indexed && endpoint == "_search")
+	// A document ID or administrative resource can also end in /_search.
+	// Reject encoded separators so decoding cannot change the route shape.
+	if !searchPath || strings.Count(opts.path, "/") != strings.Count(opts.rawPath, "/") ||
+		(opts.method != http.MethodGet && opts.method != http.MethodPost) {
+		return opts, nil, errors.New("Query, Count and Scan require /_search or /{index}/_search")
 	}
 	mediaType, _, _ := mime.ParseMediaType(opts.contentType)
 	if opts.contentType != "" && mediaType != ContentTypeJSON && !strings.HasSuffix(mediaType, "+json") {
@@ -32,6 +39,9 @@ func pageOptions(req storage.NativeRequest) (requestOptions, map[string]json.Raw
 	}
 	body := make(map[string]json.RawMessage)
 	if len(opts.payload) > 0 {
+		if !utf8.Valid(opts.payload) {
+			return opts, nil, errors.New("Query, Count and Scan require a valid UTF-8 JSON body")
+		}
 		if err := json.Unmarshal(opts.payload, &body); err != nil || body == nil {
 			return opts, nil, errors.New("Query and Count require a JSON object body")
 		}
@@ -46,6 +56,9 @@ func pageOptions(req storage.NativeRequest) (requestOptions, map[string]json.Raw
 	opts.query.Del("from")
 	opts.query.Del("size")
 	opts.method = http.MethodPost
+	// Managed pages never open backend cursors and can safely retry the same
+	// query on another endpoint after a transport or temporary HTTP failure.
+	opts.retrySafe = true
 	opts.contentType = ContentTypeJSON
 	opts.headers.Set("Accept", ContentTypeJSON)
 	return opts, body, nil

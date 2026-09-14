@@ -119,8 +119,10 @@ to the requested alias.
 Search response byte limits trigger read splitting without retrying the same
 oversized batch on other endpoints. Byte limits and caller cancellation do not
 mark an endpoint unhealthy. Transport failures and temporary HTTP errors still
-cool down the affected endpoint and allow record reads to fail over while their
-request context remains active.
+cool down the affected endpoint and allow record reads and managed Query, Count
+and Scan requests to fail over while their request context remains active.
+Native Execute commands retain a single attempt because they may mutate data
+or manage backend cursors.
 
 Processing defaults to 20 seconds. A pending rebalance cancels backend work and
 allows at most five additional seconds for DLQ/offset settlement before releasing
@@ -174,6 +176,10 @@ sink dlq replay --config /etc/sink/config.yaml --store primary \
   --partition 0 --offset 12 --count 3 > dlq-replay.jsonl
 ```
 
+Replay uses the configured store's normal publisher routing: search keys exclude
+namespace, while MongoDB keys include it. This keeps replayed and newly accepted
+operations for the same record on the same partition when its partition count
+is unchanged. Replay does not recover an operation's original position in time.
 Replay reports `accepted` or `failed_or_unknown` for each selected position and
 returns failure if any publication fails. If the command or output file is
 interrupted, outcomes may be unknown. Never repeatedly replay a whole range to

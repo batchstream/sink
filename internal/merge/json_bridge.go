@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 	"unsafe"
 
 	"github.com/iceisfun/golua/vm"
@@ -344,6 +345,9 @@ func (b *luaJSONBridge) luaToGo(value vm.Value, active map[*vm.Table]bool) (any,
 		return value.AsBool(), nil
 	case value.IsString():
 		text := value.AsString()
+		if !utf8.ValidString(text) {
+			return nil, errors.New("lua result contains an invalid UTF-8 string")
+		}
 		if _, typed := b.dateTimes[identityOfLuaString(text)]; typed && b.outputBSON {
 			timestamp, err := time.Parse(time.RFC3339Nano, text)
 			if err != nil {
@@ -416,42 +420,28 @@ func (b *luaJSONBridge) luaTableToGo(table *vm.Table, active map[*vm.Table]bool)
 		return nil, errors.New("lua result contains an invalid JSON null value")
 	}
 
-	count, array, err := inspectLuaTable(table)
-	if err != nil {
-		return nil, err
-	}
+	count, array := inspectLuaTable(table)
 	if array && count > 0 {
 		return b.luaArrayToGo(table, active)
 	}
 	return b.luaObjectToGo(table, active)
 }
 
-func inspectLuaTable(table *vm.Table) (int, bool, error) {
+func inspectLuaTable(table *vm.Table) (int, bool) {
 	count := 0
 	array := true
-	key := vm.Nil
-	for {
-		next, _, err := table.Next(key)
-		if err != nil {
-			return 0, false, err
-		}
-		if next.IsNil() {
-			break
-		}
+	table.ForEach(func(key, _ vm.Value) bool {
 		count++
-		if !next.IsInt() || next.AsInt() < 1 {
+		if !key.IsInt() || key.AsInt() < 1 {
 			array = false
 		}
-		key = next
-	}
-	return count, array, nil
+		return true
+	})
+	return count, array
 }
 
 func (b *luaJSONBridge) luaArrayToGo(table *vm.Table, active map[*vm.Table]bool) ([]any, error) {
-	count, array, err := inspectLuaTable(table)
-	if err != nil {
-		return nil, err
-	}
+	count, array := inspectLuaTable(table)
 	if !array || table.Len() != count {
 		return nil, errors.New("lua JSON array must have contiguous integer keys starting at one")
 	}
@@ -468,24 +458,26 @@ func (b *luaJSONBridge) luaArrayToGo(table *vm.Table, active map[*vm.Table]bool)
 
 func (b *luaJSONBridge) luaObjectToGo(table *vm.Table, active map[*vm.Table]bool) (map[string]any, error) {
 	result := make(map[string]any)
-	key := vm.Nil
-	for {
-		next, value, err := table.Next(key)
+	var conversionErr error
+	table.ForEach(func(key, value vm.Value) bool {
+		if !key.IsString() {
+			conversionErr = fmt.Errorf("lua JSON object has a non-string key of type %s", key.Type())
+			return false
+		}
+		if !utf8.ValidString(key.AsString()) {
+			conversionErr = errors.New("lua JSON object contains an invalid UTF-8 key")
+			return false
+		}
+		converted, err := b.luaFieldToGo(table, key, value, active)
 		if err != nil {
-			return nil, err
+			conversionErr = err
+			return false
 		}
-		if next.IsNil() {
-			break
-		}
-		if !next.IsString() {
-			return nil, fmt.Errorf("lua JSON object has a non-string key of type %s", next.Type())
-		}
-		converted, err := b.luaFieldToGo(table, next, value, active)
-		if err != nil {
-			return nil, err
-		}
-		result[next.AsString()] = converted
-		key = next
+		result[key.AsString()] = converted
+		return true
+	})
+	if conversionErr != nil {
+		return nil, conversionErr
 	}
 	return result, nil
 }

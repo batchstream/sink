@@ -89,7 +89,10 @@ func NewLuaEngine(options LuaOptions) (*LuaEngine, error) {
 	return engine, nil
 }
 
-func (e *LuaEngine) Compile(program Program) (Merger, error) {
+func (e *LuaEngine) Compile(ctx context.Context, program Program) (Merger, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(program.Source) == 0 {
 		return nil, fmt.Errorf("%w: source is required", ErrInvalidProgram)
 	}
@@ -112,14 +115,20 @@ func (e *LuaEngine) Compile(program Program) (Merger, error) {
 		return merger, nil
 	}
 	block, err := parser.Parse(luaProgramFilename, string(program.Source))
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: parse source: %v", ErrInvalidProgram, err)
 	}
 	compiled, err := compiler.Compile(luaProgramFilename, block)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: compile source: %v", ErrInvalidProgram, err)
 	}
-	if err := e.validate(compiled); err != nil {
+	if err := e.validate(ctx, compiled); err != nil {
 		return nil, err
 	}
 	compiled = e.store(digest, compiled)
@@ -127,13 +136,16 @@ func (e *LuaEngine) Compile(program Program) (Merger, error) {
 	return merger, nil
 }
 
-func (e *LuaEngine) validate(compiled *compiler.Proto) error {
-	ctx, cancel := context.WithTimeout(context.Background(), e.options.Timeout)
+func (e *LuaEngine) validate(parent context.Context, compiled *compiler.Proto) error {
+	ctx, cancel := context.WithTimeout(parent, e.options.Timeout)
 	defer cancel()
 	validationTime := time.Unix(0, 0).UTC()
 	luaVM, _ := e.newVM(ctx, validationTime)
 	defer luaVM.Close(context.Background())
 	results, err := luaVM.Run(compiled)
+	if err := parent.Err(); err != nil {
+		return err
+	}
 	if err != nil {
 		return fmt.Errorf("%w: initialize chunk: %v", ErrInvalidProgram, classifyExecutionError(ctx, err))
 	}
@@ -180,9 +192,19 @@ func (m *luaMerger) Merge(ctx context.Context, req Request) (Result, error) {
 	if len(req.Incoming.Payload) > m.engine.options.MaxResultBytes || (req.Current != nil && len(req.Current.Payload) > m.engine.options.MaxResultBytes) {
 		return empty, fmt.Errorf("%w: merge input exceeds the document byte limit", ErrExecutionExhausted)
 	}
+	// Document conversion is part of the execution budget, even when the
+	// script itself returns immediately.
+	executionContext, cancel := context.WithTimeout(ctx, m.engine.options.Timeout)
+	defer cancel()
+	if err := executionContext.Err(); err != nil {
+		return empty, classifyExecutionError(executionContext, err)
+	}
 	incoming, err := decodeJSONObject(req.Incoming)
 	if err != nil {
 		return empty, fmt.Errorf("%w: %v", ErrInvalidIncoming, err)
+	}
+	if err := executionContext.Err(); err != nil {
+		return empty, classifyExecutionError(executionContext, err)
 	}
 
 	var current decodedJSONObject
@@ -196,8 +218,9 @@ func (m *luaMerger) Merge(ctx context.Context, req Request) (Result, error) {
 		}
 	}
 
-	executionContext, cancel := context.WithTimeout(ctx, m.engine.options.Timeout)
-	defer cancel()
+	if err := executionContext.Err(); err != nil {
+		return empty, classifyExecutionError(executionContext, err)
+	}
 	luaVM, bridge := m.engine.newVM(executionContext, req.ObservedAt)
 	defer luaVM.Close(context.Background())
 
@@ -232,6 +255,11 @@ func (m *luaMerger) Merge(ctx context.Context, req Request) (Result, error) {
 		return empty, err
 	}
 	document, err := bridge.encodeJSONObject(merged[0], incoming.encoding)
+	// Go's encoders do not observe the context. Never return a document that
+	// finished encoding after the deadline to the write commit path.
+	if deadlineErr := executionContext.Err(); deadlineErr != nil {
+		return empty, classifyExecutionError(executionContext, deadlineErr)
+	}
 	if err != nil {
 		return empty, fmt.Errorf("%w: %v", ErrInvalidResult, err)
 	}

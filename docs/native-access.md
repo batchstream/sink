@@ -23,6 +23,10 @@ All four native RPCs share `Command`: `store`, `namespace`, `method`, `path`,
 `query`, `headers`, `content_type`, and `payload`. The configured store selects
 the adapter. MongoDB reads namespace and the BSON payload; HTTP search reads
 method/path/query/headers and the original body. Unused fields must be empty.
+Command string fields, including header names and values, must contain valid
+UTF-8 even when a client uses the VT protobuf codec.
+Native response content types and headers must also contain valid UTF-8;
+malformed backend metadata returns `INTERNAL` consistently across codecs.
 There are no database-specific protobuf branches or extra payload envelopes.
 Sink selects the connection and authentication;
 callers cannot supply a URI, endpoint host, or credentials. Unknown stores return
@@ -36,10 +40,17 @@ the SDK returns both the response and a `NativeError` retaining it. Transport,
 validation, cancellation, and capacity failures use gRPC errors without a native
 response. HTTP 2xx marks search success; inspect the raw body for partial errors,
 including item failures inside `_msearch` and `_bulk` responses.
+Native gRPC diagnostic text is capped at 1024 UTF-8 bytes. Error codes and
+structured status details are retained.
 
 MongoDB payloads are raw BSON, including BSON datetimes, numeric widths, ObjectIDs,
 binary values, and database error fields. Search payloads retain the native HTTP
 entity bytes and framing, including NDJSON, JSON whitespace, and non-JSON output.
+
+BSON record documents, native commands and scan positions must contain exactly
+one complete document. Sink validates nested documents, array indexes and scalar
+framing, and rejects nesting deeper than 256 before decoding or enqueueing work.
+
 HTTP transport may decode compression and normalize header names; this is not
 byte-for-byte forwarding of HTTP packets. Redirects are returned without being
 followed. Request headers are forwarded except transport-owned headers:
@@ -184,6 +195,9 @@ Sort entries contain `field` and `descending`. Projection contains `fields` and
 preserves native sorting; absent projection preserves native projection. An
 explicit projection with no fields selects all fields. Duplicate or blank fields
 are rejected. HTTP projection applies to `_source`; hit metadata is retained.
+Sort and projection fields, and the JSON bodies decoded by managed search
+Query, Count and Scan, must contain valid UTF-8; invalid text is rejected before
+it can be replaced or merge distinct field names during JSON conversion.
 MongoDB retains its native `_id` projection rules.
 
 MongoDB Query supports `find` and read-only `aggregate`. For find, Query replaces
@@ -201,6 +215,10 @@ additional batches only when the backend's byte limit splits that result.
 For aggregate, explicit sort and projection follow the supplied pipeline, then
 skip/limit apply to its output. HTTP Query requires `_search`, replaces from/size,
 and maps explicit sort/projection to sort and `_source` selection.
+Search Query, Count and Scan accept only `/_search` or `/{index}/_search`, including
+index lists, wildcards and cross-cluster targets. Document or administrative
+paths that merely end in `/_search`, and paths with encoded separators, are
+rejected before transport.
 It fetches exactly `page_size` hits and overrides `track_total_hits` with a
 threshold just beyond the page end to prove `has_more` from the same response.
 This avoids fetching another document's source and keeps the final page within

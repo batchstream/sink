@@ -26,7 +26,7 @@ func validateNativeCommand(req storage.NativeRequest, scan bool) (bson.D, error)
 	if err != nil || mediaType != "application/bson" {
 		return command, errors.New("MongoDB native requests require application/bson content_type")
 	}
-	if err := bson.Raw(req.Payload).Validate(); err != nil {
+	if err := storage.ValidateBSONDocument(req.Payload); err != nil {
 		return command, fmt.Errorf("invalid BSON command: %w", err)
 	}
 	if err := bson.Unmarshal(req.Payload, &command); err != nil {

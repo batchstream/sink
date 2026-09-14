@@ -170,6 +170,11 @@ JSON values and the JSON-compatible view of BSON values use this mapping:
 | boolean | boolean |
 | null | `json.null` |
 
+JSON document bytes and Lua result strings and object keys must be valid UTF-8.
+Invalid bytes are rejected instead of being replaced with U+FFFD during JSON
+conversion, which can otherwise change values or collapse distinct object keys.
+Binary data must use an explicit encoding or a BSON binary value.
+
 JSON integers must fit the signed 64-bit range, including integral values
 written with a decimal point or exponent. Sink rejects an out-of-range integer
 instead of rounding it through a floating-point conversion. Fractional JSON
@@ -244,10 +249,22 @@ repeat effects are unsafe. CAS alone does not provide this guarantee.
 ## Resource limits and errors
 
 Each execution has limits for wall-clock time, instructions, call depth, VM
-stack size, source size, and result size. Native `sink.v1` array loops also
-enforce the execution deadline and work limit. Script syntax, arguments, types,
-callbacks, resources, and result errors fail only the corresponding Write
-operation and return a structured failure.
+stack size, source size, and result size. The time budget includes input
+decoding and result encoding. Go document converters cannot be interrupted
+mid-call, but a result completed after the deadline is rejected before storage
+commit. Native `sink.v1` array loops also enforce the execution deadline and
+work limit. Array validation and copying consume the shared instruction budget
+across all `sink.v1` calls, including discarded intermediate results. Script
+syntax, arguments, types, callbacks, resources, and result errors fail only the
+corresponding Write operation and return a structured failure.
+
+Pattern captures from `string.find`, `string.match`, and `string.gmatch` reserve
+their full return stack and obey the stack limit even if the caller discards them.
+
+Chunk initialization during compilation also observes the enclosing request's
+deadline and cancellation. A canceled request stops validation before publishing
+or committing writes; it is not reported as an invalid script. Parsing and
+bytecode compilation check cancellation between their synchronous phases.
 
 Before rollout, business tests should cover at least:
 
@@ -320,7 +337,10 @@ each append, including characters whose uppercase form requires more bytes.
 It checks cancellation and charges an instruction checkpoint every 1024 input
 characters and at completion, even for unchanged strings or discarded results.
 `string.pack` preflights the size of each intermediate string against
-`max_result_bytes` before allocating it. `table.concat` checks each append
+`max_result_bytes` before allocating it. Both `string.pack` and `string.packsize`
+check cancellation and charge instruction checkpoints for format bytes before
+processing, including whitespace and options that produce no output.
+`table.concat` checks each append
 against the same bound without retaining a separate list of string fragments,
 even if the script discards the result or returns only its length. Valid packing
 formats, alignment, variable strings, and concatenation ranges retain their
@@ -349,6 +369,10 @@ runtime's direct substring-search path.
 expansion before each conversion, including strings used repeatedly. Formatting
 loops also check cancellation and instruction limits. Numeric widths and
 precision retain the runtime's existing limits.
+`string.unpack` reserves its complete return frame, including the next-position
+value, within the VM stack limit before decoding. Its format preflight also
+checks cancellation and charges instruction checkpoints for format bytes,
+including padding and zero-width fields.
 These limits do not make arbitrary Lua safe to run in a shared trusted process.
 Use reviewed business scripts, isolate stores/workers into containers with
 memory limits, and test the largest permitted documents. See

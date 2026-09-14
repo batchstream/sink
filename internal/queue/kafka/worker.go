@@ -347,7 +347,7 @@ func (w *Worker) handleFetches(ctx context.Context, fetches kgo.Fetches) ([]*kgo
 			if result != nil {
 				outcome = "failed"
 			}
-			w.metrics.ObserveKafkaWorker(outcome, 1)
+			w.metrics.ObserveKafkaWorker(w.store, outcome, 1)
 		}
 		w.metrics.ObserveWorkerCommitted(w.store, oldest)
 	}
@@ -424,7 +424,7 @@ func (w *Worker) handleWithRetry(ctx context.Context, mutations []queue.Mutation
 		if len(next) == 0 {
 			return finalResults
 		}
-		w.metrics.ObserveKafkaRetry(len(next))
+		w.metrics.ObserveKafkaRetry(w.store, len(next))
 		delay := jitteredBackoff(backoff)
 		timer := time.NewTimer(delay)
 		select {
@@ -492,7 +492,7 @@ func (w *Worker) publishDeadLetters(ctx context.Context, records []*kgo.Record, 
 	}
 	joined := errors.Join(produceErrors...)
 	if joined == nil {
-		w.metrics.ObserveKafkaDeadLetter(len(deadLetters))
+		w.metrics.ObserveKafkaDeadLetter(w.store, len(deadLetters))
 	}
 	return joined
 }

@@ -261,8 +261,10 @@ health service name. A failed dependency becomes `NOT_SERVING` without marking
 unrelated stores unavailable.
 
 The optional Prometheus listener exports build, gRPC, operation, batching,
-merge, publisher, and worker metrics. Worker progress metrics label only configured store names. Labels exclude
-client-provided namespaces, datasets, keys, and error text. See
+merge, publisher, and worker metrics with configured store names. Request-level
+metrics use fixed labels for mixed or unknown stores; operation results retain
+each operation's store. Global resource metrics remain process-wide. Labels
+exclude client-provided namespaces, datasets, keys, and error text. See
 [Prometheus metrics](configuration.md#prometheus-metrics) for the metric list
 and network exposure guidance.
 

@@ -19,18 +19,7 @@ func (s *Server) newWriteObservation(req *sink.WriteRequest) *writeObservation {
 	if s.metrics == nil || req.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED {
 		return nil
 	}
-	store, single := requestStore(req.GetOperations())
-	if !single {
-		store = "_multiple"
-	} else {
-		// Never use an arbitrary client-supplied store as a metric label.
-		s.admissionMu.Lock()
-		_, configured := s.storeRequests[store]
-		s.admissionMu.Unlock()
-		if !configured {
-			store = "_unconfigured"
-		}
-	}
+	store := s.metrics.RequestStore(req)
 	observation := &writeObservation{metrics: s.metrics, store: store, completion: req.GetCompletionMode()}
 	return observation
 }
@@ -53,5 +42,5 @@ func (o *writeObservation) finish() {
 	if o == nil {
 		return
 	}
-	o.metrics.ObserveWriteRounds(o.reads, o.writes)
+	o.metrics.ObserveWriteRounds(o.store, o.reads, o.writes)
 }

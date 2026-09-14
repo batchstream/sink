@@ -110,6 +110,7 @@ func newStoreRequestBatchers[Request any, Response any](
 ) map[string]*requestBatcher[Request, Response] {
 	batchers := make(map[string]*requestBatcher[Request, Response], len(stores))
 	for _, store := range stores {
+		opts.Store = store
 		batchers[store] = newRequestBatcher(opts)
 	}
 	return batchers

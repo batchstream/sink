@@ -15,6 +15,7 @@ import (
 )
 
 type PublisherOptions struct {
+	Store            string
 	Topics           *TopicManager
 	Brokers          []string
 	Topic            string
@@ -26,6 +27,7 @@ type PublisherOptions struct {
 }
 
 type Publisher struct {
+	store          string
 	topics         *TopicManager
 	client         *kgo.Client
 	topic          string
@@ -69,7 +71,7 @@ func NewPublisher(opts PublisherOptions) (*Publisher, error) {
 	if err != nil {
 		return nil, err
 	}
-	publisher := &Publisher{topics: opts.Topics, client: client, topic: opts.Topic, metrics: opts.Metrics,
+	publisher := &Publisher{store: opts.Store, topics: opts.Topics, client: client, topic: opts.Topic, metrics: opts.Metrics,
 		maxRecordBytes: opts.MaxRecordBytes, mutationKey: opts.MutationKey}
 	return publisher, nil
 }
@@ -80,7 +82,7 @@ func (p *Publisher) Publish(ctx context.Context, req queue.PublishRequest) (queu
 		Results: make([]queue.PublishResult, len(req.Mutations)),
 	}
 	if err := p.topics.Ping(ctx); err != nil {
-		p.metrics.ObserveKafkaPublish(time.Since(started), 0, len(req.Mutations))
+		p.metrics.ObserveKafkaPublish(p.store, time.Since(started), 0, len(req.Mutations))
 		for index := range response.Results {
 			response.Results[index].Status = queue.PublishStatusFailed
 			response.Results[index].Err = storage.BackendError(err)
@@ -111,7 +113,7 @@ func (p *Publisher) Publish(ctx context.Context, req queue.PublishRequest) (queu
 		indexes[record] = index
 	}
 	if len(records) == 0 {
-		p.metrics.ObserveKafkaPublish(time.Since(started), 0, len(req.Mutations))
+		p.metrics.ObserveKafkaPublish(p.store, time.Since(started), 0, len(req.Mutations))
 		return response, nil
 	}
 
@@ -143,7 +145,7 @@ func (p *Publisher) Publish(ctx context.Context, req queue.PublishRequest) (queu
 		response.Results[index].Status = queue.PublishStatusAccepted
 		accepted++
 	}
-	p.metrics.ObserveKafkaPublish(time.Since(started), accepted, failed)
+	p.metrics.ObserveKafkaPublish(p.store, time.Since(started), accepted, failed)
 	return response, nil
 }
 

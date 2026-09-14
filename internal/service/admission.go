@@ -54,6 +54,7 @@ func (s *Server) admitRequest(ctx context.Context, request admissionRequest) (co
 }
 
 func (s *admissionPool) admitRequest(ctx context.Context, request admissionRequest) (context.Context, context.CancelFunc, error) {
+	store := s.metrics.RequestStores(request.stores)
 	var queued *admissionRequest
 	defer func() {
 		if queued != nil {
@@ -103,7 +104,7 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 					return ctx, nil, contextError(ctx)
 				}
 			}
-			s.metrics.ObserveAdmissionPoolRejected(s.name, reason)
+			s.metrics.ObserveAdmissionPoolRejected(store, s.name, reason)
 			return ctx, nil, status.Errorf(codes.ResourceExhausted, "Sink %s capacity is full", s.name)
 		}
 		s.inFlightRequests++
@@ -127,7 +128,7 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 		s.admissionMu.Unlock()
 		break
 	}
-	s.metrics.AdjustAdmissionPool(s.name, 1, request.encodedBytes)
+	s.metrics.AdjustAdmissionPool(store, s.name, 1, request.encodedBytes)
 	timeout := request.timeout
 	if timeout == 0 {
 		timeout = s.requestTimeout
@@ -156,7 +157,7 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 		close(s.admissionChanged)
 		s.admissionChanged = make(chan struct{})
 		s.admissionMu.Unlock()
-		s.metrics.AdjustAdmissionPool(s.name, -1, -request.encodedBytes)
+		s.metrics.AdjustAdmissionPool(store, s.name, -1, -request.encodedBytes)
 	}
 	return execution, release, nil
 }

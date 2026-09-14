@@ -9,11 +9,13 @@ import (
 	"time"
 
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/merge"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
+	"github.com/liran/sink/internal/storage/memory"
 )
 
 func TestWriteObservationsCountOnlyRetriedDocuments(t *testing.T) {
-	observed, err := sinkmetrics.New("test")
+	observed, err := sinkmetrics.New("test", "primary")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,12 +34,12 @@ func TestWriteObservationsCountOnlyRetriedDocuments(t *testing.T) {
 	observed.Handler().ServeHTTP(recorder, httptest.NewRequest("GET", "/metrics", nil))
 	body := recorder.Body.String()
 	wanted := []string{
-		`sink_write_phase_duration_seconds_count{phase="storage_read"} 2`,
-		`sink_write_phase_duration_seconds_count{phase="storage_write_applied"} 2`,
-		`sink_write_phase_duration_seconds_count{phase="lua"} 3`,
-		`sink_write_phase_duration_seconds_count{phase="admission"} 1`,
-		`sink_write_execution_rounds_sum{phase="storage_read"} 2`,
-		`sink_write_execution_rounds_count{phase="storage_write"} 1`,
+		`sink_write_phase_duration_seconds_count{phase="storage_read",store="primary"} 2`,
+		`sink_write_phase_duration_seconds_count{phase="storage_write_applied",store="primary"} 2`,
+		`sink_write_phase_duration_seconds_count{phase="lua",store="primary"} 3`,
+		`sink_write_phase_duration_seconds_count{phase="admission",store="primary"} 1`,
+		`sink_write_execution_rounds_sum{phase="storage_read",store="primary"} 2`,
+		`sink_write_execution_rounds_count{phase="storage_write",store="primary"} 1`,
 	}
 	for _, line := range wanted {
 		if !strings.Contains(body, line) {
@@ -47,7 +49,7 @@ func TestWriteObservationsCountOnlyRetriedDocuments(t *testing.T) {
 }
 
 func TestBatchQueueObservesEveryRPCIncludingCanceledAndShutdown(t *testing.T) {
-	observed, err := sinkmetrics.New("test")
+	observed, err := sinkmetrics.New("test", "primary")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +58,7 @@ func TestBatchQueueObservesEveryRPCIncludingCanceledAndShutdown(t *testing.T) {
 			completeCall(call, call.request, nil)
 		}
 	}
-	opts := requestBatcherOptions[int, int]{Method: "Read", Metrics: observed, MaxWait: time.Hour, MaxOperations: 2, MaxBytes: 100, MaxQueuedOperations: 10, MaxQueuedBytes: 1000, Execute: execute}
+	opts := requestBatcherOptions[int, int]{Store: "primary", Method: "Read", Metrics: observed, MaxWait: time.Hour, MaxOperations: 2, MaxBytes: 100, MaxQueuedOperations: 10, MaxQueuedBytes: 1000, Execute: execute}
 	batcher := newRequestBatcher(opts)
 	t.Cleanup(batcher.Close)
 	results := make(chan batcherSubmission, 2)
@@ -88,11 +90,11 @@ func TestBatchQueueObservesEveryRPCIncludingCanceledAndShutdown(t *testing.T) {
 	observed.Handler().ServeHTTP(recorder, httptest.NewRequest("GET", "/metrics", nil))
 	body := recorder.Body.String()
 	wanted := []string{
-		`sink_batcher_request_queue_duration_seconds_count{method="Read"} 4`,
-		`sink_batcher_request_queue_exits_total{method="Read",outcome="execute"} 2`,
-		`sink_batcher_request_queue_exits_total{method="Read",outcome="canceled"} 1`,
-		`sink_batcher_request_queue_exits_total{method="Read",outcome="shutdown"} 1`,
-		`sink_batcher_batches_total{method="Read",reason="max_operations"} 1`,
+		`sink_batcher_request_queue_duration_seconds_count{method="Read",store="primary"} 4`,
+		`sink_batcher_request_queue_exits_total{method="Read",outcome="execute",store="primary"} 2`,
+		`sink_batcher_request_queue_exits_total{method="Read",outcome="canceled",store="primary"} 1`,
+		`sink_batcher_request_queue_exits_total{method="Read",outcome="shutdown",store="primary"} 1`,
+		`sink_batcher_batches_total{method="Read",reason="max_operations",store="primary"} 1`,
 	}
 	for _, line := range wanted {
 		if !strings.Contains(body, line) {
@@ -102,7 +104,7 @@ func TestBatchQueueObservesEveryRPCIncludingCanceledAndShutdown(t *testing.T) {
 }
 
 func TestWriteObservationsDoNotLabelArbitraryStores(t *testing.T) {
-	observed, err := sinkmetrics.New("test")
+	observed, err := sinkmetrics.New("test", "primary")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,5 +124,60 @@ func TestWriteObservationsDoNotLabelArbitraryStores(t *testing.T) {
 	body := recorder.Body.String()
 	if strings.Contains(body, "untrusted-client-store") || !strings.Contains(body, `sink_write_slow_phases_total{phase="storage_write_applied",store="_unconfigured"} 10`) {
 		t.Fatal("client input escaped bounded metric labels")
+	}
+}
+
+func TestBatchedWritesKeepQueueAndPhaseMetricsSeparateByStore(t *testing.T) {
+	stores := []string{"alpha", "beta"}
+	observed, err := sinkmetrics.New("test", stores...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	luaOptions := merge.LuaOptions{}
+	lua, err := merge.NewLuaEngine(luaOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coreOptions := Options{Storage: memory.New(), Lua: lua, StoreNames: stores, Metrics: observed}
+	core, err := New(coreOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	batchOptions := BatchingOptions{StoreNames: stores, Metrics: observed, MaxOperations: 1}
+	batching, err := NewBatchingServer(core, batchOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(batching.Close)
+	for _, store := range []string{"alpha", "beta", "alpha"} {
+		operation := completionPut("key", 1)
+		operation.Address.Store = store
+		request := &sink.WriteRequest{CompletionMode: sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, Operations: []*sink.WriteOperation{operation}}
+		response, err := batching.Write(t.Context(), request)
+		if err != nil || len(response.GetResults()) != 1 || response.Results[0].GetStatus() != sink.WriteStatus_WRITE_STATUS_APPLIED {
+			t.Fatalf("%s: response %v, error %v", store, response, err)
+		}
+	}
+	batching.Close()
+	request := httptest.NewRequest("GET", "/metrics", nil)
+	recorder := httptest.NewRecorder()
+	observed.Handler().ServeHTTP(recorder, request)
+	body := recorder.Body.String()
+	for store, count := range map[string]int{"alpha": 2, "beta": 1} {
+		wanted := []string{
+			fmt.Sprintf(`sink_batcher_batches_total{method="Write",reason="max_operations",store="%s"} %d`, store, count),
+			fmt.Sprintf(`sink_batcher_request_queue_duration_seconds_count{method="Write",store="%s"} %d`, store, count),
+			fmt.Sprintf(`sink_batcher_queued_operations{method="Write",store="%s"} 0`, store),
+			fmt.Sprintf(`sink_batcher_queued_bytes{method="Write",store="%s"} 0`, store),
+			fmt.Sprintf(`sink_write_phase_duration_seconds_count{phase="storage_write_applied",store="%s"} %d`, store, count),
+			fmt.Sprintf(`sink_write_execution_rounds_sum{phase="storage_write",store="%s"} %d`, store, count),
+			fmt.Sprintf(`sink_admission_pool_requests{pool="execution",store="%s"} 0`, store),
+			fmt.Sprintf(`sink_admission_pool_bytes{pool="execution",store="%s"} 0`, store),
+		}
+		for _, line := range wanted {
+			if !strings.Contains(body, line) {
+				t.Errorf("missing metric: %s", line)
+			}
+		}
 	}
 }

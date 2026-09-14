@@ -367,7 +367,7 @@ defaults to 256 MiB. Include this budget in container sizing alongside the
 synchronous execution budget and each Kafka producer buffer. This isolates
 durable enqueueing from slow synchronous `refresh=wait_for` writes and their
 fair byte waiters. Monitor `sink_admission_pool_bytes` and
-`sink_admission_pool_rejected_total` by pool and reason; the legacy in-flight
+`sink_admission_pool_rejected_total` by store, pool, and reason; the legacy in-flight
 gauges include both pools.
 
 Keep request-count, byte, queue and Lua limits enabled. Reducing the read limit

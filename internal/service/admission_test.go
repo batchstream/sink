@@ -2,11 +2,14 @@ package service
 
 import (
 	"context"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
+	sinkmetrics "github.com/liran/sink/internal/metrics"
 	"github.com/liran/sink/internal/storage"
 	"github.com/liran/sink/internal/storage/memory"
 	"google.golang.org/grpc/codes"
@@ -26,13 +29,17 @@ func (b *blockedReadStorage) Read(ctx context.Context, req storage.ReadRequest) 
 }
 
 func TestCoreAdmissionCoversCrossStoreAndBypassRequests(t *testing.T) {
+	observed, err := sinkmetrics.New("test", "a", "b")
+	if err != nil {
+		t.Fatal(err)
+	}
 	luaOptions := merge.LuaOptions{}
 	lua, err := merge.NewLuaEngine(luaOptions)
 	if err != nil {
 		t.Fatal(err)
 	}
 	backend := &blockedReadStorage{Storage: memory.New(), started: make(chan struct{}, 4)}
-	opts := Options{Storage: backend, Lua: lua, StoreNames: []string{"a", "b"},
+	opts := Options{Storage: backend, Lua: lua, Metrics: observed, StoreNames: []string{"a", "b"},
 		MaxStoreRequests: 1, MaxInFlightRequests: 2, MaxReadBytes: 1024, RequestTimeout: 100 * time.Millisecond}
 	s, err := New(opts)
 	if err != nil {
@@ -47,6 +54,20 @@ func TestCoreAdmissionCoversCrossStoreAndBypassRequests(t *testing.T) {
 	cross := &sink.ReadRequest{Operations: []*sink.ReadOperation{a.Operations[0], b.Operations[0]}}
 	if _, err := s.Read(t.Context(), cross); status.Code(err) != codes.ResourceExhausted {
 		t.Fatalf("cross-store call bypassed occupied store limit: %v", err)
+	}
+	request := httptest.NewRequest("GET", "/metrics", nil)
+	recorder := httptest.NewRecorder()
+	observed.Handler().ServeHTTP(recorder, request)
+	body := recorder.Body.String()
+	for _, line := range []string{
+		`sink_admission_pool_requests{pool="execution",store="a"} 1`,
+		`sink_admission_pool_rejected_total{pool="execution",reason="requests",store="_multiple"} 1`,
+		`sink_in_flight_requests 1`,
+		`sink_admission_rejected_total 1`,
+	} {
+		if !strings.Contains(body, line) {
+			t.Errorf("missing metric: %s", line)
+		}
 	}
 	cancel()
 	<-done

@@ -35,6 +35,7 @@ type requestBatcherOptions[Request any, Response any] struct {
 	MaxConcurrent       int
 	Records             func(Request) []recordIdentity
 	Partition           func(Request) batchPartition
+	Store               string
 	Method              string
 	MaxWait             time.Duration
 	MaxOperations       int
@@ -51,6 +52,7 @@ type requestBatcher[Request any, Response any] struct {
 	records             func(Request) []recordIdentity
 	partition           func(Request) batchPartition
 	wake                chan struct{}
+	store               string
 	method              string
 	maxWait             time.Duration
 	maxOperations       int
@@ -77,6 +79,7 @@ func newRequestBatcher[Request any, Response any](opts requestBatcherOptions[Req
 		records:             opts.Records,
 		partition:           opts.Partition,
 		wake:                make(chan struct{}, 1),
+		store:               opts.Store,
 		method:              opts.Method,
 		maxWait:             opts.MaxWait,
 		maxOperations:       opts.MaxOperations,
@@ -113,7 +116,7 @@ func (b *requestBatcher[Request, Response]) Submit(
 		if status.Code(err) == codes.Unavailable {
 			reason = "shutdown"
 		}
-		b.metrics.ObserveBatchRejected(b.method, reason)
+		b.metrics.ObserveBatchRejected(b.store, b.method, reason)
 		return empty, err
 	}
 
@@ -190,7 +193,7 @@ func (b *requestBatcher[Request, Response]) reserve(operationCount int, encodedB
 	b.queuedCalls++
 	b.queuedOperations += operationCount
 	b.queuedBytes += encodedBytes
-	b.metrics.AdjustBatchQueue(b.method, operationCount, encodedBytes)
+	b.metrics.AdjustBatchQueue(b.store, b.method, operationCount, encodedBytes)
 	return nil
 }
 
@@ -203,14 +206,14 @@ func (b *requestBatcher[Request, Response]) release(call *batchCall[Request, Res
 	b.queuedOperations -= call.operationCount
 	b.queuedBytes -= call.encodedBytes
 	b.queueMu.Unlock()
-	b.metrics.AdjustBatchQueue(b.method, -call.operationCount, -call.encodedBytes)
+	b.metrics.AdjustBatchQueue(b.store, b.method, -call.operationCount, -call.encodedBytes)
 	outcome := "execute"
 	if b.ctx.Err() != nil {
 		outcome = "shutdown"
 	} else if call.ctx.Err() != nil {
 		outcome = "canceled"
 	}
-	observation := sinkmetrics.RequestQueueObservation{Method: b.method, Outcome: outcome, Duration: time.Since(call.enqueuedAt)}
+	observation := sinkmetrics.RequestQueueObservation{Store: b.store, Method: b.method, Outcome: outcome, Duration: time.Since(call.enqueuedAt)}
 	b.metrics.ObserveRequestQueue(observation)
 }
 
@@ -389,6 +392,7 @@ func (b *requestBatcher[Request, Response]) executeBatch(
 	}
 	cancel()
 	observation := sinkmetrics.BatchObservation{
+		Store:             b.store,
 		Method:            b.method,
 		Reason:            reason,
 		Operations:        operationCount,

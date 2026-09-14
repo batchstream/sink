@@ -58,28 +58,34 @@ func nativeStatus(err error) error {
 	if err == nil {
 		return nil
 	}
-	if _, ok := status.FromError(err); ok {
-		return err
+	grpcStatus, ok := status.FromError(err)
+	if !ok {
+		code := codes.Internal
+		switch {
+		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+			code = status.FromContextError(err).Code()
+		case errors.Is(err, storage.ErrNativeUnsupported):
+			code = codes.Unimplemented
+		default:
+			storageCode, _ := storage.ErrorDetails(err)
+			switch storageCode {
+			case storage.ErrorCodeInvalidArgument:
+				code = codes.InvalidArgument
+			case storage.ErrorCodeResourceExhausted:
+				code = codes.ResourceExhausted
+			case storage.ErrorCodeUnavailable:
+				code = codes.Unavailable
+			case storage.ErrorCodeDeadlineExceeded:
+				code = codes.DeadlineExceeded
+			}
+		}
+		grpcStatus = status.New(code, err.Error())
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return status.FromContextError(err).Err()
-	}
-	if errors.Is(err, storage.ErrNativeUnsupported) {
-		return status.Error(codes.Unimplemented, err.Error())
-	}
-	code, _ := storage.ErrorDetails(err)
-	switch code {
-	case storage.ErrorCodeInvalidArgument:
-		return status.Error(codes.InvalidArgument, err.Error())
-	case storage.ErrorCodeResourceExhausted:
-		return status.Error(codes.ResourceExhausted, err.Error())
-	case storage.ErrorCodeUnavailable:
-		return status.Error(codes.Unavailable, err.Error())
-	case storage.ErrorCodeDeadlineExceeded:
-		return status.Error(codes.DeadlineExceeded, err.Error())
-	default:
-		return status.Error(codes.Internal, err.Error())
-	}
+	// Backend diagnostics travel in gRPC trailers, outside payload size checks.
+	// Bound them like ordinary operation failures while retaining status details.
+	encoded := grpcStatus.Proto()
+	encoded.Message = boundedFailureMessage(encoded.Message, maxFailureMessageBytes)
+	return status.FromProto(encoded).Err()
 }
 
 func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.ExecuteResponse, error) {

@@ -40,6 +40,8 @@ the SDK returns both the response and a `NativeError` retaining it. Transport,
 validation, cancellation, and capacity failures use gRPC errors without a native
 response. HTTP 2xx marks search success; inspect the raw body for partial errors,
 including item failures inside `_msearch` and `_bulk` responses.
+Native gRPC diagnostic text is capped at 1024 UTF-8 bytes. Error codes and
+structured status details are retained.
 
 MongoDB payloads are raw BSON, including BSON datetimes, numeric widths, ObjectIDs,
 binary values, and database error fields. Search payloads retain the native HTTP

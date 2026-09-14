@@ -2,11 +2,43 @@ package merge_test
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/liran/sink/internal/merge"
 )
+
+func TestLuaPatternSearchClassifiesExecutionLimits(t *testing.T) {
+	for _, deadline := range []bool{false, true} {
+		for _, name := range []string{"find", "match", "gmatch", "gsub"} {
+			t.Run(fmt.Sprintf("%s/deadline=%t", name, deadline), func(t *testing.T) {
+				opts := merge.LuaOptions{MaxInstructions: 100}
+				want := merge.ErrExecutionExhausted
+				if deadline {
+					opts.Timeout = 5 * time.Millisecond
+					opts.MaxInstructions = 1_000_000_000
+					want = merge.ErrExecutionDeadline
+				}
+				call := fmt.Sprintf(`string.%s(incoming.text, "a*a*a*a*a*b")`, name)
+				if name == "gmatch" {
+					call = "local iterator=" + call + "; iterator()"
+				} else if name == "gsub" {
+					call = `string.gsub(incoming.text, "a*a*a*a*a*b", "x")`
+				}
+				source := []byte("return function(current, incoming) " + call + "; return {ok=true} end")
+				merger := compileTestProgram(t, source, opts)
+				incoming := jsonDocument(`{"text":"` + strings.Repeat("a", 256) + `"}`)
+				request := merge.Request{Incoming: incoming}
+				result, err := merger.Merge(t.Context(), request)
+				if !errors.Is(err, want) || len(result.Document.Payload) != 0 {
+					t.Fatalf("pattern search escaped execution budget: result=%s error=%v", result.Document.Payload, err)
+				}
+			})
+		}
+	}
+}
 
 func TestLuaBoundsNativeIntermediateResults(t *testing.T) {
 	tests := []struct {

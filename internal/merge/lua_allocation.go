@@ -15,6 +15,7 @@ const nativeAllocationLimit = "lua native allocation exceeds document byte limit
 func boundLuaAllocations(luaVM *vm.VM, maximum int) {
 	addUnicodeTextFunctions(luaVM, maximum)
 	stringsTable := luaVM.GetGlobal("string").AsTable().(*vm.Table)
+	boundLuaPatterns(stringsTable)
 	format := stringsTable.GetString("format")
 	stringsTable.SetString("format", vm.NewNativeFunc(func(state *vm.VM) int {
 		return boundedLuaFormat(state, format, maximum)

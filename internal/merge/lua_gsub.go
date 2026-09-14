@@ -164,7 +164,7 @@ func (s *luaSubstitution) run() int {
 	if position <= len(input) {
 		s.append(input[position:])
 	}
-	if changed {
+	if changed || !original.IsString() {
 		s.state.Set(0, vm.NewString(s.output.String()))
 	} else {
 		// Preserve identity, including BSON-backed strings, on unchanged output.

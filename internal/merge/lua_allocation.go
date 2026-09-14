@@ -14,6 +14,10 @@ const nativeAllocationLimit = "lua native allocation exceeds document byte limit
 // These per-call bounds complement, but do not provide, a VM heap quota.
 func boundLuaAllocations(luaVM *vm.VM, maximum int) {
 	stringsTable := luaVM.GetGlobal("string").AsTable().(*vm.Table)
+	format := stringsTable.GetString("format")
+	stringsTable.SetString("format", vm.NewNativeFunc(func(state *vm.VM) int {
+		return boundedLuaFormat(state, format, maximum)
+	}))
 	find := stringsTable.GetString("find")
 	stringsTable.SetString("gsub", vm.NewNativeFunc(func(state *vm.VM) int {
 		substitution := luaSubstitution{state: state, find: find, maximum: maximum}

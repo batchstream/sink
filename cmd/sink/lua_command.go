@@ -435,6 +435,8 @@ func compareLuaTestDocuments(expected storage.Document, actual storage.Document)
 	if err != nil {
 		return fmt.Errorf("canonicalize actual document: %w", err)
 	}
+	expectedValue = normalizeLuaTestNumbers(expectedValue)
+	actualValue = normalizeLuaTestNumbers(actualValue)
 	if reflect.DeepEqual(expectedValue, actualValue) {
 		return nil
 	}

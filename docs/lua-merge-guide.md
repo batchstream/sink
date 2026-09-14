@@ -320,7 +320,10 @@ each append, including characters whose uppercase form requires more bytes.
 It checks cancellation and charges an instruction checkpoint every 1024 input
 characters and at completion, even for unchanged strings or discarded results.
 `string.pack` preflights the size of each intermediate string against
-`max_result_bytes` before allocating it. `table.concat` checks each append
+`max_result_bytes` before allocating it. Both `string.pack` and `string.packsize`
+check cancellation and charge instruction checkpoints for format bytes before
+processing, including whitespace and options that produce no output.
+`table.concat` checks each append
 against the same bound without retaining a separate list of string fragments,
 even if the script discards the result or returns only its length. Valid packing
 formats, alignment, variable strings, and concatenation ranges retain their

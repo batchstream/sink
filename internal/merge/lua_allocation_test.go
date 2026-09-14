@@ -117,6 +117,8 @@ func TestLuaBoundedLibrariesPreserveNormalCalls(t *testing.T) {
     local a, b, c, d, e = string.unpack("!8 b s2 z Xh h c3", packed)
     assert(a == 1 and b == "abc" and c == "xyz" and d == 2 and e == "end")
     assert(#string.pack("c1024", "") == 1024)
+    assert(string.packsize("!8 b Xh h c3") == 7)
+    assert(string.packsize("") == 0)
     assert(table.concat({"a", "b", "c"}, ":", 2, 3) == "b:c")
     assert(table.concat({[0] = 1, [1] = 2}, "-", 0, 1) == "1-2")
     assert(table.concat({}, "", 2, 1) == "")

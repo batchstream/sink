@@ -27,12 +27,17 @@ func boundLuaAllocations(luaVM *vm.VM, maximum int) {
 	}))
 	pack := stringsTable.GetString("pack")
 	packSize := stringsTable.GetString("packsize")
+	stringsTable.SetString("packsize", vm.NewNativeFunc(func(state *vm.VM) int {
+		chargeLuaPackFormat(state)
+		return packSize.AsNativeFunc()(state)
+	}))
 	unpack := stringsTable.GetString("unpack")
 	stringsTable.SetString("unpack", vm.NewNativeFunc(func(state *vm.VM) int {
 		prepareLuaUnpack(state)
 		return unpack.AsNativeFunc()(state)
 	}))
 	stringsTable.SetString("pack", vm.NewNativeFunc(func(state *vm.VM) int {
+		chargeLuaPackFormat(state)
 		arguments := luaArguments(state)
 		format, err := sizedPackFormat(arguments)
 		if err != nil {
@@ -58,6 +63,24 @@ func boundLuaAllocations(luaVM *vm.VM, maximum int) {
 	tables.SetString("pack", vm.NewNativeFunc(boundedLuaPack))
 	tables.SetString("unpack", vm.NewNativeFunc(boundedLuaUnpack))
 	tables.SetString("sort", vm.NewNativeFunc(boundedLuaSort))
+}
+
+// The runtime's pack and packsize loops execute no VM checkpoints. Charge the
+// format before normalization or encoding, including options with zero output.
+func chargeLuaPackFormat(state *vm.VM) {
+	if err := state.CheckInterrupt(); err != nil {
+		panic(err)
+	}
+	format, err := luaPackString(state.Get(1))
+	if err != nil {
+		// Preserve the underlying library's argument validation and diagnostics.
+		return
+	}
+	for range len(format) {
+		if err := state.CheckInterrupt(); err != nil {
+			panic(err)
+		}
+	}
 }
 
 func luaArguments(state *vm.VM) []vm.Value {

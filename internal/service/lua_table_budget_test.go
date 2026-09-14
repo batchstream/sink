@@ -19,6 +19,8 @@ func TestLuaNativeBudgetFailureDoesNotCommitPartialMutation(t *testing.T) {
 		`table.sort(current.values)`,
 		`table.unpack(current.values)`,
 		`string.unpack("` + strings.Repeat(" ", 100) + `", "")`,
+		`string.pack("` + strings.Repeat(" ", 100) + `")`,
+		`string.packsize("` + strings.Repeat(" ", 100) + `")`,
 	} {
 		t.Run(body, func(t *testing.T) {
 			backend := memory.New()

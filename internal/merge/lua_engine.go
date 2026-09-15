@@ -83,7 +83,7 @@ func NewLuaEngine(options LuaOptions) (*LuaEngine, error) {
 	}
 	engine := &LuaEngine{
 		options:     options,
-		environment: newLuaEnvironment(),
+		environment: newLuaEnvironment(options.MaxResultBytes),
 		entries:     make(map[[sha256.Size]byte]*list.Element),
 	}
 	return engine, nil
@@ -280,7 +280,6 @@ func (e *LuaEngine) newVM(ctx context.Context, observedAt time.Time) (*vm.VM, *l
 	options := []vm.VMOption{vm.WithContext(ctx), vm.WithLimits(limits)}
 	luaVM := vm.New(options...)
 	e.environment.install(luaVM)
-	boundLuaAllocations(luaVM, e.options.MaxResultBytes)
 	bridge := newLuaJSONBridge(luaVM)
 	addSinkV1Functions(luaVM, bridge, observedAt)
 	return luaVM, bridge

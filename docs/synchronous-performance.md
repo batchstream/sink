@@ -1,5 +1,8 @@
 # Synchronous write performance
 
+For the subsequent 1 CPU / 256 MiB returning-Put and direct-admission results,
+see [small-server admission performance](synchronous-admission-performance.md).
+
 These are the original **local** measurements. See
 [production sizing](production-sizing.md) and the
 [Kubernetes harness](../benchmarks/kubernetes/README.md) for subsequent tests

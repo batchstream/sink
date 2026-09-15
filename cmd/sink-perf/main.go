@@ -153,7 +153,7 @@ func main() {
 	flag.StringVar(&opts.SearchEndpoint, "search-endpoint", "http://opensearch:9200", "Disposable OpenSearch endpoint")
 	flag.StringVar(&opts.Dataset, "dataset", "", "Required unique disposable dataset, beginning perf-")
 	flag.StringVar(&opts.Store, "store", "mongo", "Logical storage: mongo or search")
-	flag.StringVar(&opts.Workload, "workload", "merge", "merge, heavy-merge, upsert, read, or mixed (80% merge / 20% read)")
+	flag.StringVar(&opts.Workload, "workload", "merge", "merge, heavy-merge, upsert, read, count (MongoDB), or mixed (80% merge / 20% read)")
 	flag.IntVar(&opts.Concurrency, "concurrency", 64, "Concurrent RPC workers")
 	flag.IntVar(&opts.Keys, "keys", 4096, "Distinct records, rounded up to equal worker partitions")
 	flag.IntVar(&opts.HotKeys, "hot-keys", 0, "Shared keys for contention tests; zero uses disjoint worker partitions")
@@ -207,8 +207,11 @@ func validateSettings(opts *settings) error {
 	if opts.Store != "mongo" && opts.Store != "search" {
 		return errors.New("store must be mongo or search")
 	}
-	if !slices.Contains([]string{"merge", "heavy-merge", "upsert", "read", "mixed"}, opts.Workload) {
+	if !slices.Contains([]string{"merge", "heavy-merge", "upsert", "read", "count", "mixed"}, opts.Workload) {
 		return errors.New("unknown workload")
+	}
+	if opts.Workload == "count" && (opts.Store != "mongo" || opts.Batch != 1) {
+		return errors.New("count workload requires MongoDB and one operation per RPC")
 	}
 	if opts.Concurrency < 1 || opts.Concurrency > 4096 || opts.Batch < 1 || opts.Batch > 1000 || opts.Keys < 1 || opts.Keys > 1_000_000 || opts.HotKeys < 0 || opts.Padding < 0 || opts.Padding > 1<<20 || opts.Duration <= 0 || opts.Timeout <= 0 || opts.Rate < 0 || opts.Connections < 1 || opts.Connections > 128 {
 		return errors.New("invalid load limits")
@@ -515,7 +518,9 @@ func (w *worker) run(ctx context.Context, opts settings, started time.Time, tick
 		call, cancel := context.WithTimeout(ctx, opts.Timeout)
 		wireStarted := time.Now()
 		var success bool
-		if read {
+		if opts.Workload == "count" {
+			success = w.count(call, opts)
+		} else if read {
 			success = w.read(call, opts, keys)
 		} else {
 			success = w.write(call, opts, keys)
@@ -550,6 +555,32 @@ func (w *worker) run(ctx context.Context, opts settings, started time.Time, tick
 			}
 		}
 	}
+}
+
+func (w *worker) count(ctx context.Context, opts settings) bool {
+	// A nonempty predicate selects exact counting rather than the metadata
+	// estimate, and every seeded record matches throughout this read-only run.
+	predicate := bson.D{{Key: "value", Value: int64(0)}}
+	command := bson.D{{Key: "find", Value: opts.Dataset}, {Key: "filter", Value: predicate}}
+	payload, err := bson.Marshal(command)
+	if err != nil {
+		w.errors["encode_count"]++
+		return false
+	}
+	native := &sink.Command{Store: opts.Store, Namespace: opts.Dataset, ContentType: "application/bson", Payload: payload}
+	request := &sink.CountRequest{Command: native}
+	response, err := w.client.Count(ctx, request)
+	if err != nil {
+		w.errors[status.Code(err).String()]++
+		return false
+	}
+	if response.GetEstimated() || response.GetCount() != uint64(opts.Keys) {
+		w.errors["incorrect_count"]++
+		return false
+	}
+	w.ops++
+	w.reads++
+	return true
 }
 
 func (w *worker) read(ctx context.Context, opts settings, keys []int) bool {

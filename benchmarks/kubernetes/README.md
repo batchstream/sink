@@ -88,7 +88,7 @@ unacknowledged final commit. A passed reconciliation is not equivalent to a
 healthy capacity sample: RPC errors, unissued fixed-rate requests, restarts,
 replaced Pods or OOMs also disqualify a healthy result.
 
-Load options include `--workload upsert|read|mixed|heavy-merge`, `--padding`
+Load options include `--workload upsert|read|count|mixed|heavy-merge`, `--padding`
 (bytes), `--fields`, `--batch`, `--return-document`, `--visible`, `--hot-keys`,
 `--rate`, `--timeout`, `--search-replicas` and `--search-shards`. Run
 `go run ./cmd/sink-perf --help` for all options. `--rate 0` is closed-loop
@@ -117,6 +117,10 @@ adopting a larger threshold. The [flush comparison plan](plans/search-flush.json
 combines sampled flush counters with fixed-rate workloads.
 The default Merge carries only a small counter delta. Add `--full-incoming`
 to transmit and merge the padding and fields on each mutation as well.
+
+The MongoDB-only `--workload count --batch 1` exercises exact native Count RPCs
+through direct admission. It verifies every returned count against the seeded
+dataset and reconciles the untouched records after load.
 
 The load process runs inside Kubernetes and persists its result before reporting
 through kubectl. A local `.pending.json` records how to recover its output if the

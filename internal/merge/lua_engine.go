@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -40,7 +39,6 @@ type LuaOptions struct {
 type LuaEngine struct {
 	options     LuaOptions
 	environment *luaEnvironment
-	executions  chan struct{}
 	mu          sync.Mutex
 	entries     map[[sha256.Size]byte]*list.Element
 	recent      list.List
@@ -86,7 +84,6 @@ func NewLuaEngine(options LuaOptions) (*LuaEngine, error) {
 	engine := &LuaEngine{
 		options:     options,
 		environment: newLuaEnvironment(options.MaxResultBytes),
-		executions:  make(chan struct{}, runtime.GOMAXPROCS(0)),
 		entries:     make(map[[sha256.Size]byte]*list.Element),
 	}
 	return engine, nil
@@ -140,12 +137,6 @@ func (e *LuaEngine) Compile(ctx context.Context, program Program) (Merger, error
 }
 
 func (e *LuaEngine) validate(parent context.Context, compiled *compiler.Proto) error {
-	select {
-	case e.executions <- struct{}{}:
-		defer func() { <-e.executions }()
-	case <-parent.Done():
-		return parent.Err()
-	}
 	ctx, cancel := context.WithTimeout(parent, e.options.Timeout)
 	defer cancel()
 	validationTime := time.Unix(0, 0).UTC()
@@ -200,15 +191,6 @@ func (m *luaMerger) Merge(ctx context.Context, req Request) (Result, error) {
 	var empty Result
 	if len(req.Incoming.Payload) > m.engine.options.MaxResultBytes || (req.Current != nil && len(req.Current.Payload) > m.engine.options.MaxResultBytes) {
 		return empty, fmt.Errorf("%w: merge input exceeds the document byte limit", ErrExecutionExhausted)
-	}
-	// Queue CPU work before starting its execution budget. Oversubscribing the
-	// interpreter makes otherwise short scripts spend that budget waiting for
-	// a Go scheduler timeslice. The caller's deadline still bounds this wait.
-	select {
-	case m.engine.executions <- struct{}{}:
-		defer func() { <-m.engine.executions }()
-	case <-ctx.Done():
-		return empty, classifyExecutionError(ctx, ctx.Err())
 	}
 	// Document conversion is part of the execution budget, even when the
 	// script itself returns immediately.

@@ -241,8 +241,9 @@ storages:
     mongodb:
       uri: mongodb://unreachable.invalid:27017
 service:
-  lua:
-    max_source_bytes: 1
+  merge:
+    lua:
+      max_source_bytes: 1
 `)
 	incoming := fixture.write(t, "incoming.json", `{}`)
 	args := []string{

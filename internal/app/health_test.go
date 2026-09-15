@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -39,7 +39,7 @@ func TestUpdateHealthIsolatesStorageFailure(t *testing.T) {
 	failedCheck := &configuredHealthCheck{service: storageHealthService("failed"), pinger: failedStore}
 	healthyCheck := &configuredHealthCheck{service: storageHealthService("healthy"), pinger: healthyStore}
 	healthChecks := []*configuredHealthCheck{failedCheck, healthyCheck}
-	app := &application{health: health.NewServer(), healthChecks: healthChecks}
+	app := &Application{health: health.NewServer(), healthChecks: healthChecks}
 	app.health.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	app.health.SetServingStatus(failedCheck.service, healthpb.HealthCheckResponse_SERVING)
 	app.health.SetServingStatus(healthyCheck.service, healthpb.HealthCheckResponse_SERVING)
@@ -59,11 +59,11 @@ func TestUpdateHealthIsolatesStorageFailure(t *testing.T) {
 func TestCloseMarksEveryHealthServiceNotServing(t *testing.T) {
 	store := &healthStorage{}
 	healthCheck := &configuredHealthCheck{service: kafkaHealthService("primary"), pinger: store}
-	app := &application{health: health.NewServer(), healthChecks: []*configuredHealthCheck{healthCheck}}
+	app := &Application{health: health.NewServer(), healthChecks: []*configuredHealthCheck{healthCheck}}
 	app.health.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	app.health.SetServingStatus(healthCheck.service, healthpb.HealthCheckResponse_SERVING)
 
-	app.close()
+	app.Close()
 
 	assertHealthStatus(t, app.health, "", healthpb.HealthCheckResponse_NOT_SERVING)
 	assertHealthStatus(t, app.health, healthCheck.service, healthpb.HealthCheckResponse_NOT_SERVING)

@@ -1,15 +1,17 @@
-package main
+package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	searchstorage "github.com/liran/sink/internal/storage/search"
+	"github.com/liran/sink/internal/config"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
@@ -31,7 +33,7 @@ func (p *stalledHealthProbe) Ping(context.Context) error {
 func TestReadinessHonorsDeadlineWhenDependencyIgnoresCancellation(t *testing.T) {
 	probe := &stalledHealthProbe{started: make(chan struct{}), release: make(chan struct{})}
 	check := &configuredHealthCheck{service: "blocked", pinger: probe}
-	app := &application{healthChecks: []*configuredHealthCheck{check}}
+	app := &Application{healthChecks: []*configuredHealthCheck{check}}
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
 	defer cancel()
 	request := httptest.NewRequestWithContext(ctx, http.MethodGet, "/readyz", nil)
@@ -88,15 +90,28 @@ func TestUnavailableStoreDoesNotBlockStartup(t *testing.T) {
 	defer unavailable.Close()
 	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	defer healthy.Close()
-	failedConfig := backendConfig{name: "failed", driver: driverOpenSearch, searchDriver: searchstorage.DriverOpenSearch, searchEndpoints: []string{unavailable.URL}}
-	healthyConfig := backendConfig{name: "healthy", driver: driverOpenSearch, searchDriver: searchstorage.DriverOpenSearch, searchEndpoints: []string{healthy.URL}}
-	loaded := config{mode: modeServer, grpcAddress: "127.0.0.1:0", grpcMaxReceiveBytes: 64 << 20, grpcMaxSendBytes: 64 << 20,
-		storages: []backendConfig{failedConfig, healthyConfig}, shutdownTimeout: time.Second}
-	app, err := newApplication(t.Context(), loaded)
+	contents := fmt.Sprintf(`grpc:
+  address: "127.0.0.1:0"
+storages:
+  - name: failed
+    driver: opensearch
+    search:
+      endpoints: [%q]
+  - name: healthy
+    driver: opensearch
+    search:
+      endpoints: [%q]
+`, unavailable.URL, healthy.URL)
+	loaded, err := config.Decode(strings.NewReader(contents))
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := Options{Config: loaded, Version: "test"}
+	app, err := New(t.Context(), options)
 	if err != nil {
 		t.Fatalf("healthy store could not start alongside outage: %v", err)
 	}
-	defer app.close()
+	defer app.Close()
 	app.health = health.NewServer()
 	app.updateHealth(t.Context())
 	assertHealthStatus(t, app.health, storageHealthService("failed"), healthpb.HealthCheckResponse_NOT_SERVING)
@@ -110,26 +125,12 @@ func TestUnavailableStoreDoesNotBlockStartup(t *testing.T) {
 }
 
 func TestMongoClientStartsWithoutRequiringAvailability(t *testing.T) {
-	configured := backendConfig{name: "primary", driver: driverMongoDB, mongoURI: "mongodb://127.0.0.1:1/?w=1&journal=false"}
+	mongoConfig := config.MongoDB{URI: "mongodb://127.0.0.1:1/?w=1&journal=false"}
+	configured := config.Storage{Name: "primary", Driver: config.DriverMongoDB, MongoDB: mongoConfig}
 	opened, err := openMongoStorage(t.Context(), configured, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer opened.mongoClient.Disconnect(t.Context())
 
-}
-
-func TestReliabilityConfigurationRejectsIncompatibleLimits(t *testing.T) {
-	readBytes := 1024
-	file := serviceConfigFile{MaxReadBytes: &readBytes}
-	loaded := config{grpcMaxSendBytes: 1024}
-	if err := loaded.loadReliabilityConfig(file); err == nil {
-		t.Fatal("read budget exceeded transport budget")
-	}
-	minISR := 3
-	kafkaFile := kafkaConfigFile{MinInSyncReplicas: &minISR}
-	kafka := backendKafkaConfig{topicReplicationFactor: 2}
-	if err := kafka.loadReliabilityConfig("kafka", kafkaFile); err == nil {
-		t.Fatal("min ISR exceeded replica factor")
-	}
 }

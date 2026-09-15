@@ -1,0 +1,71 @@
+package config
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+func resolveStorages(files []storageFile, maxExecutionBytes int) ([]Storage, error) {
+	if len(files) == 0 {
+		return nil, errors.New("storages must contain at least one storage")
+	}
+	loaded := make([]Storage, 0, len(files))
+	names := make(map[string]struct{}, len(files))
+	for index, file := range files {
+		prefix := fmt.Sprintf("storages[%d]", index)
+		configured, err := resolveStorage(prefix, file, maxExecutionBytes)
+		if err != nil {
+			return nil, err
+		}
+		if _, exists := names[configured.Name]; exists {
+			return nil, fmt.Errorf("storages contains duplicate name %q", configured.Name)
+		}
+		names[configured.Name] = struct{}{}
+		loaded = append(loaded, configured)
+	}
+	return loaded, nil
+}
+
+func resolveStorage(prefix string, file storageFile, maxExecutionBytes int) (Storage, error) {
+	var loaded Storage
+	loaded.Name = strings.TrimSpace(file.Name)
+	if loaded.Name == "" {
+		return loaded, fmt.Errorf("%s.name is required", prefix)
+	}
+	v := validator{}
+	if file.Limits.MaxExecutionBytes != nil {
+		loaded.Limits.MaxExecutionBytes = v.bounded(prefix+".limits.max_execution_bytes", file.Limits.MaxExecutionBytes, maxExecutionBytes, maxExecutionBytes)
+	}
+	loaded.Driver = Driver(strings.TrimSpace(string(file.Driver)))
+	switch loaded.Driver {
+	case DriverMongoDB:
+		mongo := &loaded.MongoDB
+		mongo.URI = strings.TrimSpace(file.MongoDB.URI)
+		if mongo.URI == "" {
+			return loaded, fmt.Errorf("%s.mongodb.uri is required when driver is mongodb", prefix)
+		}
+		mongo.MetadataField = valueOrDefault(file.MongoDB.MetadataField, "__sink")
+		mongo.MaxConcurrentWrites = v.integer(prefix+".mongodb.max_concurrent_writes", file.MongoDB.MaxConcurrentWrites, 64)
+		mongo.MaxConcurrentGroups = v.integer(prefix+".mongodb.max_concurrent_groups", file.MongoDB.MaxConcurrentGroups, 16)
+	case DriverElasticsearch, DriverOpenSearch:
+		search := &loaded.Search
+		search.Endpoints = nonEmptyValues(file.Search.Endpoints)
+		if len(search.Endpoints) == 0 {
+			return loaded, fmt.Errorf("%s.search.endpoints is required for a search driver", prefix)
+		}
+		search.Username = strings.TrimSpace(file.Search.Username)
+		search.Password = strings.TrimSpace(file.Search.Password)
+		search.APIKey = strings.TrimSpace(file.Search.APIKey)
+		if (search.Username == "") != (search.Password == "") {
+			return loaded, fmt.Errorf("%s.search.username and %s.search.password must be configured together", prefix, prefix)
+		}
+		if search.APIKey != "" && search.Username != "" {
+			return loaded, fmt.Errorf("%s.search.api_key cannot be combined with basic authentication", prefix)
+		}
+	default:
+		return loaded, fmt.Errorf("%s.driver must be mongodb, elasticsearch, or opensearch", prefix)
+	}
+	loaded.Kafka = resolveKafka(prefix+".kafka", file.Kafka, &v)
+	return loaded, v.err
+}

@@ -1,0 +1,150 @@
+package config
+
+import "time"
+
+// File types preserve omission so defaults can depend on other configured limits.
+// Runtime code receives only resolved values through Config.
+type configFile struct {
+	Mode            Mode           `yaml:"mode"`
+	GRPC            gRPCFile       `yaml:"grpc"`
+	Prometheus      prometheusFile `yaml:"prometheus"`
+	Storages        []storageFile  `yaml:"storages"`
+	Service         serviceFile    `yaml:"service"`
+	ShutdownTimeout *time.Duration `yaml:"shutdown_timeout"`
+}
+
+type gRPCFile struct {
+	Address                string `yaml:"address"`
+	MaxReceiveMessageBytes *int   `yaml:"max_receive_message_bytes"`
+	MaxSendMessageBytes    *int   `yaml:"max_send_message_bytes"`
+}
+
+type prometheusFile struct {
+	Address string `yaml:"address"`
+}
+
+type serviceFile struct {
+	Request   requestFile   `yaml:"request"`
+	Execution executionFile `yaml:"execution"`
+	Publish   publishFile   `yaml:"publish"`
+	Batching  batchingFile  `yaml:"batching"`
+	Merge     mergeFile     `yaml:"merge"`
+}
+
+type requestFile struct {
+	Timeout       *time.Duration `yaml:"timeout"`
+	MaxOperations *int           `yaml:"max_operations"`
+	MaxReadBytes  *int           `yaml:"max_read_bytes"`
+}
+
+type executionFile struct {
+	MaxRequests         *int     `yaml:"max_requests"`
+	MaxBytes            *int     `yaml:"max_bytes"`
+	MaxRequestsPerStore *int     `yaml:"max_requests_per_store"`
+	Scan                scanFile `yaml:"scan"`
+}
+
+type scanFile struct {
+	MaxRequests         *int           `yaml:"max_requests"`
+	MaxBytes            *int           `yaml:"max_bytes"`
+	MaxRequestsPerStore *int           `yaml:"max_requests_per_store"`
+	AdmissionWait       *time.Duration `yaml:"admission_wait"`
+}
+
+type publishFile struct {
+	MaxRequestsPerStore *int `yaml:"max_requests_per_store"`
+	MaxRequests         *int `yaml:"max_requests"`
+	MaxBytes            *int `yaml:"max_bytes"`
+}
+
+type batchingFile struct {
+	MaxWait       *time.Duration `yaml:"max_wait"`
+	MaxOperations *int           `yaml:"max_operations"`
+	MaxBytes      *int           `yaml:"max_bytes"`
+	Queue         batchQueueFile `yaml:"queue"`
+}
+
+type batchQueueFile struct {
+	MaxOperations *int `yaml:"max_operations"`
+	MaxBytes      *int `yaml:"max_bytes"`
+}
+
+type mergeFile struct {
+	MaxAttempts *int    `yaml:"max_attempts"`
+	Lua         luaFile `yaml:"lua"`
+}
+
+type luaFile struct {
+	Timeout           *time.Duration `yaml:"timeout"`
+	MaxSourceBytes    *int           `yaml:"max_source_bytes"`
+	MaxResultBytes    *int           `yaml:"max_result_bytes"`
+	MaxCachedPrograms *int           `yaml:"max_cached_programs"`
+	MaxInstructions   *int           `yaml:"max_instructions"`
+}
+
+type storageFile struct {
+	Name    string          `yaml:"name"`
+	Driver  Driver          `yaml:"driver"`
+	MongoDB mongoDBFile     `yaml:"mongodb"`
+	Search  searchFile      `yaml:"search"`
+	Limits  storeLimitsFile `yaml:"limits"`
+	Kafka   kafkaFile       `yaml:"kafka"`
+}
+
+type mongoDBFile struct {
+	URI                 string `yaml:"uri"`
+	MetadataField       string `yaml:"metadata_field"`
+	MaxConcurrentWrites *int   `yaml:"max_concurrent_writes"`
+	MaxConcurrentGroups *int   `yaml:"max_concurrent_groups"`
+}
+
+type searchFile struct {
+	Endpoints []string `yaml:"endpoints"`
+	Username  string   `yaml:"username"`
+	Password  string   `yaml:"password"`
+	APIKey    string   `yaml:"api_key"`
+}
+
+type storeLimitsFile struct {
+	MaxExecutionBytes *int `yaml:"max_execution_bytes"`
+}
+
+type kafkaFile struct {
+	Enabled    bool           `yaml:"enabled"`
+	Brokers    []string       `yaml:"brokers"`
+	Topic      topicFile      `yaml:"topic"`
+	Producer   producerFile   `yaml:"producer"`
+	Consumer   consumerFile   `yaml:"consumer"`
+	DeadLetter deadLetterFile `yaml:"dead_letter"`
+}
+
+type topicFile struct {
+	Name              string         `yaml:"name"`
+	Partitions        *int           `yaml:"partitions"`
+	ReplicationFactor *int           `yaml:"replication_factor"`
+	Retention         *time.Duration `yaml:"retention"`
+	MinInSyncReplicas *int           `yaml:"min_insync_replicas"`
+	MaxRecordBytes    *int           `yaml:"max_record_bytes"`
+}
+
+type producerFile struct {
+	MaxBufferedBytes *int `yaml:"max_buffered_bytes"`
+}
+
+type consumerFile struct {
+	GroupID           string         `yaml:"group_id"`
+	MaxPollRecords    *int           `yaml:"max_poll_records"`
+	ProcessingTimeout *time.Duration `yaml:"processing_timeout"`
+	Retry             retryFile      `yaml:"retry"`
+}
+
+type retryFile struct {
+	MaxAttempts *int           `yaml:"max_attempts"`
+	Backoff     *time.Duration `yaml:"backoff"`
+	MaxBackoff  *time.Duration `yaml:"max_backoff"`
+}
+
+type deadLetterFile struct {
+	Topic     string         `yaml:"topic"`
+	Retention *time.Duration `yaml:"retention"`
+}

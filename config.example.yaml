@@ -16,31 +16,39 @@ storages:
       metadata_field: __sink
       max_concurrent_writes: 64
       max_concurrent_groups: 16
+    # Optional ceiling within service.execution.max_bytes.
+    # limits:
+    #   max_execution_bytes: 134217728
 
 service:
-  request_timeout_seconds: 30
-  max_in_flight_requests: 128
-  max_in_flight_bytes: 268435456
-  max_publish_requests: 32
-  max_publish_bytes: 268435456
-  max_store_requests: 32
-  # Optional per-store execution byte ceilings; names must match storages.
-  store_execution_bytes: {}
-  scan_admission_wait_milliseconds: 2000
-  max_read_bytes: 33554432
-  max_operations: 1000
-  max_merge_attempts: 3
+  request:
+    timeout: 30s
+    max_read_bytes: 33554432
+    max_operations: 1000
+  execution:
+    max_requests: 128
+    max_bytes: 268435456
+    max_requests_per_store: 32
+    scan:
+      admission_wait: 2s
+  publish:
+    max_requests_per_store: 32
+    max_requests: 32
+    max_bytes: 268435456
   batching:
-    max_wait_milliseconds: 2
+    max_wait: 2ms
     max_operations: 1000
     max_bytes: 16777216
-    max_queued_operations: 10000
-    max_queued_bytes: 134217728
-  lua:
-    timeout_milliseconds: 100
-    max_source_bytes: 65536
-    max_result_bytes: 16777216
-    max_cached_programs: 256
-    max_instructions: 1000000
+    queue:
+      max_operations: 10000
+      max_bytes: 134217728
+  merge:
+    max_attempts: 3
+    lua:
+      timeout: 100ms
+      max_source_bytes: 65536
+      max_result_bytes: 16777216
+      max_cached_programs: 256
+      max_instructions: 1000000
 
-shutdown_timeout_seconds: 15
+shutdown_timeout: 15s

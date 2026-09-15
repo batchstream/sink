@@ -83,6 +83,24 @@ class ExportTests(unittest.TestCase):
         self.assertNotIn("do-not-export", json.dumps(exported))
         self.assertEqual(exported["case"], "example")
 
+        old_config = {"max_in_flight_bytes": 256 << 20, "max_read_bytes": 32 << 20,
+                      "batching": {"max_wait_milliseconds": 2}}
+        new_config = {"execution": {"max_bytes": 256 << 20}, "request": {"max_read_bytes": 32 << 20},
+                      "batching": {"max_wait": "2ms"}}
+        for config in [old_config, new_config]:
+            result["server_service_config"] = config
+            exported = export.row_for(result)
+            self.assertEqual(exported["execution_mib"], 256)
+            self.assertEqual(exported["read_mib"], 32)
+            self.assertEqual(exported["batch_wait_ms"], 2)
+
+    def test_export_duration_units(self):
+        self.assertEqual(export.duration_milliseconds("1s500us"), 1000.5)
+        self.assertEqual(export.duration_milliseconds(".5ms"), 0.5)
+        for invalid in ["2", "2msjunk", "-2ms"]:
+            with self.assertRaises(ValueError):
+                export.duration_milliseconds(invalid)
+
 
 class FaultTargetTests(unittest.TestCase):
     def test_rollout_acceptance_does_not_prove_replacement(self):

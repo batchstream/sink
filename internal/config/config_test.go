@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"os"
@@ -16,38 +16,38 @@ storages:
     mongodb:
       uri: mongodb://mongodb:27017
 `)
-	loaded, err := loadConfig(path)
+	loaded, err := Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
-	if loaded.mode != modeServer || loaded.grpcAddress != ":8080" || len(loaded.storages) != 1 {
-		t.Fatalf("loadConfig() = %#v", loaded)
+	if loaded.Mode != ModeServer || loaded.GRPC.Address != ":8080" || len(loaded.Storages) != 1 {
+		t.Fatalf("Load() = %#v", loaded)
 	}
-	if loaded.prometheusAddress != "" {
-		t.Fatalf("loadConfig() Prometheus address = %q", loaded.prometheusAddress)
+	if loaded.Prometheus.Address != "" {
+		t.Fatalf("Load() Prometheus address = %q", loaded.Prometheus.Address)
 	}
-	configured := loaded.storages[0]
-	if configured.name != "primary" || configured.driver != driverMongoDB || configured.mongoURI != "mongodb://mongodb:27017" {
-		t.Fatalf("loadConfig() storage = %#v", configured)
+	configured := loaded.Storages[0]
+	if configured.Name != "primary" || configured.Driver != DriverMongoDB || configured.MongoDB.URI != "mongodb://mongodb:27017" {
+		t.Fatalf("Load() storage = %#v", configured)
 	}
-	if loaded.maxOperations != 1000 || loaded.maxMergeAttempts != 3 || loaded.shutdownTimeout != 15*time.Second {
-		t.Fatalf("loadConfig() service defaults = %#v", loaded)
+	if loaded.Service.Request.MaxOperations != 1000 || loaded.Service.Merge.MaxAttempts != 3 || loaded.ShutdownTimeout != 15*time.Second {
+		t.Fatalf("Load() service defaults = %#v", loaded)
 	}
-	if loaded.batchingMaxWait != 2*time.Millisecond ||
-		loaded.batchingMaxOperations != 1000 || loaded.batchingMaxBytes != 16<<20 ||
-		loaded.batchingMaxQueuedOps != 10_000 || loaded.batchingMaxQueuedBytes != 128<<20 {
-		t.Fatalf("loadConfig() batching defaults = %#v", loaded)
+	if loaded.Service.Batching.MaxWait != 2*time.Millisecond ||
+		loaded.Service.Batching.MaxOperations != 1000 || loaded.Service.Batching.MaxBytes != 16<<20 ||
+		loaded.Service.Batching.Queue.MaxOperations != 10_000 || loaded.Service.Batching.Queue.MaxBytes != 128<<20 {
+		t.Fatalf("Load() batching defaults = %#v", loaded)
 	}
-	if loaded.luaOptions.Timeout != 100*time.Millisecond || loaded.luaOptions.MaxSourceBytes != 64<<10 ||
-		loaded.luaOptions.MaxResultBytes != 16<<20 || loaded.luaOptions.MaxCachedPrograms != 256 ||
-		loaded.luaOptions.MaxInstructions != 1_000_000 {
-		t.Fatalf("loadConfig() Lua defaults = %#v", loaded.luaOptions)
+	if loaded.Service.Merge.Lua.Timeout != 100*time.Millisecond || loaded.Service.Merge.Lua.MaxSourceBytes != 64<<10 ||
+		loaded.Service.Merge.Lua.MaxResultBytes != 16<<20 || loaded.Service.Merge.Lua.MaxCachedPrograms != 256 ||
+		loaded.Service.Merge.Lua.MaxInstructions != 1_000_000 {
+		t.Fatalf("Load() Lua defaults = %#v", loaded.Service.Merge.Lua)
 	}
-	if loaded.grpcMaxReceiveBytes != 64<<20 || loaded.grpcMaxSendBytes != 64<<20 {
-		t.Fatalf("loadConfig() gRPC limits = %#v", loaded)
+	if loaded.GRPC.MaxReceiveMessageBytes != 64<<20 || loaded.GRPC.MaxSendMessageBytes != 64<<20 {
+		t.Fatalf("Load() gRPC limits = %#v", loaded)
 	}
-	if configured.kafka.enabled {
-		t.Fatalf("loadConfig() Kafka configuration = %#v", configured.kafka)
+	if configured.Kafka.Enabled {
+		t.Fatalf("Load() Kafka configuration = %#v", configured.Kafka)
 	}
 }
 
@@ -60,15 +60,16 @@ storages:
       uri: mongodb://mongodb:27017
     kafka:
       brokers: [kafka:9092]
-      topic: sink-mutations
+      topic:
+        name: sink-mutations
 `)
-	loaded, err := loadConfig(path)
+	loaded, err := Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
-	configured := loaded.storages[0].kafka
-	if configured.enabled {
-		t.Fatalf("loadConfig() Kafka = %#v", configured)
+	configured := loaded.Storages[0].Kafka
+	if configured.Enabled {
+		t.Fatalf("Load() Kafka = %#v", configured)
 	}
 }
 
@@ -82,22 +83,24 @@ storages:
     mongodb:
       uri: mongodb://mongodb:27017
 service:
-  max_operations: 2000
+  request:
+    max_operations: 2000
   batching:
-    max_wait_milliseconds: 5
+    max_wait: 5ms
     max_operations: 500
     max_bytes: 524288
-    max_queued_operations: 2500
-    max_queued_bytes: 2097152
+    queue:
+      max_operations: 2500
+      max_bytes: 2097152
 `)
-	loaded, err := loadConfig(path)
+	loaded, err := Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
-	if loaded.batchingMaxWait != 5*time.Millisecond ||
-		loaded.batchingMaxOperations != 500 || loaded.batchingMaxBytes != 524288 ||
-		loaded.batchingMaxQueuedOps != 2500 || loaded.batchingMaxQueuedBytes != 2097152 {
-		t.Fatalf("loadConfig() batching settings = %#v", loaded)
+	if loaded.Service.Batching.MaxWait != 5*time.Millisecond ||
+		loaded.Service.Batching.MaxOperations != 500 || loaded.Service.Batching.MaxBytes != 524288 ||
+		loaded.Service.Batching.Queue.MaxOperations != 2500 || loaded.Service.Batching.Queue.MaxBytes != 2097152 {
+		t.Fatalf("Load() batching settings = %#v", loaded)
 	}
 }
 
@@ -114,9 +117,9 @@ service:
   batching:
     enabled: ` + enabled + "\n"
 			path := writeConfig(t, contents)
-			_, err := loadConfig(path)
-			if err == nil || !strings.Contains(err.Error(), "field enabled not found in type main.batchingConfigFile") {
-				t.Fatalf("loadConfig() accepted removed batching switch: %v", err)
+			_, err := Load(path)
+			if err == nil || !strings.Contains(err.Error(), "field enabled not found in type config.batchingFile") {
+				t.Fatalf("Load() accepted removed batching switch: %v", err)
 			}
 		})
 	}
@@ -131,17 +134,17 @@ func TestLoadConfigRejectsUnsafeBatchingLimits(t *testing.T) {
 		{
 			name:      "batch exceeds service operation limit",
 			batching:  "max_operations: 1001",
-			wantError: "service.batching.max_operations cannot exceed service.max_operations",
+			wantError: "service.batching.max_operations cannot exceed service.request.max_operations",
 		},
 		{
 			name:      "queue cannot hold one request",
-			batching:  "max_queued_operations: 999",
-			wantError: "service.batching.max_queued_operations must cover one server request and one batch",
+			batching:  "queue:\n      max_operations: 999",
+			wantError: "service.batching.queue.max_operations must cover one server request and one batch",
 		},
 		{
 			name:      "byte queue cannot hold one gRPC message",
-			batching:  "max_queued_bytes: 1048576",
-			wantError: "service.batching.max_queued_bytes must cover one gRPC request and one batch",
+			batching:  "queue:\n      max_bytes: 1048576",
+			wantError: "service.batching.queue.max_bytes must cover one gRPC request and one batch",
 		},
 	}
 	for _, test := range tests {
@@ -156,9 +159,9 @@ service:
   batching:
     ` + test.batching + "\n"
 			path := writeConfig(t, contents)
-			_, err := loadConfig(path)
+			_, err := Load(path)
 			if err == nil || !strings.Contains(err.Error(), test.wantError) {
-				t.Fatalf("loadConfig() error = %v", err)
+				t.Fatalf("Load() error = %v", err)
 			}
 		})
 	}
@@ -186,22 +189,22 @@ storages:
         - http://search-2:9200
       api_key: test-api-key
 `)
-	loaded, err := loadConfig(path)
+	loaded, err := Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
-	if len(loaded.storages) != 3 {
-		t.Fatalf("loadConfig() storages = %#v", loaded.storages)
+	if len(loaded.Storages) != 3 {
+		t.Fatalf("Load() storages = %#v", loaded.Storages)
 	}
-	if loaded.prometheusAddress != ":9090" {
-		t.Fatalf("loadConfig() Prometheus address = %q", loaded.prometheusAddress)
+	if loaded.Prometheus.Address != ":9090" {
+		t.Fatalf("Load() Prometheus address = %q", loaded.Prometheus.Address)
 	}
-	if loaded.storages[0].name != "mongo-main" || loaded.storages[0].mongoMetadataField != "__revision" {
-		t.Fatalf("loadConfig() first storage = %#v", loaded.storages[0])
+	if loaded.Storages[0].Name != "mongo-main" || loaded.Storages[0].MongoDB.MetadataField != "__revision" {
+		t.Fatalf("Load() first storage = %#v", loaded.Storages[0])
 	}
-	search := loaded.storages[2]
-	if search.driver != driverElasticsearch || len(search.searchEndpoints) != 2 || search.searchAPIKey != "test-api-key" {
-		t.Fatalf("loadConfig() search storage = %#v", search)
+	search := loaded.Storages[2]
+	if search.Driver != DriverElasticsearch || len(search.Search.Endpoints) != 2 || search.Search.APIKey != "test-api-key" {
+		t.Fatalf("Load() search storage = %#v", search)
 	}
 }
 
@@ -216,13 +219,13 @@ storages:
       username: sink
       password: test-password
 `)
-	loaded, err := loadConfig(path)
+	loaded, err := Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
-	configured := loaded.storages[0]
-	if configured.driver != driverOpenSearch || configured.searchUsername != "sink" || configured.searchPassword != "test-password" {
-		t.Fatalf("loadConfig() storage = %#v", configured)
+	configured := loaded.Storages[0]
+	if configured.Driver != DriverOpenSearch || configured.Search.Username != "sink" || configured.Search.Password != "test-password" {
+		t.Fatalf("Load() storage = %#v", configured)
 	}
 }
 
@@ -237,9 +240,9 @@ storages:
       password: test-password
       api_key: test-api-key
 `)
-	_, err := loadConfig(path)
+	_, err := Load(path)
 	if err == nil {
-		t.Fatal("loadConfig() error = nil")
+		t.Fatal("Load() error = nil")
 	}
 }
 
@@ -256,49 +259,55 @@ storages:
       brokers:
         - kafka-1:9092
         - kafka-2:9092
-      topic: sink-mutations
-      group_id: sink-workers
-      topic_partitions: 12
-      topic_replication_factor: 3
-      topic_retention_hours: 48
-      max_poll_records: 250
-      dead_letter_topic: sink-dead-letters
-      max_retry_attempts: 4
-      retry_backoff_milliseconds: 20
-      max_retry_backoff_milliseconds: 200
+      topic:
+        name: sink-mutations
+        partitions: 12
+        replication_factor: 3
+        retention: 48h
+      consumer:
+        group_id: sink-workers
+        max_poll_records: 250
+        retry:
+          max_attempts: 4
+          backoff: 20ms
+          max_backoff: 200ms
+      dead_letter:
+        topic: sink-dead-letters
 service:
-  max_operations: 2000
-  max_merge_attempts: 5
-  lua:
-    timeout_milliseconds: 250
-    max_source_bytes: 32768
-    max_result_bytes: 1048576
-    max_cached_programs: 128
-    max_instructions: 2000000
-shutdown_timeout_seconds: 30
+  request:
+    max_operations: 2000
+  merge:
+    max_attempts: 5
+    lua:
+      timeout: 250ms
+      max_source_bytes: 32768
+      max_result_bytes: 1048576
+      max_cached_programs: 128
+      max_instructions: 2000000
+shutdown_timeout: 30s
 `)
-	loaded, err := loadConfig(path)
+	loaded, err := Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
-	configured := loaded.storages[0]
-	if loaded.mode != modeWorker || len(configured.kafka.brokers) != 2 || configured.kafka.maxPollRecords != 250 {
-		t.Fatalf("loadConfig() = %#v", loaded)
+	configured := loaded.Storages[0]
+	if loaded.Mode != ModeWorker || len(configured.Kafka.Brokers) != 2 || configured.Kafka.Consumer.MaxPollRecords != 250 {
+		t.Fatalf("Load() = %#v", loaded)
 	}
-	if configured.kafka.deadLetterTopic != "sink-dead-letters" || configured.kafka.maxRetryAttempts != 4 || configured.kafka.retryBackoff != 20*time.Millisecond || configured.kafka.maxRetryBackoff != 200*time.Millisecond {
-		t.Fatalf("loadConfig() Kafka retry settings = %#v", configured.kafka)
+	if configured.Kafka.DeadLetter.Topic != "sink-dead-letters" || configured.Kafka.Consumer.Retry.MaxAttempts != 4 || configured.Kafka.Consumer.Retry.Backoff != 20*time.Millisecond || configured.Kafka.Consumer.Retry.MaxBackoff != 200*time.Millisecond {
+		t.Fatalf("Load() Kafka retry settings = %#v", configured.Kafka)
 	}
-	if configured.kafka.topicPartitions != 12 ||
-		configured.kafka.topicReplicationFactor != 3 || configured.kafka.topicRetention != 48*time.Hour {
-		t.Fatalf("loadConfig() Kafka topic settings = %#v", configured.kafka)
+	if configured.Kafka.Topic.Partitions != 12 ||
+		configured.Kafka.Topic.ReplicationFactor != 3 || configured.Kafka.Topic.Retention != 48*time.Hour {
+		t.Fatalf("Load() Kafka topic settings = %#v", configured.Kafka)
 	}
-	if loaded.maxOperations != 2000 || loaded.maxMergeAttempts != 5 || loaded.shutdownTimeout != 30*time.Second {
-		t.Fatalf("loadConfig() service settings = %#v", loaded)
+	if loaded.Service.Request.MaxOperations != 2000 || loaded.Service.Merge.MaxAttempts != 5 || loaded.ShutdownTimeout != 30*time.Second {
+		t.Fatalf("Load() service settings = %#v", loaded)
 	}
-	if loaded.luaOptions.Timeout != 250*time.Millisecond || loaded.luaOptions.MaxSourceBytes != 32768 ||
-		loaded.luaOptions.MaxResultBytes != 1048576 || loaded.luaOptions.MaxCachedPrograms != 128 ||
-		loaded.luaOptions.MaxInstructions != 2_000_000 {
-		t.Fatalf("loadConfig() Lua settings = %#v", loaded.luaOptions)
+	if loaded.Service.Merge.Lua.Timeout != 250*time.Millisecond || loaded.Service.Merge.Lua.MaxSourceBytes != 32768 ||
+		loaded.Service.Merge.Lua.MaxResultBytes != 1048576 || loaded.Service.Merge.Lua.MaxCachedPrograms != 128 ||
+		loaded.Service.Merge.Lua.MaxInstructions != 2_000_000 {
+		t.Fatalf("Load() Lua settings = %#v", loaded.Service.Merge.Lua)
 	}
 }
 
@@ -313,8 +322,10 @@ storages:
     kafka:
       enabled: true
       brokers: [catalog-kafka:9092]
-      topic: mutations
-      group_id: workers
+      topic:
+        name: mutations
+      consumer:
+        group_id: workers
   - name: search
     driver: opensearch
     search:
@@ -322,19 +333,21 @@ storages:
     kafka:
       enabled: true
       brokers: [search-kafka:9092]
-      topic: mutations
-      group_id: workers
+      topic:
+        name: mutations
+      consumer:
+        group_id: workers
 `)
-	loaded, err := loadConfig(path)
+	loaded, err := Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
-	if len(loaded.storages) != 2 {
-		t.Fatalf("loadConfig() storages = %#v", loaded.storages)
+	if len(loaded.Storages) != 2 {
+		t.Fatalf("Load() storages = %#v", loaded.Storages)
 	}
-	for _, configured := range loaded.storages {
-		if !configured.kafka.enabled || configured.kafka.topic != "mutations" || configured.kafka.groupID != "workers" {
-			t.Fatalf("loadConfig() storage Kafka = %#v", configured.kafka)
+	for _, configured := range loaded.Storages {
+		if !configured.Kafka.Enabled || configured.Kafka.Topic.Name != "mutations" || configured.Kafka.Consumer.GroupID != "workers" {
+			t.Fatalf("Load() storage Kafka = %#v", configured.Kafka)
 		}
 	}
 }
@@ -350,8 +363,10 @@ storages:
     kafka:
       enabled: true
       brokers: [kafka-1:9092, kafka-2:9092]
-      topic: shared-mutations
-      group_id: first-workers
+      topic:
+        name: shared-mutations
+      consumer:
+        group_id: first-workers
   - name: second
     driver: mongodb
     mongodb:
@@ -359,12 +374,14 @@ storages:
     kafka:
       enabled: true
       brokers: [kafka-2:9092, kafka-1:9092]
-      topic: shared-mutations
-      group_id: second-workers
+      topic:
+        name: shared-mutations
+      consumer:
+        group_id: second-workers
 `)
-	_, err := loadConfig(path)
+	_, err := Load(path)
 	if err == nil || !strings.Contains(err.Error(), "duplicate Kafka topic") {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
 }
 
@@ -379,15 +396,16 @@ storages:
     kafka:
       enabled: true
       brokers: [kafka:9092]
-      topic: sink-mutations
+      topic:
+        name: sink-mutations
 `)
-	loaded, err := loadConfig(path)
+	loaded, err := Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
-	configured := loaded.storages[0].kafka
-	if configured.groupID != "" || configured.deadLetterTopic != "sink-mutations.dlq" {
-		t.Fatalf("loadConfig() Kafka = %#v", configured)
+	configured := loaded.Storages[0].Kafka
+	if configured.Consumer.GroupID != "" || configured.DeadLetter.Topic != "sink-mutations.dlq" {
+		t.Fatalf("Load() Kafka = %#v", configured)
 	}
 }
 
@@ -399,12 +417,13 @@ storages:
     mongodb:
       uri: mongodb://mongodb:27017
 service:
-  lua:
-    max_source_bytes: 0
+  merge:
+    lua:
+      max_source_bytes: 0
 `)
-	_, err := loadConfig(path)
-	if err == nil || !strings.Contains(err.Error(), "service.lua.max_source_bytes") {
-		t.Fatalf("loadConfig() error = %v", err)
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), "service.merge.lua.max_source_bytes") {
+		t.Fatalf("Load() error = %v", err)
 	}
 }
 
@@ -420,9 +439,9 @@ storages:
     mongodb:
       uri: mongodb://mongo-2:27017
 `)
-	_, err := loadConfig(path)
+	_, err := Load(path)
 	if err == nil || !strings.Contains(err.Error(), `duplicate name "primary"`) {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
 }
 
@@ -430,9 +449,9 @@ func TestLoadConfigRequiresAtLeastOneStorage(t *testing.T) {
 	path := writeConfig(t, `
 storages: []
 `)
-	_, err := loadConfig(path)
+	_, err := Load(path)
 	if err == nil || !strings.Contains(err.Error(), "storages must contain at least one storage") {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
 }
 
@@ -444,9 +463,9 @@ storages:
     mongodb:
       uri: mongodb://mongodb:27017
 `)
-	_, err := loadConfig(path)
+	_, err := Load(path)
 	if err == nil || !strings.Contains(err.Error(), "storages[0].name is required") {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
 
 	path = writeConfig(t, `
@@ -455,9 +474,9 @@ storages:
     mongodb:
       uri: mongodb://mongodb:27017
 `)
-	_, err = loadConfig(path)
+	_, err = Load(path)
 	if err == nil || !strings.Contains(err.Error(), "storages[0].driver must be") {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
 }
 
@@ -470,9 +489,9 @@ storages:
       uri: mongodb://mongodb:27017
       bindings: []
 `)
-	_, err := loadConfig(path)
+	_, err := Load(path)
 	if err == nil || !strings.Contains(err.Error(), "field bindings not found") {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
 }
 
@@ -487,9 +506,9 @@ storages:
       enabled: true
       brokers: [kafka:9092]
 `)
-	_, err := loadConfig(path)
+	_, err := Load(path)
 	if err == nil || !strings.Contains(err.Error(), "storages[0].kafka") {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
 }
 
@@ -504,11 +523,12 @@ storages:
     kafka:
       enabled: true
       brokers: [kafka:9092]
-      topic: sink-mutations
+      topic:
+        name: sink-mutations
 `)
-	_, err := loadConfig(path)
-	if err == nil || !strings.Contains(err.Error(), "storages[0].kafka.group_id") {
-		t.Fatalf("loadConfig() error = %v", err)
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), "storages[0].kafka.consumer.group_id") {
+		t.Fatalf("Load() error = %v", err)
 	}
 }
 
@@ -521,11 +541,12 @@ storages:
       uri: mongodb://mongodb:27017
 kafka:
   brokers: [kafka:9092]
-  topic: sink-mutations
+  topic:
+    name: sink-mutations
 `)
-	_, err := loadConfig(path)
+	_, err := Load(path)
 	if err == nil || !strings.Contains(err.Error(), "field kafka not found") {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
 }
 
@@ -538,9 +559,9 @@ storages:
     mongodb:
       uri: mongodb://mongodb:27017
 `)
-	_, err := loadConfig(path)
+	_, err := Load(path)
 	if err == nil || !strings.Contains(err.Error(), "worker and all modes require Kafka to be enabled") {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
 }
 
@@ -553,9 +574,9 @@ storages:
       uri: mongodb://mongodb:27017
 unexpected: true
 `)
-	_, err := loadConfig(path)
+	_, err := Load(path)
 	if err == nil || !strings.Contains(err.Error(), "field unexpected not found") {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
 }
 
@@ -567,11 +588,12 @@ storages:
     mongodb:
       uri: mongodb://mongodb:27017
 service:
-  max_operations: 0
+  request:
+    max_operations: 0
 `)
-	_, err := loadConfig(path)
-	if err == nil || !strings.Contains(err.Error(), "service.max_operations must be a positive integer") {
-		t.Fatalf("loadConfig() error = %v", err)
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), "service.request.max_operations must be a positive integer") {
+		t.Fatalf("Load() error = %v", err)
 	}
 }
 
@@ -586,19 +608,21 @@ storages:
     kafka:
       enabled: true
       brokers: [kafka:9092]
-      topic: sink-mutations
-      group_id: sink-workers
+      topic:
+        name: sink-mutations
+      consumer:
+        group_id: sink-workers
 `)
-	loaded, err := loadConfig(path)
+	loaded, err := Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
-	configured := loaded.storages[0].kafka
-	if configured.deadLetterTopic != "sink-mutations.dlq" || configured.maxPollRecords != 500 ||
-		configured.maxRetryAttempts != 10 || configured.retryBackoff != 100*time.Millisecond ||
-		configured.maxRetryBackoff != 10*time.Second ||
-		configured.topicPartitions != 4 || configured.topicReplicationFactor != 2 ||
-		configured.topicRetention != 72*time.Hour {
+	configured := loaded.Storages[0].Kafka
+	if configured.DeadLetter.Topic != "sink-mutations.dlq" || configured.Consumer.MaxPollRecords != 500 ||
+		configured.Consumer.Retry.MaxAttempts != 10 || configured.Consumer.Retry.Backoff != 100*time.Millisecond ||
+		configured.Consumer.Retry.MaxBackoff != 10*time.Second ||
+		configured.Topic.Partitions != 4 || configured.Topic.ReplicationFactor != 2 ||
+		configured.Topic.Retention != 72*time.Hour {
 		t.Fatalf("Kafka defaults = %#v", configured)
 	}
 }
@@ -611,18 +635,18 @@ func TestLoadConfigRejectsInvalidKafkaTopicSettings(t *testing.T) {
 	}{
 		{
 			name:      "zero partitions",
-			setting:   "topic_partitions: 0",
-			wantError: "storages[0].kafka.topic_partitions must be a positive integer",
+			setting:   "partitions: 0",
+			wantError: "storages[0].kafka.topic.partitions must be a positive integer",
 		},
 		{
 			name:      "zero replication factor",
-			setting:   "topic_replication_factor: 0",
-			wantError: "storages[0].kafka.topic_replication_factor must be a positive integer",
+			setting:   "replication_factor: 0",
+			wantError: "storages[0].kafka.topic.replication_factor must be a positive integer",
 		},
 		{
 			name:      "zero retention",
-			setting:   "topic_retention_hours: 0",
-			wantError: "storages[0].kafka.topic_retention_hours must be a positive integer",
+			setting:   "retention: 0s",
+			wantError: "storages[0].kafka.topic.retention must be a positive duration",
 		},
 	}
 	for _, test := range tests {
@@ -636,12 +660,13 @@ storages:
     kafka:
       enabled: true
       brokers: [kafka:9092]
-      topic: sink-mutations
-      ` + test.setting + "\n"
+      topic:
+        name: sink-mutations
+        ` + test.setting + "\n"
 			path := writeConfig(t, contents)
-			_, err := loadConfig(path)
+			_, err := Load(path)
 			if err == nil || !strings.Contains(err.Error(), test.wantError) {
-				t.Fatalf("loadConfig() error = %v", err)
+				t.Fatalf("Load() error = %v", err)
 			}
 		})
 	}
@@ -658,12 +683,12 @@ storages:
     mongodb:
       uri: mongodb://configured:27017
 `)
-	loaded, err := loadConfig(path)
+	loaded, err := Load(path)
 	if err != nil {
-		t.Fatalf("loadConfig() error = %v", err)
+		t.Fatalf("Load() error = %v", err)
 	}
-	if loaded.mode != modeServer || loaded.storages[0].mongoURI != "mongodb://configured:27017" {
-		t.Fatalf("loadConfig() = %#v", loaded)
+	if loaded.Mode != ModeServer || loaded.Storages[0].MongoDB.URI != "mongodb://configured:27017" {
+		t.Fatalf("Load() = %#v", loaded)
 	}
 }
 
@@ -671,32 +696,15 @@ func TestExampleConfigurationFilesLoad(t *testing.T) {
 	paths := []string{
 		"../../config.example.yaml",
 		"../../examples/quickstart/sink.yaml",
+		"../../examples/kubernetes/sink.yaml",
 	}
 	for _, path := range paths {
 		t.Run(filepath.Base(path), func(t *testing.T) {
-			_, err := loadConfig(path)
+			_, err := Load(path)
 			if err != nil {
-				t.Fatalf("loadConfig(%q) error = %v", path, err)
+				t.Fatalf("Load(%q) error = %v", path, err)
 			}
 		})
-	}
-}
-
-func TestParseConfigPath(t *testing.T) {
-	args := []string{"--config", "/etc/sink/config.yaml"}
-	path, err := parseConfigPath(args)
-	if err != nil {
-		t.Fatalf("parseConfigPath() error = %v", err)
-	}
-	if path != "/etc/sink/config.yaml" {
-		t.Fatalf("parseConfigPath() = %q", path)
-	}
-}
-
-func TestParseConfigPathRequiresFlag(t *testing.T) {
-	_, err := parseConfigPath(nil)
-	if err == nil || err.Error() != "--config is required" {
-		t.Fatalf("parseConfigPath() error = %v", err)
 	}
 }
 

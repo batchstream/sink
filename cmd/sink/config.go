@@ -65,6 +65,7 @@ type config struct {
 	maxScanRequests        int
 	maxScanBytes           int
 	maxStoreScanRequests   int
+	scanAdmissionWait      time.Duration
 	maxReadBytes           int
 }
 
@@ -145,20 +146,21 @@ type searchConfigFile struct {
 }
 
 type serviceConfigFile struct {
-	RequestTimeoutSeconds *int               `yaml:"request_timeout_seconds"`
-	MaxInFlightRequests   *int               `yaml:"max_in_flight_requests"`
-	MaxInFlightBytes      *int               `yaml:"max_in_flight_bytes"`
-	MaxPublishRequests    *int               `yaml:"max_publish_requests"`
-	MaxPublishBytes       *int               `yaml:"max_publish_bytes"`
-	MaxStoreRequests      *int               `yaml:"max_store_requests"`
-	MaxScanRequests       *int               `yaml:"max_scan_requests"`
-	MaxScanBytes          *int               `yaml:"max_scan_bytes"`
-	MaxStoreScanRequests  *int               `yaml:"max_store_scan_requests"`
-	MaxReadBytes          *int               `yaml:"max_read_bytes"`
-	MaxOperations         *int               `yaml:"max_operations"`
-	MaxMergeAttempts      *int               `yaml:"max_merge_attempts"`
-	Batching              batchingConfigFile `yaml:"batching"`
-	Lua                   luaConfigFile      `yaml:"lua"`
+	RequestTimeoutSeconds         *int               `yaml:"request_timeout_seconds"`
+	MaxInFlightRequests           *int               `yaml:"max_in_flight_requests"`
+	MaxInFlightBytes              *int               `yaml:"max_in_flight_bytes"`
+	MaxPublishRequests            *int               `yaml:"max_publish_requests"`
+	MaxPublishBytes               *int               `yaml:"max_publish_bytes"`
+	MaxStoreRequests              *int               `yaml:"max_store_requests"`
+	MaxScanRequests               *int               `yaml:"max_scan_requests"`
+	MaxScanBytes                  *int               `yaml:"max_scan_bytes"`
+	MaxStoreScanRequests          *int               `yaml:"max_store_scan_requests"`
+	ScanAdmissionWaitMilliseconds *int               `yaml:"scan_admission_wait_milliseconds"`
+	MaxReadBytes                  *int               `yaml:"max_read_bytes"`
+	MaxOperations                 *int               `yaml:"max_operations"`
+	MaxMergeAttempts              *int               `yaml:"max_merge_attempts"`
+	Batching                      batchingConfigFile `yaml:"batching"`
+	Lua                           luaConfigFile      `yaml:"lua"`
 }
 
 type batchingConfigFile struct {

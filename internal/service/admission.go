@@ -8,6 +8,7 @@ import (
 
 	sink "github.com/liran/sink/gen/sink"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -35,6 +36,7 @@ type admissionPool struct {
 	scanRequests         int
 	scanBytes            int
 	storeScanRequests    map[string]int
+	scanAdmissionWait    time.Duration
 }
 
 type admissionRequest struct {
@@ -55,17 +57,30 @@ func (s *Server) admitRequest(ctx context.Context, request admissionRequest) (co
 
 func (s *admissionPool) admitRequest(ctx context.Context, request admissionRequest) (context.Context, context.CancelFunc, error) {
 	store := s.metrics.RequestStores(request.stores)
+	waitCtx := ctx
+	if request.scan && request.wait {
+		var cancel context.CancelFunc
+		waitCtx, cancel = context.WithTimeout(ctx, s.scanAdmissionWait)
+		defer cancel()
+	}
 	var queued *admissionRequest
+	var scanQueuedAt time.Time
 	defer func() {
 		if queued != nil {
 			s.admissionMu.Lock()
 			s.removeAdmissionWaiter(queued)
 			s.admissionMu.Unlock()
 		}
+		if !scanQueuedAt.IsZero() {
+			s.metrics.ObserveScanAdmissionWait(store, time.Since(scanQueuedAt))
+		}
 	}()
 	for {
 		if err := contextError(ctx); err != nil {
 			return ctx, nil, err
+		}
+		if queued != nil && waitCtx.Err() != nil {
+			return ctx, nil, s.rejectAdmission(request, "wait_timeout")
 		}
 		s.admissionMu.Lock()
 		full := s.admissionSlotsFull(request) || request.encodedBytes > s.maxInFlightBytes-s.inFlightBytes
@@ -89,10 +104,18 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 			}
 		}
 		if full {
-			canWait := request.wait && request.encodedBytes <= s.maxInFlightBytes
+			canWait := request.wait && s.admissionCanFit(request)
 			if canWait && queued == nil {
+				if request.scan && s.scanWaitQueueFull(request) {
+					s.admissionMu.Unlock()
+					return ctx, nil, s.rejectAdmission(request, "queue")
+				}
 				queued = &request
 				s.admissionWaiters = append(s.admissionWaiters, queued)
+				if request.scan {
+					scanQueuedAt = time.Now()
+					s.metrics.AdjustScanQueue(store, 1, request.encodedBytes)
+				}
 			}
 			changed := s.admissionChanged
 			s.admissionMu.Unlock()
@@ -100,12 +123,14 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 				select {
 				case <-changed:
 					continue
-				case <-ctx.Done():
-					return ctx, nil, contextError(ctx)
+				case <-waitCtx.Done():
+					if err := contextError(ctx); err != nil {
+						return ctx, nil, err
+					}
+					return ctx, nil, s.rejectAdmission(request, "wait_timeout")
 				}
 			}
-			s.metrics.ObserveAdmissionPoolRejected(store, s.name, reason)
-			return ctx, nil, status.Errorf(codes.ResourceExhausted, "Sink %s capacity is full", s.name)
+			return ctx, nil, s.rejectAdmission(request, reason)
 		}
 		s.inFlightRequests++
 		s.inFlightBytes += request.encodedBytes
@@ -162,6 +187,45 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 	return execution, release, nil
 }
 
+func (s *admissionPool) admissionCanFit(request admissionRequest) bool {
+	return request.encodedBytes <= s.maxInFlightBytes && (!request.scan || request.encodedBytes <= s.maxScanBytes)
+}
+
+// The caller holds admissionMu. Queued scans have separate count, byte and
+// per-store bounds equal to the execution scan sublimits. Charge the full
+// reservation conservatively, including input, without taking execution slots.
+func (s *admissionPool) scanWaitQueueFull(request admissionRequest) bool {
+	requests, bytes, storeRequests := 0, 0, 0
+	for _, queued := range s.admissionWaiters {
+		if !queued.scan {
+			continue
+		}
+		requests++
+		bytes += queued.encodedBytes
+		if len(request.stores) > 0 && slices.Contains(queued.stores, request.stores[0]) {
+			storeRequests++
+		}
+	}
+	return requests >= s.maxScanRequests || request.encodedBytes > s.maxScanBytes-bytes || storeRequests >= s.maxStoreScanRequests
+}
+
+func (s *admissionPool) rejectAdmission(request admissionRequest, reason string) error {
+	store := s.metrics.RequestStores(request.stores)
+	s.metrics.ObserveAdmissionPoolRejected(store, s.name, reason)
+	rejection := status.New(codes.ResourceExhausted, "Sink "+s.name+" capacity is full")
+	if request.scan && s.admissionCanFit(request) {
+		// This detail is emitted only before backend execution and only for
+		// temporary pressure. Oversized requests and backend/page failures must
+		// never acquire this retry signal.
+		detail := &errdetails.ErrorInfo{Domain: "sink", Reason: "SCAN_ADMISSION_REJECTED",
+			Metadata: map[string]string{"pool": s.name, "reason": reason}}
+		if detailed, err := rejection.WithDetails(detail); err == nil {
+			rejection = detailed
+		}
+	}
+	return rejection.Err()
+}
+
 // The caller holds admissionMu. Global bytes are handled separately so a
 // waiting large request can accumulate space without reserving a store slot.
 func (s *admissionPool) admissionSlotsFull(request admissionRequest) bool {
@@ -188,6 +252,10 @@ func (s *admissionPool) removeAdmissionWaiter(request *admissionRequest) {
 		return
 	}
 	s.admissionWaiters = slices.Delete(s.admissionWaiters, index, index+1)
+	if request.scan {
+		store := s.metrics.RequestStores(request.stores)
+		s.metrics.AdjustScanQueue(store, -1, -request.encodedBytes)
+	}
 	close(s.admissionChanged)
 	s.admissionChanged = make(chan struct{})
 }

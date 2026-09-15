@@ -41,6 +41,7 @@ type Options struct {
 	MaxScanRequests      int
 	MaxScanBytes         int
 	MaxStoreScanRequests int
+	ScanAdmissionWait    time.Duration
 	StoreNames           []string
 }
 
@@ -98,7 +99,7 @@ func New(opts Options) (*Server, error) {
 	if opts.MaxPublishBytes == 0 {
 		opts.MaxPublishBytes = 256 << 20
 	}
-	if opts.MaxScanRequests < 0 || opts.MaxScanBytes < 0 || opts.MaxStoreScanRequests < 0 {
+	if opts.MaxScanRequests < 0 || opts.MaxScanBytes < 0 || opts.MaxStoreScanRequests < 0 || opts.ScanAdmissionWait < 0 {
 		return nil, errors.New("create Sink server: scan limits cannot be negative")
 	}
 	if opts.MaxScanRequests == 0 {
@@ -110,6 +111,10 @@ func New(opts Options) (*Server, error) {
 	if opts.MaxStoreScanRequests == 0 {
 		opts.MaxStoreScanRequests = max(1, opts.MaxStoreRequests/2)
 	}
+	if opts.ScanAdmissionWait == 0 {
+		opts.ScanAdmissionWait = 2 * time.Second
+	}
+	opts.ScanAdmissionWait = min(opts.ScanAdmissionWait, opts.RequestTimeout)
 	if opts.MaxScanRequests > opts.MaxInFlightRequests || opts.MaxScanBytes > opts.MaxInFlightBytes || opts.MaxStoreScanRequests > opts.MaxStoreRequests {
 		return nil, errors.New("create Sink server: scan limits cannot exceed total limits")
 	}
@@ -142,6 +147,7 @@ func New(opts Options) (*Server, error) {
 		maxScanBytes:         opts.MaxScanBytes,
 		maxStoreScanRequests: opts.MaxStoreScanRequests,
 		storeScanRequests:    make(map[string]int),
+		scanAdmissionWait:    opts.ScanAdmissionWait,
 	}
 	publishAdmission := &admissionPool{
 		name:                "publish",

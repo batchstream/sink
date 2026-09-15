@@ -365,6 +365,15 @@ transport or backend failures. The server may reduce the requested hit count aft
 this keeps the same seek position and never returns the rejected page.
 Cancellation does not invalidate a saved cursor.
 
+Updated Go clients retry temporary Scan admission rejections carrying
+`google.rpc.ErrorInfo` with `domain="sink"` and
+`reason="SCAN_ADMISSION_REJECTED"`. The same command and cursor are reused;
+successful pages are returned once. Default policy: three attempts with
+exponential backoff starting at 100 ms, capped at one second, and 20% jitter,
+within a 30-second whole-page timeout. `ClientOptions.ScanRetry` and
+`ClientOptions.ScanTimeout` configure these limits; `MaxAttempts: 1` disables
+retries. Older servers without the detail keep single-attempt behavior.
+
 ## Returned writes
 
 Set `WriteOperation.return_document` (SDK `WithReturnedDocument()` or
@@ -400,6 +409,18 @@ Execute, Query, Count and each Scan page use `service.request_timeout_seconds`.
 A shorter caller deadline wins. Between Scan calls there is no admission
 reservation and no background cursor to keep alive.
 
+Scan admission waits for at most `service.scan_admission_wait_milliseconds`
+(default two seconds, capped by the page timeout), within the original page
+deadline. The Scan waiting queue has separate request, byte and per-store caps
+equal to the Scan execution sublimits. An older runnable waiter keeps its place;
+a store blocked by its own sublimit does not prevent another store from running.
+Temporary refusal or admission wait expiry returns `RESOURCE_EXHAUSTED` with
+`google.rpc.ErrorInfo` (`domain="sink"`, `reason="SCAN_ADMISSION_REJECTED"`,
+metadata `pool` and `reason`). It guarantees that this attempt did not enter
+backend execution. Oversized reservations, response limits and backend failures
+do not carry this detail. Caller cancellation and page deadline expiry retain
+`CANCELED` and `DEADLINE_EXCEEDED` respectively.
+
 Execute responses and returned Write documents share `service.max_read_bytes`
 semantics; returned-document budgets are per original RPC even after batching.
 Count uses a separate backend response budget of min(`service.max_read_bytes`,
@@ -424,7 +445,8 @@ MongoDB driver wire buffers have separate conservative admission reservations; c
 budgets are not an exact process memory limit.
 
 Execute and Scan do not use the record micro-batcher or asynchronous queue. The
-SDK never retries either call. Each native search attempt uses one endpoint;
+SDK never retries Execute and retries Scan only for marked temporary admission
+rejections as described above. Each native search attempt uses one endpoint;
 MongoDB command execution uses the driver's ordinary command path and its
 configured retry behavior. Native mutations can have taken effect even when an
 acknowledgement is lost. Callers must inspect native results and determine

@@ -11,6 +11,11 @@ func (c *config) loadReliabilityConfig(file serviceConfigFile) error {
 		return err
 	}
 	c.requestTimeout = time.Duration(seconds) * time.Second
+	waitMilliseconds, err := boundedInt("service.scan_admission_wait_milliseconds", file.ScanAdmissionWaitMilliseconds, min(2000, seconds*1000), seconds*1000)
+	if err != nil {
+		return err
+	}
+	c.scanAdmissionWait = time.Duration(waitMilliseconds) * time.Millisecond
 	c.maxInFlightRequests, err = boundedInt("service.max_in_flight_requests", file.MaxInFlightRequests, 128, 10000)
 	if err != nil {
 		return err

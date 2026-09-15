@@ -297,7 +297,11 @@ Sink metrics:
 | `sink_admission_rejected_total` | counter | none | Global/per-store execution admission rejections. |
 | `sink_admission_pool_requests` | gauge | `store`, `pool` | Executing requests in the independent `execution` or `publish` pool. |
 | `sink_admission_pool_bytes` | gauge | `store`, `pool` | Bytes reserved in each independent pool. The legacy in-flight gauges report their sum. |
-| `sink_admission_pool_rejected_total` | counter | `store`, `pool`, `reason` | Rejections from request/store/scan slots (`requests`), byte limits (`bytes`), or an older byte waiter (`fairness`). |
+| `sink_admission_pool_rejected_total` | counter | `store`, `pool`, `reason` | Rejections from request/store/scan slots (`requests`), byte limits (`bytes`), an older byte waiter (`fairness`), a full Scan waiting queue (`queue`), or Scan admission wait expiry (`wait_timeout`). |
+| `sink_scan_queued_requests` | gauge | `store` | Scan pages waiting for execution admission. |
+| `sink_scan_queued_bytes` | gauge | `store` | Conservative reservation bytes charged to the separate Scan waiting queue. |
+| `sink_scan_admission_wait_duration_seconds` | histogram | `store` | Time queued Scan pages waited before admission, rejection or cancellation. |
+| `sink_execution_store_bytes` | gauge | `store` | Current execution bytes charged to each configured store. Cross-store requests charge each touched store, so this sum can exceed the global pool gauge. |
 | `sink_kafka_worker_last_poll_timestamp_seconds` | gauge | `store` | Last completed poll, not an idle-worker heartbeat. |
 | `sink_kafka_worker_last_commit_timestamp_seconds` | gauge | `store` | Last successful offset commit. |
 | `sink_kafka_worker_pending_records` | gauge | `store` | Unresolved records from the last fetch; excludes unpolled backlog. |
@@ -486,9 +490,11 @@ counts multiply capacity. Configure the same Kafka policy on servers and workers
 | `service.max_publish_requests` | `32` | Concurrent asynchronous Write/Delete requests, at most 10000, independent of storage execution. |
 | `service.max_publish_bytes` | `268435456` | Asynchronous request, expanded-source, and bounded failure-response reservations, at most 16 GiB, additional to `max_in_flight_bytes`. Kafka producer buffers are additional. |
 | `service.max_store_requests` | `32` | Requests per configured store in each admission pool independently, at most 10000. |
+| `service.store_execution_bytes` | empty map | Optional execution byte ceiling per configured store, e.g. `{search: 805306368}` under a 1 GiB global pool. Each value is positive and no greater than `max_in_flight_bytes`; omitted stores share the global limit. Does not limit the publish pool. |
 | `service.max_scan_requests` | half `max_in_flight_requests`, at least 1 | Scan-only request sublimit, no greater than the total request limit. |
 | `service.max_scan_bytes` | half `max_in_flight_bytes`, at least 1 | Scan-only byte sublimit; global byte admission still applies. BSON Scan reserves 48 MiB driver wire space plus page copies. |
 | `service.max_store_scan_requests` | half `max_store_requests`, at least 1 | Per-store Scan sublimit, no greater than the total per-store request limit. |
+| `service.scan_admission_wait_milliseconds` | min(`2000`, request timeout in milliseconds) | Maximum Scan admission wait, included in the page deadline. Cannot exceed `request_timeout_seconds`. |
 | `service.max_read_bytes` | min(`33554432`, half gRPC send limit) | Per-original-RPC Read or returned-Write documents, conditional write snapshot/output per attempt, and native Execute response. Scan pages use the smaller of this limit and 4 MiB. Cannot exceed half the gRPC send limit. |
 | `storages[].kafka.dead_letter_retention_hours` | `720` | Independent DLQ retention, 30 days; bounded by Go duration range. |
 | `storages[].kafka.min_insync_replicas` | min(`2`, replication factor) | Minimum ISR, at most replication factor. Publishers require all ISR acknowledgements. |
@@ -502,6 +508,48 @@ the driver's complete wire response, which arrives before the smaller Sink
 response/page limit can be enforced. Returned writes reserve an additional
 response budget per original RPC before execution. See [native access](native-access.md)
 for stateless Scan checkpoints, page-local cleanup, cancellation and retry semantics.
+
+Scan waits fairly for execution capacity for at most
+`service.scan_admission_wait_milliseconds`. Its separate waiting queue is bounded
+by `max_scan_requests`, `max_scan_bytes`, and `max_store_scan_requests`; these
+limits apply independently to queued and executing pages. Queued pages are
+charged the full conservative reservation, but do not occupy execution slots.
+Cancellation and timeout remove their queue entries immediately. Requests that
+cannot fit the total or Scan byte limit fail immediately without advertising a
+retry. Temporary Scan admission failures carry the retry detail documented in
+[native access](native-access.md#limits-deadlines-and-retries).
+
+Conditional writes initially reserve their peak document working set. Once a
+chunk's snapshots and final candidates are known, Sink reduces that reservation
+to retained payload sizes plus copy allowances for the final storage call,
+including `WAIT_UNTIL_VISIBLE`. Input, Lua-source and returned-document allowances
+remain reserved. Before a later read or conflict retry it atomically restores the
+peak allowance. Restoration never waits while holding documents: if global/store
+capacity or an older runnable waiter prevents growth, only the unexecuted
+operations receive retryable per-operation `RESOURCE_EXHAUSTED` failures. Earlier
+successful operations retain their results. This is document accounting, not an
+RSS limit; driver buffers, Lua heaps, transport buffers and garbage collection
+still require process memory headroom. BSON Scan's wire allowance is unchanged.
+
+Store byte ceilings isolate slow storage execution without changing completion
+semantics. For example, on a 1 GiB global pool a 768 MiB ceiling for a search store
+prevents that store from consuming the last 256 MiB alone:
+
+```yaml
+service:
+  max_in_flight_bytes: 1073741824
+  store_execution_bytes:
+    pse-search: 805306368
+```
+
+The map keys must match configured store names. This example is a sizing starting
+point, not an automatic production setting. Ceilings are hard caps; unused global
+capacity is shared within them. Cross-store requests charge their complete
+reservation to each touched store and once globally. A waiter blocked by its
+store ceiling does not reserve free bytes from other stores. Micro-batches split
+at the store ceiling, while an individual RPC that cannot fit fails immediately.
+`sink_admission_pool_rejected_total` additionally reports `store_bytes` for
+store-ceiling refusal and `resize` when a write cannot restore its working set.
 
 MongoDB group concurrency is shared across concurrent calls. Sink sets
 `w=majority` and `journal=true` on its client, overriding weaker URI concerns;

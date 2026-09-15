@@ -136,6 +136,10 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 }
 
 func (s *Server) Scan(ctx context.Context, req *sink.ScanRequest) (*sink.ScanResponse, error) {
+	// Admission and backend execution share one page deadline, even when the
+	// caller did not provide one. Admission has an additional, shorter bound.
+	ctx, cancel := context.WithTimeout(ctx, s.requestTimeout)
+	defer cancel()
 	maximum := min(s.maxReadBytes, 4<<20)
 	request, err := nativeRequest(req.GetCommand(), maximum)
 	if err != nil {
@@ -146,6 +150,12 @@ func (s *Server) Scan(ctx context.Context, req *sink.ScanRequest) (*sink.ScanRes
 		batchSize = 100
 	}
 	scan := storage.ScanRequest{Request: request, BatchSize: batchSize, Cursor: req.GetCursor()}
+	if projection := req.GetProjection(); projection != nil {
+		scan.Projection = &storage.Projection{Fields: projection.GetFields(), Exclude: projection.GetExclude()}
+	}
+	if err := scan.Projection.Validate(); err != nil {
+		return nil, nativeStatus(err)
+	}
 	if batchSize > 1000 || len(scan.Cursor) > storage.MaxScanCursorBytes {
 		return nil, status.Error(codes.InvalidArgument, "scan batch or cursor exceeds its limit")
 	}
@@ -158,7 +168,7 @@ func (s *Server) Scan(ctx context.Context, req *sink.ScanRequest) (*sink.ScanRes
 	if mediaType != "application/bson" {
 		encodedBytes += 2 * (storage.ScanBackendBytes(maximum) - maximum)
 	}
-	admission := admissionRequest{encodedBytes: encodedBytes, stores: []string{request.Store}, scan: true}
+	admission := admissionRequest{encodedBytes: encodedBytes, stores: []string{request.Store}, scan: true, wait: true}
 	ctx, release, err := s.admitRequest(ctx, admission)
 	if err != nil {
 		return nil, err

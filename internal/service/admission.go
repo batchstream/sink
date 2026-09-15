@@ -8,6 +8,7 @@ import (
 
 	sink "github.com/liran/sink/gen/sink"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -35,6 +36,9 @@ type admissionPool struct {
 	scanRequests         int
 	scanBytes            int
 	storeScanRequests    map[string]int
+	scanAdmissionWait    time.Duration
+	storeBytes           map[string]int
+	maxStoreBytes        map[string]int
 }
 
 type admissionRequest struct {
@@ -44,6 +48,7 @@ type admissionRequest struct {
 	timeout      time.Duration
 	scan         bool
 	publish      bool
+	reservation  *admissionReservation
 }
 
 func (s *Server) admitRequest(ctx context.Context, request admissionRequest) (context.Context, context.CancelFunc, error) {
@@ -55,21 +60,39 @@ func (s *Server) admitRequest(ctx context.Context, request admissionRequest) (co
 
 func (s *admissionPool) admitRequest(ctx context.Context, request admissionRequest) (context.Context, context.CancelFunc, error) {
 	store := s.metrics.RequestStores(request.stores)
+	waitCtx := ctx
+	if request.scan && request.wait {
+		var cancel context.CancelFunc
+		waitCtx, cancel = context.WithTimeout(ctx, s.scanAdmissionWait)
+		defer cancel()
+	}
 	var queued *admissionRequest
+	var scanQueuedAt time.Time
 	defer func() {
 		if queued != nil {
 			s.admissionMu.Lock()
 			s.removeAdmissionWaiter(queued)
 			s.admissionMu.Unlock()
 		}
+		if !scanQueuedAt.IsZero() {
+			s.metrics.ObserveScanAdmissionWait(store, time.Since(scanQueuedAt))
+		}
 	}()
 	for {
 		if err := contextError(ctx); err != nil {
 			return ctx, nil, err
 		}
+		if queued != nil && waitCtx.Err() != nil {
+			return ctx, nil, s.rejectAdmission(request, "wait_timeout")
+		}
 		s.admissionMu.Lock()
 		full := s.admissionSlotsFull(request) || request.encodedBytes > s.maxInFlightBytes-s.inFlightBytes
 		reason := "requests"
+		for _, name := range request.stores {
+			if limit := s.maxStoreBytes[name]; limit > 0 && request.encodedBytes > limit-s.storeBytes[name] {
+				reason = "store_bytes"
+			}
+		}
 		if request.encodedBytes > s.maxInFlightBytes-s.inFlightBytes {
 			reason = "bytes"
 		}
@@ -89,10 +112,18 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 			}
 		}
 		if full {
-			canWait := request.wait && request.encodedBytes <= s.maxInFlightBytes
+			canWait := request.wait && s.admissionCanFit(request)
 			if canWait && queued == nil {
+				if request.scan && s.scanWaitQueueFull(request) {
+					s.admissionMu.Unlock()
+					return ctx, nil, s.rejectAdmission(request, "queue")
+				}
 				queued = &request
 				s.admissionWaiters = append(s.admissionWaiters, queued)
+				if request.scan {
+					scanQueuedAt = time.Now()
+					s.metrics.AdjustScanQueue(store, 1, request.encodedBytes)
+				}
 			}
 			changed := s.admissionChanged
 			s.admissionMu.Unlock()
@@ -100,15 +131,24 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 				select {
 				case <-changed:
 					continue
-				case <-ctx.Done():
-					return ctx, nil, contextError(ctx)
+				case <-waitCtx.Done():
+					if err := contextError(ctx); err != nil {
+						return ctx, nil, err
+					}
+					return ctx, nil, s.rejectAdmission(request, "wait_timeout")
 				}
 			}
-			s.metrics.ObserveAdmissionPoolRejected(store, s.name, reason)
-			return ctx, nil, status.Errorf(codes.ResourceExhausted, "Sink %s capacity is full", s.name)
+			return ctx, nil, s.rejectAdmission(request, reason)
 		}
 		s.inFlightRequests++
 		s.inFlightBytes += request.encodedBytes
+		s.adjustStoreBytes(request.stores, request.encodedBytes)
+		if request.reservation != nil {
+			request.reservation.pool = s
+			request.reservation.stores = request.stores
+			request.reservation.bytes = request.encodedBytes
+			request.reservation.maximum = request.encodedBytes
+		}
 		if request.scan {
 			s.scanRequests++
 			s.scanBytes += request.encodedBytes
@@ -137,8 +177,14 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 	release := func() {
 		cancel()
 		s.admissionMu.Lock()
+		bytes := request.encodedBytes
+		if request.reservation != nil {
+			bytes = request.reservation.bytes
+			request.reservation.released = true
+		}
 		s.inFlightRequests--
-		s.inFlightBytes -= request.encodedBytes
+		s.inFlightBytes -= bytes
+		s.adjustStoreBytes(request.stores, -bytes)
 		if request.scan {
 			s.scanRequests--
 			s.scanBytes -= request.encodedBytes
@@ -157,9 +203,69 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 		close(s.admissionChanged)
 		s.admissionChanged = make(chan struct{})
 		s.admissionMu.Unlock()
-		s.metrics.AdjustAdmissionPool(store, s.name, -1, -request.encodedBytes)
+		s.metrics.AdjustAdmissionPool(store, s.name, -1, -bytes)
 	}
 	return execution, release, nil
+}
+
+func (s *admissionPool) admissionCanFit(request admissionRequest) bool {
+	return request.encodedBytes <= s.executionByteLimit(request.stores) && (!request.scan || request.encodedBytes <= s.maxScanBytes)
+}
+
+func (s *admissionPool) executionByteLimit(stores []string) int {
+	limit := s.maxInFlightBytes
+	for _, name := range stores {
+		if storeLimit := s.maxStoreBytes[name]; storeLimit > 0 {
+			limit = min(limit, storeLimit)
+		}
+	}
+	return limit
+}
+
+// The caller holds admissionMu. Cross-store calls conservatively charge their
+// entire reservation to each touched store, and only once to the global pool.
+func (s *admissionPool) adjustStoreBytes(stores []string, bytes int) {
+	for _, name := range stores {
+		if _, configured := s.storeBytes[name]; configured {
+			s.storeBytes[name] += bytes
+			s.metrics.AdjustStoreExecutionBytes(name, bytes)
+		}
+	}
+}
+
+// The caller holds admissionMu. Queued scans have separate count, byte and
+// per-store bounds equal to the execution scan sublimits. Charge the full
+// reservation conservatively, including input, without taking execution slots.
+func (s *admissionPool) scanWaitQueueFull(request admissionRequest) bool {
+	requests, bytes, storeRequests := 0, 0, 0
+	for _, queued := range s.admissionWaiters {
+		if !queued.scan {
+			continue
+		}
+		requests++
+		bytes += queued.encodedBytes
+		if len(request.stores) > 0 && slices.Contains(queued.stores, request.stores[0]) {
+			storeRequests++
+		}
+	}
+	return requests >= s.maxScanRequests || request.encodedBytes > s.maxScanBytes-bytes || storeRequests >= s.maxStoreScanRequests
+}
+
+func (s *admissionPool) rejectAdmission(request admissionRequest, reason string) error {
+	store := s.metrics.RequestStores(request.stores)
+	s.metrics.ObserveAdmissionPoolRejected(store, s.name, reason)
+	rejection := status.New(codes.ResourceExhausted, "Sink "+s.name+" capacity is full")
+	if request.scan && s.admissionCanFit(request) {
+		// This detail is emitted only before backend execution and only for
+		// temporary pressure. Oversized requests and backend/page failures must
+		// never acquire this retry signal.
+		detail := &errdetails.ErrorInfo{Domain: "sink", Reason: "SCAN_ADMISSION_REJECTED",
+			Metadata: map[string]string{"pool": s.name, "reason": reason}}
+		if detailed, err := rejection.WithDetails(detail); err == nil {
+			rejection = detailed
+		}
+	}
+	return rejection.Err()
 }
 
 // The caller holds admissionMu. Global bytes are handled separately so a
@@ -175,6 +281,9 @@ func (s *admissionPool) admissionSlotsFull(request admissionRequest) bool {
 		if request.scan && s.storeScanRequests[name] >= s.maxStoreScanRequests {
 			return true
 		}
+		if limit := s.maxStoreBytes[name]; limit > 0 && request.encodedBytes > limit-s.storeBytes[name] {
+			return true
+		}
 		if count, configured := s.storeRequests[name]; configured && count >= s.maxStoreRequests {
 			return true
 		}
@@ -188,6 +297,10 @@ func (s *admissionPool) removeAdmissionWaiter(request *admissionRequest) {
 		return
 	}
 	s.admissionWaiters = slices.Delete(s.admissionWaiters, index, index+1)
+	if request.scan {
+		store := s.metrics.RequestStores(request.stores)
+		s.metrics.AdjustScanQueue(store, -1, -request.encodedBytes)
+	}
 	close(s.admissionChanged)
 	s.admissionChanged = make(chan struct{})
 }
@@ -206,11 +319,13 @@ func operationStores[T interface{ GetAddress() *sink.RecordAddress }](operations
 
 // Include retained output and expanded source copies, before parsing or cloning.
 // This bounds admitted payload bytes; VM/driver overhead is sized separately.
-func (s *Server) writeExecutionBytes(req *sink.WriteRequest) int {
-	return s.writeExecutionBytesFor(req, 1, returningCallerCount(req, nil))
+type writeExecutionEstimate struct {
+	bytes        int
+	workingBytes int
 }
 
-func (s *Server) writeExecutionBytesFor(req *sink.WriteRequest, callers int, returningCallers int) int {
+func (s *Server) estimateWriteExecution(req *sink.WriteRequest, callers int, returningCallers int) writeExecutionEstimate {
+	estimate := writeExecutionEstimate{}
 	bytes := req.SizeVT() + failureResponseBytes(len(req.GetOperations()))
 	bytes += s.maxReadBytes * returningCallers
 	largestSource := 0
@@ -268,9 +383,11 @@ func (s *Server) writeExecutionBytesFor(req *sink.WriteRequest, callers int, ret
 		// chunk and one output batch. One additional candidate can coexist with
 		// the output batch while it is committed. Caller quotas remain separate.
 		workingSets := min(2*retained, 3)
-		bytes += s.maxReadBytes * workingSets
+		estimate.workingBytes = s.maxReadBytes * workingSets
+		bytes += estimate.workingBytes
 	}
-	return bytes
+	estimate.bytes = bytes
+	return estimate
 }
 
 func returningCallerCount(req *sink.WriteRequest, budgets *requestBudgets) int {

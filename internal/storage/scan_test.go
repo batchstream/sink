@@ -2,6 +2,8 @@ package storage
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/json"
 	"testing"
 )
 
@@ -61,5 +63,47 @@ func TestScanCursorBoundsUntrustedInput(t *testing.T) {
 	}
 	if _, err := cursor.Page(nil, make([]byte, MaxScanCursorBytes)); err == nil {
 		t.Fatal("created oversized cursor")
+	}
+}
+
+func TestScanProjectionBindsCursorAndPreservesLegacyCheckpoints(t *testing.T) {
+	command := NativeRequest{Store: "primary", Payload: []byte(`{"sort":["uid"]}`)}
+	encoded, err := json.Marshal(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := ScanCursor{query: sha256.Sum256(encoded)}
+	page, err := legacy.Page(nil, []byte(`[1]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ScanRequest{Request: command, BatchSize: 1, Cursor: page.NextCursor}
+	if _, err := request.Resume(); err != nil {
+		t.Fatalf("legacy cursor rejected: %v", err)
+	}
+	request.Projection = &Projection{Fields: []string{"name"}}
+	if _, err := request.Resume(); err == nil {
+		t.Fatal("adding a projection to an existing scan was accepted")
+	}
+	request.Cursor = nil
+	cursor, err := request.Resume()
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err = cursor.Page(nil, []byte(`[1]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Cursor = page.NextCursor
+	request.BatchSize = 7
+	request.Request.MaxBytes = 8192
+	if _, err := request.Resume(); err != nil {
+		t.Fatal(err)
+	}
+	for _, projection := range []*Projection{nil, {}, {Fields: []string{"other"}}, {Fields: []string{"name"}, Exclude: true}} {
+		request.Projection = projection
+		if _, err := request.Resume(); err == nil {
+			t.Fatalf("accepted changed projection: %+v", projection)
+		}
 	}
 }

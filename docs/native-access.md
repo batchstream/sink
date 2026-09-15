@@ -276,21 +276,33 @@ byte limits as Execute.
 ## Scan
 
 Scan is one unary RPC per page. `ScanRequest` contains the shared `Command`,
-`batch_size` (default 100, maximum 1000), and an opaque bytes `cursor`.
+`batch_size` (default 100, maximum 1000), an opaque bytes `cursor`, and optional
+`projection` using the same `fields` and `exclude` controls as Query.
 `ScanResponse` contains native `documents` and `next_cursor`. A byte-limited
 page may contain fewer than `batch_size` documents. Only an empty `next_cursor`
 marks the end observed by this request; a short page alone does not.
 
+Projection is pushed down to the backend before documents are transferred to
+Sink. An absent projection preserves native find `projection` or search `_source`
+selection. A present projection replaces it; empty `fields` selects all fields.
+Search paths are relative to `_source`; hit metadata and sort values remain.
+MongoDB follows native identity-field rules and retains the original `_id`
+internally when excluded from returned documents. Projection reduces payload
+memory and transfer size; it does not reduce the fixed BSON driver allowance
+reserved for Scan admission.
+
 Start with an empty cursor. For subsequent calls, resend the same Command and
-pass the previous `next_cursor` as `cursor`. Batch size can change between calls.
+Projection, and pass the previous `next_cursor` as `cursor`. Batch size can change between calls.
 After successfully processing a page, persist its cursor; on completion, persist
 an explicit completed state rather than using an empty cursor to restart later.
 
 Cursors carry the seek position and a fingerprint binding it to the complete
-Command, including the store, namespace, body, parameters and caller headers.
+Command, including the store, namespace, body, parameters and caller headers,
+and the explicit Projection.
 They are independent of any Sink process or database session, so a request can
 continue on another Pod. Treat them as opaque and preserve them byte-for-byte;
-changing the Command or using a corrupt cursor returns `INVALID_ARGUMENT`.
+changing the Command or Projection, or using a corrupt cursor, returns
+`INVALID_ARGUMENT`. Existing cursors without explicit projection remain valid.
 Cursor size is limited to 64 KiB. They are continuation markers, not credentials;
 backend authentication and request validation apply on every call. Checksums
 protect against accidental corruption, not caller forgery.
@@ -365,6 +377,15 @@ transport or backend failures. The server may reduce the requested hit count aft
 this keeps the same seek position and never returns the rejected page.
 Cancellation does not invalidate a saved cursor.
 
+Updated Go clients retry temporary Scan admission rejections carrying
+`google.rpc.ErrorInfo` with `domain="sink"` and
+`reason="SCAN_ADMISSION_REJECTED"`. The same command and cursor are reused;
+successful pages are returned once. Default policy: three attempts with
+exponential backoff starting at 100 ms, capped at one second, and 20% jitter,
+within a 30-second whole-page timeout. `ClientOptions.ScanRetry` and
+`ClientOptions.ScanTimeout` configure these limits; `MaxAttempts: 1` disables
+retries. Older servers without the detail keep single-attempt behavior.
+
 ## Returned writes
 
 Set `WriteOperation.return_document` (SDK `WithReturnedDocument()` or
@@ -400,6 +421,18 @@ Execute, Query, Count and each Scan page use `service.request_timeout_seconds`.
 A shorter caller deadline wins. Between Scan calls there is no admission
 reservation and no background cursor to keep alive.
 
+Scan admission waits for at most `service.scan_admission_wait_milliseconds`
+(default two seconds, capped by the page timeout), within the original page
+deadline. The Scan waiting queue has separate request, byte and per-store caps
+equal to the Scan execution sublimits. An older runnable waiter keeps its place;
+a store blocked by its own sublimit does not prevent another store from running.
+Temporary refusal or admission wait expiry returns `RESOURCE_EXHAUSTED` with
+`google.rpc.ErrorInfo` (`domain="sink"`, `reason="SCAN_ADMISSION_REJECTED"`,
+metadata `pool` and `reason`). It guarantees that this attempt did not enter
+backend execution. Oversized reservations, response limits and backend failures
+do not carry this detail. Caller cancellation and page deadline expiry retain
+`CANCELED` and `DEADLINE_EXCEEDED` respectively.
+
 Execute responses and returned Write documents share `service.max_read_bytes`
 semantics; returned-document budgets are per original RPC even after batching.
 Count uses a separate backend response budget of min(`service.max_read_bytes`,
@@ -424,7 +457,8 @@ MongoDB driver wire buffers have separate conservative admission reservations; c
 budgets are not an exact process memory limit.
 
 Execute and Scan do not use the record micro-batcher or asynchronous queue. The
-SDK never retries either call. Each native search attempt uses one endpoint;
+SDK never retries Execute and retries Scan only for marked temporary admission
+rejections as described above. Each native search attempt uses one endpoint;
 MongoDB command execution uses the driver's ordinary command path and its
 configured retry behavior. Native mutations can have taken effect even when an
 acknowledgement is lost. Callers must inspect native results and determine

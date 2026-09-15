@@ -48,17 +48,7 @@ func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.Qu
 		item := bson.E{Key: field.Field, Value: direction}
 		sort = append(sort, item)
 	}
-	projection := bson.D{}
-	if req.Projection != nil {
-		mode := int32(1)
-		if req.Projection.Exclude {
-			mode = 0
-		}
-		for _, field := range req.Projection.Fields {
-			item := bson.E{Key: field, Value: mode}
-			projection = append(projection, item)
-		}
-	}
+	projection := nativeProjection(req.Projection)
 	switch command[0].Key {
 	case "find":
 		paged := make(bson.D, 0, len(command)+2)
@@ -138,6 +128,22 @@ func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.Qu
 		return empty, err
 	}
 	return result, nil
+}
+
+func nativeProjection(p *storage.Projection) bson.D {
+	projection := bson.D{}
+	if p == nil {
+		return projection
+	}
+	mode := int32(1)
+	if p.Exclude {
+		mode = 0
+	}
+	for _, field := range p.Fields {
+		item := bson.E{Key: field, Value: mode}
+		projection = append(projection, item)
+	}
+	return projection
 }
 
 func countPipeline(command bson.D) (bson.D, error) {

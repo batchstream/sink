@@ -51,6 +51,10 @@ type Metrics struct {
 	admissionPoolRequests  *prometheus.GaugeVec
 	admissionPoolBytes     *prometheus.GaugeVec
 	admissionPoolRejected  *prometheus.CounterVec
+	scanQueuedRequests     *prometheus.GaugeVec
+	scanQueuedBytes        *prometheus.GaugeVec
+	scanAdmissionWait      *prometheus.HistogramVec
+	storeExecutionBytes    *prometheus.GaugeVec
 	workerLastPoll         *prometheus.GaugeVec
 	workerLastCommit       *prometheus.GaugeVec
 	workerOldest           *prometheus.GaugeVec
@@ -272,6 +276,14 @@ func New(version string, storeNames ...string) (*Metrics, error) {
 	admissionPoolBytes := prometheus.NewGaugeVec(poolBytesOptions, []string{"store", "pool"})
 	poolRejectedOptions := prometheus.CounterOpts{Namespace: namespace, Name: "admission_pool_rejected_total", Help: "Admission rejections by pool and capacity reason."}
 	admissionPoolRejected := prometheus.NewCounterVec(poolRejectedOptions, []string{"store", "pool", "reason"})
+	scanQueueRequestsOptions := prometheus.GaugeOpts{Namespace: namespace, Name: "scan_queued_requests", Help: "Scan pages waiting for execution admission."}
+	scanQueuedRequests := prometheus.NewGaugeVec(scanQueueRequestsOptions, []string{"store"})
+	scanQueueBytesOptions := prometheus.GaugeOpts{Namespace: namespace, Name: "scan_queued_bytes", Help: "Conservative reservation bytes charged to the separate Scan waiting queue."}
+	scanQueuedBytes := prometheus.NewGaugeVec(scanQueueBytesOptions, []string{"store"})
+	scanWaitOptions := prometheus.HistogramOpts{Namespace: namespace, Name: "scan_admission_wait_duration_seconds", Help: "Time queued Scan pages waited before admission, rejection or cancellation.", Buckets: prometheus.DefBuckets}
+	scanAdmissionWait := prometheus.NewHistogramVec(scanWaitOptions, []string{"store"})
+	storeBytesOptions := prometheus.GaugeOpts{Namespace: namespace, Name: "execution_store_bytes", Help: "Execution reservation bytes charged to each store, including cross-store calls."}
+	storeExecutionBytes := prometheus.NewGaugeVec(storeBytesOptions, []string{"store"})
 	lastPollOptions := prometheus.GaugeOpts{Namespace: namespace, Name: "kafka_worker_last_poll_timestamp_seconds", Help: "Last completed Kafka poll by configured store."}
 	workerLastPoll := prometheus.NewGaugeVec(lastPollOptions, []string{"store"})
 	lastCommitOptions := prometheus.GaugeOpts{Namespace: namespace, Name: "kafka_worker_last_commit_timestamp_seconds", Help: "Last successful source offset commit by configured store."}
@@ -316,6 +328,8 @@ func New(version string, storeNames ...string) (*Metrics, error) {
 		admissionBytes,
 		admissionRejected,
 		admissionPoolRequests, admissionPoolBytes, admissionPoolRejected,
+		scanQueuedRequests, scanQueuedBytes, scanAdmissionWait,
+		storeExecutionBytes,
 		workerLastPoll, workerLastCommit, workerOldest, workerPending, workerRecoveries, workerFetchErrors, workerDelivery,
 	}
 	for _, collector := range registeredCollectors {
@@ -327,6 +341,10 @@ func New(version string, storeNames ...string) (*Metrics, error) {
 		admissionPoolRequests:  admissionPoolRequests,
 		admissionPoolBytes:     admissionPoolBytes,
 		admissionPoolRejected:  admissionPoolRejected,
+		scanQueuedRequests:     scanQueuedRequests,
+		scanQueuedBytes:        scanQueuedBytes,
+		scanAdmissionWait:      scanAdmissionWait,
+		storeExecutionBytes:    storeExecutionBytes,
 		workerOffsetGap:        workerOffsetGap,
 		workerQuarantined:      workerQuarantined,
 		stores:                 stores,
@@ -395,6 +413,28 @@ func (m *Metrics) ObserveAdmissionPoolRejected(store string, pool string, reason
 	}
 	m.ObserveAdmissionRejected()
 	m.admissionPoolRejected.WithLabelValues(m.storeLabel(store), pool, reason).Inc()
+}
+
+func (m *Metrics) AdjustScanQueue(store string, requests int, bytes int) {
+	if m == nil {
+		return
+	}
+	m.scanQueuedRequests.WithLabelValues(m.storeLabel(store)).Add(float64(requests))
+	m.scanQueuedBytes.WithLabelValues(m.storeLabel(store)).Add(float64(bytes))
+}
+
+func (m *Metrics) ObserveScanAdmissionWait(store string, duration time.Duration) {
+	if m == nil {
+		return
+	}
+	m.scanAdmissionWait.WithLabelValues(m.storeLabel(store)).Observe(duration.Seconds())
+}
+
+func (m *Metrics) AdjustStoreExecutionBytes(store string, bytes int) {
+	if m == nil {
+		return
+	}
+	m.storeExecutionBytes.WithLabelValues(m.storeLabel(store)).Add(float64(bytes))
 }
 
 func (m *Metrics) ObserveWorkerPoll(store string, errors int) {

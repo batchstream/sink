@@ -189,6 +189,9 @@ func TestStoreClassificationBoundsUnknownEmptyAndNilRequests(t *testing.T) {
 		observed.ObserveMergeExhausted(store, 1)
 		observed.AdjustAdmissionPool(store, "execution", 1, 1)
 		observed.ObserveAdmissionPoolRejected(store, "execution", "bytes")
+		observed.AdjustScanQueue(store, 1, 10)
+		observed.ObserveScanAdmissionWait(store, time.Second)
+		observed.AdjustStoreExecutionBytes(store, 10)
 		observed.AdjustBatchQueue(store, "Write", 1, 1)
 		observed.ObserveBatchRejected(store, "Write", "queue_full")
 		batch := sinkmetrics.BatchObservation{Store: store, Method: "Write", Reason: "max_wait"}

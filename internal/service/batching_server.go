@@ -348,9 +348,10 @@ func (s *BatchingServer) executeReads(
 	for len(calls) > 0 {
 		count := 0
 		bytes := 2 * s.server.maxReadBytes
+		byteLimit := s.server.executionByteLimit(operationStores(calls[0].request.GetOperations()))
 		for count < min(limit, len(calls)) {
 			next := calls[count].request.SizeVT() + failureResponseBytes(len(calls[count].request.GetOperations()))
-			if count > 0 && next > s.server.maxInFlightBytes-bytes {
+			if count > 0 && next > byteLimit-bytes {
 				break
 			}
 			bytes += next
@@ -440,9 +441,10 @@ func (s *BatchingServer) executeWrites(
 		if parallel {
 			applied := combinedWriteRequest(wave.applied)
 			visible := combinedWriteRequest(wave.visible)
-			appliedBytes := s.server.writeExecutionBytesFor(applied, len(wave.applied), returningBatchCallers(wave.applied))
-			visibleBytes := s.server.writeExecutionBytesFor(visible, len(wave.visible), returningBatchCallers(wave.visible))
-			parallel = appliedBytes+visibleBytes <= s.server.maxInFlightBytes
+			appliedBytes := s.server.estimateWriteExecution(applied, len(wave.applied), returningBatchCallers(wave.applied)).bytes
+			visibleBytes := s.server.estimateWriteExecution(visible, len(wave.visible), returningBatchCallers(wave.visible)).bytes
+			byteLimit := s.server.executionByteLimit(operationStores(applied.GetOperations()))
+			parallel = appliedBytes+visibleBytes <= byteLimit
 		}
 		var executions sync.WaitGroup
 		for _, group := range [][]*batchCall[*sink.WriteRequest, *sink.WriteResponse]{wave.applied, wave.visible} {
@@ -470,14 +472,15 @@ func (s *BatchingServer) executeWriteBatch(
 	ctx, cancel := batchExecutionContext(ctx, calls, s.server.requestTimeout)
 	defer cancel()
 	for start := 0; start < len(calls); {
+		byteLimit := s.server.executionByteLimit(operationStores(calls[start].request.GetOperations()))
 		end := len(calls)
 		combined := combinedWriteRequest(calls[start:end])
-		if s.server.writeExecutionBytesFor(combined, end-start, returningBatchCallers(calls[start:end])) > s.server.maxInFlightBytes {
+		if s.server.estimateWriteExecution(combined, end-start, returningBatchCallers(calls[start:end])).bytes > byteLimit {
 			end = start + 1
 		}
 		for end < len(calls) {
 			next := combinedWriteRequest(calls[start : end+1])
-			if s.server.writeExecutionBytesFor(next, end+1-start, returningBatchCallers(calls[start:end+1])) > s.server.maxInFlightBytes {
+			if s.server.estimateWriteExecution(next, end+1-start, returningBatchCallers(calls[start:end+1])).bytes > byteLimit {
 				break
 			}
 			end++
@@ -542,7 +545,8 @@ func (s *BatchingServer) executeDeletes(
 			applied := combinedDeleteRequest(wave.applied)
 			visible := combinedDeleteRequest(wave.visible)
 			responseBytes := failureResponseBytes(len(applied.Operations) + len(visible.Operations))
-			parallel = applied.SizeVT()+visible.SizeVT()+responseBytes <= s.server.maxInFlightBytes
+			byteLimit := s.server.executionByteLimit(operationStores(applied.GetOperations()))
+			parallel = applied.SizeVT()+visible.SizeVT()+responseBytes <= byteLimit
 		}
 		var executions sync.WaitGroup
 		for _, group := range [][]*batchCall[*sink.DeleteRequest, *sink.DeleteResponse]{wave.applied, wave.visible} {
@@ -571,9 +575,10 @@ func (s *BatchingServer) executeDeleteBatch(
 	defer cancel()
 	for len(calls) > 0 {
 		count, bytes := 0, 0
+		byteLimit := s.server.executionByteLimit(operationStores(calls[0].request.GetOperations()))
 		for count < len(calls) {
 			next := calls[count].request.SizeVT() + failureResponseBytes(len(calls[count].request.GetOperations()))
-			if count > 0 && next > s.server.maxInFlightBytes-bytes {
+			if count > 0 && next > byteLimit-bytes {
 				break
 			}
 			bytes += next

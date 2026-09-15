@@ -41,6 +41,8 @@ type Options struct {
 	MaxScanRequests      int
 	MaxScanBytes         int
 	MaxStoreScanRequests int
+	ScanAdmissionWait    time.Duration
+	StoreExecutionBytes  map[string]int
 	StoreNames           []string
 }
 
@@ -98,7 +100,7 @@ func New(opts Options) (*Server, error) {
 	if opts.MaxPublishBytes == 0 {
 		opts.MaxPublishBytes = 256 << 20
 	}
-	if opts.MaxScanRequests < 0 || opts.MaxScanBytes < 0 || opts.MaxStoreScanRequests < 0 {
+	if opts.MaxScanRequests < 0 || opts.MaxScanBytes < 0 || opts.MaxStoreScanRequests < 0 || opts.ScanAdmissionWait < 0 {
 		return nil, errors.New("create Sink server: scan limits cannot be negative")
 	}
 	if opts.MaxScanRequests == 0 {
@@ -110,14 +112,27 @@ func New(opts Options) (*Server, error) {
 	if opts.MaxStoreScanRequests == 0 {
 		opts.MaxStoreScanRequests = max(1, opts.MaxStoreRequests/2)
 	}
+	if opts.ScanAdmissionWait == 0 {
+		opts.ScanAdmissionWait = 2 * time.Second
+	}
+	opts.ScanAdmissionWait = min(opts.ScanAdmissionWait, opts.RequestTimeout)
 	if opts.MaxScanRequests > opts.MaxInFlightRequests || opts.MaxScanBytes > opts.MaxInFlightBytes || opts.MaxStoreScanRequests > opts.MaxStoreRequests {
 		return nil, errors.New("create Sink server: scan limits cannot exceed total limits")
 	}
 	storeRequests := make(map[string]int, len(opts.StoreNames))
 	publishStoreRequests := make(map[string]int, len(opts.StoreNames))
+	storeBytes := make(map[string]int, len(opts.StoreNames))
 	for _, name := range opts.StoreNames {
 		storeRequests[name] = 0
 		publishStoreRequests[name] = 0
+		storeBytes[name] = 0
+	}
+	storeLimits := make(map[string]int, len(opts.StoreExecutionBytes))
+	for name, limit := range opts.StoreExecutionBytes {
+		if _, configured := storeRequests[name]; !configured || limit <= 0 || limit > opts.MaxInFlightBytes {
+			return nil, fmt.Errorf("create Sink server: execution byte limit for %q must name a configured store and be between 1 and the global limit", name)
+		}
+		storeLimits[name] = limit
 	}
 
 	maxOperations := opts.MaxOperations
@@ -142,6 +157,9 @@ func New(opts Options) (*Server, error) {
 		maxScanBytes:         opts.MaxScanBytes,
 		maxStoreScanRequests: opts.MaxStoreScanRequests,
 		storeScanRequests:    make(map[string]int),
+		scanAdmissionWait:    opts.ScanAdmissionWait,
+		storeBytes:           storeBytes,
+		maxStoreBytes:        storeLimits,
 	}
 	publishAdmission := &admissionPool{
 		name:                "publish",
@@ -186,8 +204,9 @@ func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *req
 	}
 	observation := s.newWriteObservation(req)
 	defer observation.finish()
-	encodedBytes := s.writeExecutionBytesFor(req, budgets.callerCount(), returningCallerCount(req, budgets))
-	admission := admissionRequest{encodedBytes: encodedBytes, stores: operationStores(req.GetOperations()), wait: budgets != nil}
+	estimate := s.estimateWriteExecution(req, budgets.callerCount(), returningCallerCount(req, budgets))
+	reservation := &admissionReservation{}
+	admission := admissionRequest{encodedBytes: estimate.bytes, stores: operationStores(req.GetOperations()), wait: budgets != nil, reservation: reservation}
 	admission.publish = req.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED
 	started := time.Now()
 	ctx, release, err := s.admitRequest(ctx, admission)
@@ -242,7 +261,9 @@ func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *req
 	}
 
 	groups := buildWriteGroups(operations)
+	memory := &writeMemoryReservation{reservation: reservation, estimate: estimate}
 	executionOptions := writeExecutionOptions{
+		memory:           memory,
 		returns:          newWriteReturns(req, budgets, s.maxReadBytes),
 		budgets:          budgets,
 		completion:       completion,

@@ -275,26 +275,21 @@ func TestMutationDispatcherPreservesDependenciesAcrossBatches(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			submit := func(mode sink.CompletionMode, keys ...string) <-chan error {
-				done := make(chan error, 1)
-				go func() {
-					if method == "Write" {
-						request := &sink.WriteRequest{CompletionMode: mode}
-						for _, key := range keys {
-							request.Operations = append(request.Operations, completionPut(key, 1))
-						}
-						_, callErr := server.Write(ctx, request)
-						done <- callErr
-					} else {
-						request := &sink.DeleteRequest{CompletionMode: mode}
-						for _, key := range keys {
-							operation := &sink.DeleteOperation{Address: completionAddress(key)}
-							request.Operations = append(request.Operations, operation)
-						}
-						_, callErr := server.Delete(ctx, request)
-						done <- callErr
+				if method == "Write" {
+					var operations []*sink.WriteOperation
+					for _, key := range keys {
+						operations = append(operations, completionPut(key, 1))
 					}
-				}()
-				return done
+					call := completionWriteCall(ctx, mode, operations...)
+					return enqueueCompletionCall(t, server.writes["primary"], call)
+				}
+				request := &sink.DeleteRequest{CompletionMode: mode}
+				for _, key := range keys {
+					operation := &sink.DeleteOperation{Address: completionAddress(key)}
+					request.Operations = append(request.Operations, operation)
+				}
+				call := &batchCall[*sink.DeleteRequest, *sink.DeleteResponse]{ctx: ctx, request: request, operationCount: len(keys), result: make(chan batchResult[*sink.DeleteResponse], 1)}
+				return enqueueCompletionCall(t, server.deletes["primary"], call)
 			}
 			visible := submit(sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE, "product")
 			awaitCompletion(t, backend.events)
@@ -345,6 +340,27 @@ func TestMutationDispatcherPreservesDependenciesAcrossBatches(t *testing.T) {
 			}
 		})
 	}
+}
+
+func enqueueCompletionCall[Request interface{ SizeVT() int }, Response any](t *testing.T, batcher *requestBatcher[Request, Response], call *batchCall[Request, Response]) <-chan error {
+	t.Helper()
+	call.encodedBytes = call.request.SizeVT()
+	call.records = batcher.records(call.request)
+	call.partition = batcher.partition(call.request)
+	call.enqueuedAt = time.Now()
+	if err := batcher.reserve(call.operationCount, call.encodedBytes); err != nil {
+		t.Fatal(err)
+	}
+	// Submit reserves queue capacity before sending to input. Observing that
+	// counter cannot order concurrent callers, so establish this dispatcher's
+	// dependency chain by enqueueing its fixtures synchronously.
+	batcher.input <- call
+	done := make(chan error, 1)
+	go func() {
+		result := <-call.result
+		done <- result.err
+	}()
+	return done
 }
 
 func TestMicrobatchConditionalWritesKeepEachCallersInputAndOutputBudget(t *testing.T) {

@@ -5,7 +5,7 @@ compiler, restricted Lua environment, `sink.v1` functions, JSON/BSON bridge,
 fresh virtual machine, and default resource limits used by the Sink server. It
 does not start a server or connect to MongoDB, Elasticsearch, OpenSearch, or
 Kafka, and it does not require a Sink configuration file. Pass `--config` when
-production overrides `service.lua` limits; the command validates the file and
+production overrides `service.merge.lua` limits; the command validates the file and
 uses those limits without opening its configured backends.
 
 Use the same Sink binary version in development, CI, and production. This keeps
@@ -57,7 +57,7 @@ output is canonical Extended JSON so BSON-specific types remain visible.
 | Flag | Required | Value and behavior |
 | --- | --- | --- |
 | `--script` | Yes | Lua source file. The chunk must return one merge function. |
-| `--config` | No | Sink YAML configuration whose `service.lua` limits are applied. No backend is opened. |
+| `--config` | No | Sink YAML configuration whose `service.merge.lua` limits are applied. No backend is opened. |
 | `--cases` | No | One `.yaml`/`.yml` case or a directory of cases. Cannot be combined with the document flags below. |
 | `--encoding` | Without `--cases` | `json` or `bson`. |
 | `--current` | No | Existing JSON or Extended JSON object. Omit to pass `nil` as `current`. |

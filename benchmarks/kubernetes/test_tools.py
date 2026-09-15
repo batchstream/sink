@@ -83,6 +83,42 @@ class ExportTests(unittest.TestCase):
         self.assertNotIn("do-not-export", json.dumps(exported))
         self.assertEqual(exported["case"], "example")
 
+        old_config = {"max_in_flight_bytes": 256 << 20, "max_read_bytes": 32 << 20,
+                      "batching": {"max_wait_milliseconds": 2}}
+        new_config = {"execution": {"max_bytes": 256 << 20}, "request": {"max_read_bytes": 32 << 20},
+                      "batching": {"max_wait": "2ms"}}
+        readable_config = {"execution": {"max_bytes": "256MiB"}, "request": {"max_read_bytes": "32MiB"},
+                           "batching": {"max_wait": "2ms", "max_bytes": "16MiB"}}
+        for config in [old_config, new_config, readable_config]:
+            result["server_service_config"] = config
+            exported = export.row_for(result)
+            self.assertEqual(exported["execution_mib"], 256)
+            self.assertEqual(exported["read_mib"], 32)
+            self.assertEqual(exported["batch_wait_ms"], 2)
+            self.assertEqual(exported["batch_mib"], 16)
+
+        result["server_service_config"] = {"execution": {"max_bytes": "1.5MiB"},
+                                           "request": {"max_read_bytes": "512KiB"}}
+        exported = export.row_for(result)
+        self.assertEqual(exported["execution_mib"], 1.5)
+        self.assertEqual(exported["read_mib"], 0.5)
+
+    def test_export_byte_units(self):
+        for value, expected in [(123, 123), ("1B", 1), ("64KiB", 65536), ("1.5MiB", 1572864),
+                                ("1GB", 1000000000), ("1GiB", 1073741824), ("0.001KB", 1),
+                                ("1 TB", 1000000000000), ("1TiB", 1099511627776)]:
+            self.assertEqual(export.byte_count(value), expected)
+        for invalid in ["16M", "16mib", "16", "0.1B", "0.1KiB", "0B", "8388608TiB"]:
+            with self.assertRaises(ValueError):
+                export.byte_count(invalid)
+
+    def test_export_duration_units(self):
+        self.assertEqual(export.duration_milliseconds("1s500us"), 1000.5)
+        self.assertEqual(export.duration_milliseconds(".5ms"), 0.5)
+        for invalid in ["2", "2msjunk", "-2ms"]:
+            with self.assertRaises(ValueError):
+                export.duration_milliseconds(invalid)
+
 
 class FaultTargetTests(unittest.TestCase):
     def test_rollout_acceptance_does_not_prove_replacement(self):

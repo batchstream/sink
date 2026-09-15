@@ -139,7 +139,7 @@ new publishers and workers together; mixed key schemes can route one record to
 different partitions.
 
 After processing and offset settlement stop, worker group departure uses
-`shutdown_timeout_seconds`. If Kafka does not acknowledge departure within that
+`shutdown_timeout`. If Kafka does not acknowledge departure within that
 window, Sink cancels the Kafka client's internal network work before closing it.
 Shutdown does not acknowledge additional source records; a replacement consumer
 recovers unresolved offsets. SIGKILL recovery also depends on Kafka's session
@@ -228,7 +228,7 @@ remain per original RPC. Final failed writes release their returned-document
 reservation; successful CAS retries retain only the final document's charge.
 Read/Write/Delete also reserve up to 1 KiB of failure text plus a result envelope
 per operation before execution or publishing. Failure messages are valid UTF-8,
-limited to 1 KiB each, and further shortened according to `service.max_read_bytes`
+limited to 1 KiB each, and further shortened according to `service.request.max_read_bytes`
 per original RPC, retaining at least one byte to satisfy the client contract.
 Codes, retryability, and operation indexes remain intact.
 This error allowance is separate from the returned-document quota.

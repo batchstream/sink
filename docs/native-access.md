@@ -417,11 +417,11 @@ from changing the record.
 ## Limits, deadlines, and retries
 
 Native RPCs use the existing per-process and per-store admission limits.
-Execute, Query, Count and each Scan page use `service.request_timeout_seconds`.
+Execute, Query, Count and each Scan page use `service.request.timeout`.
 A shorter caller deadline wins. Between Scan calls there is no admission
 reservation and no background cursor to keep alive.
 
-Scan admission waits for at most `service.scan_admission_wait_milliseconds`
+Scan admission waits for at most `service.execution.scan.admission_wait`
 (default two seconds, capped by the page timeout), within the original page
 deadline. The Scan waiting queue has separate request, byte and per-store caps
 equal to the Scan execution sublimits. An older runnable waiter keeps its place;
@@ -433,15 +433,15 @@ backend execution. Oversized reservations, response limits and backend failures
 do not carry this detail. Caller cancellation and page deadline expiry retain
 `CANCELED` and `DEADLINE_EXCEEDED` respectively.
 
-Execute responses and returned Write documents share `service.max_read_bytes`
+Execute responses and returned Write documents share `service.request.max_read_bytes`
 semantics; returned-document budgets are per original RPC even after batching.
-Count uses a separate backend response budget of min(`service.max_read_bytes`,
+Count uses a separate backend response budget of min(`service.request.max_read_bytes`,
 256 KiB), enforced by the adapter as well as admission. MongoDB counts still
 reserve the driver's 48 MiB wire ceiling. This keeps small count responses from
 reserving a full document page.
 Output space is reserved before committing a returned write. A candidate that
 cannot fit fails before its own write; earlier operations may already be applied.
-Scan pages use at most min(`service.max_read_bytes`, 4 MiB), with count and byte
+Scan pages use at most min(`service.request.max_read_bytes`, 4 MiB), with count and byte
 limits both enforced. A single oversized document fails with
 `RESOURCE_EXHAUSTED`. Search reserves a bounded backend response buffer for two
 page budgets plus 64 KiB of metadata, capped by the store response limit. It reduces the hit count

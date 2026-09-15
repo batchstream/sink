@@ -11,6 +11,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/liran/sink/internal/config"
 	"github.com/liran/sink/internal/queue"
 	queuekafka "github.com/liran/sink/internal/queue/kafka"
 )
@@ -42,23 +43,23 @@ func runDeadLetterCommand(args []string, stdout io.Writer, stderr io.Writer) err
 	if flags.NArg() != 0 || *configPath == "" || *store == "" || *partition < 0 || *partition > 1<<31-1 || *offset < 0 || *count < 1 || *count > 100 {
 		return errors.New("config, store, partition, offset, and a count between 1 and 100 are required")
 	}
-	loaded, err := loadConfig(*configPath)
+	loaded, err := config.Load(*configPath)
 	if err != nil {
 		return err
 	}
-	var selected *backendConfig
-	for index := range loaded.storages {
-		if loaded.storages[index].name == *store {
-			selected = &loaded.storages[index]
+	var selected *config.Storage
+	for index := range loaded.Storages {
+		if loaded.Storages[index].Name == *store {
+			selected = &loaded.Storages[index]
 			break
 		}
 	}
-	if selected == nil || !selected.kafka.enabled {
+	if selected == nil || !selected.Kafka.Enabled {
 		return errors.New("selected store does not enable Kafka")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	selection := queuekafka.DeadLetterRange{Brokers: selected.kafka.brokers, Topic: selected.kafka.deadLetterTopic,
+	selection := queuekafka.DeadLetterRange{Brokers: selected.Kafka.Brokers, Topic: selected.Kafka.DeadLetter.Topic,
 		Partition: int32(*partition), Offset: *offset, Count: *count}
 	records, err := queuekafka.ReadDeadLetters(ctx, selection)
 	if err != nil {
@@ -70,9 +71,9 @@ func runDeadLetterCommand(args []string, stdout io.Writer, stderr io.Writer) err
 		if err != nil {
 			return err
 		}
-		opts := queuekafka.PublisherOptions{Brokers: selected.kafka.brokers, Topic: selected.kafka.topic,
-			MaxRecordBytes: selected.kafka.maxRecordBytes, MaxBufferedBytes: selected.kafka.maxBufferedBytes}
-		if selected.driver == driverElasticsearch || selected.driver == driverOpenSearch {
+		opts := queuekafka.PublisherOptions{Brokers: selected.Kafka.Brokers, Topic: selected.Kafka.Topic.Name,
+			MaxRecordBytes: selected.Kafka.Topic.MaxRecordBytes, MaxBufferedBytes: selected.Kafka.Producer.MaxBufferedBytes}
+		if selected.Driver == config.DriverElasticsearch || selected.Driver == config.DriverOpenSearch {
 			opts.MutationKey = queue.MutationKeyWithoutNamespace
 		}
 		publisher, err := queuekafka.NewPublisher(opts)

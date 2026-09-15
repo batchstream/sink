@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -12,16 +12,17 @@ import (
 	"time"
 
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/config"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 func TestApplicationAlwaysBatchesGRPCRequests(t *testing.T) {
-	for _, mode := range []runMode{modeServer, modeAll} {
+	for _, mode := range []config.Mode{config.ModeServer, config.ModeAll} {
 		t.Run(string(mode), func(t *testing.T) {
 			kafkaConfig := ""
-			if mode == modeAll {
+			if mode == config.ModeAll {
 				broker, err := kfake.NewCluster(kfake.NumBrokers(1))
 				if err != nil {
 					t.Fatal(err)
@@ -30,11 +31,13 @@ func TestApplicationAlwaysBatchesGRPCRequests(t *testing.T) {
 				kafkaConfig = fmt.Sprintf(`    kafka:
       enabled: true
       brokers: [%q]
-      topic: batching-test
-      group_id: batching-test
-      topic_replication_factor: 1
-      min_insync_replicas: 1
-`, broker.ListenAddrs()[0])
+      topic:
+        name: batching-test
+        replication_factor: 1
+        min_insync_replicas: 1
+
+      consumer:
+        group_id: batching-test`, broker.ListenAddrs()[0])
 			}
 			var calls atomic.Int32
 			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -76,21 +79,22 @@ storages:
 service:
   batching:
     max_operations: 2
-    max_wait_milliseconds: 1000
+    max_wait: 1000ms
 `, mode, backend.URL, kafkaConfig)
 			path := writeConfig(t, contents)
-			loaded, err := loadConfig(path)
+			loaded, err := config.Load(path)
 			if err != nil {
 				t.Fatal(err)
 			}
-			app, err := newApplication(t.Context(), loaded)
+			options := Options{Config: loaded, Version: "test"}
+			app, err := New(t.Context(), options)
 			if err != nil {
 				t.Fatal(err)
 			}
 			serveErrors := make(chan error, 1)
 			go func() { serveErrors <- app.grpcServer.Serve(app.listener) }()
 			defer func() {
-				app.close()
+				app.Close()
 				if err := <-serveErrors; err != nil {
 					t.Errorf("serve gRPC: %v", err)
 				}

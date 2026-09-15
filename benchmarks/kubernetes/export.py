@@ -5,6 +5,32 @@ import argparse
 import csv
 import json
 import pathlib
+import re
+from fractions import Fraction
+
+
+def byte_count(value):
+    if type(value) is int:
+        return value
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)[ \t]*(B|KB|MB|GB|TB|KiB|MiB|GiB|TiB)", value)
+    if not match:
+        raise ValueError("Invalid byte size in benchmark configuration")
+    units = {"B": 1, "KB": 1000, "MB": 1000**2, "GB": 1000**3, "TB": 1000**4,
+             "KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30, "TiB": 1 << 40}
+    count = Fraction(match[1]) * units[match[2]]
+    if count.denominator != 1 or count <= 0 or count > (1 << 63) - 1:
+        raise ValueError("Byte size must resolve to a positive whole-byte integer")
+    return int(count)
+
+
+def duration_milliseconds(value):
+    if value is None:
+        return None
+    units = {"ns": 1e-6, "us": 1e-3, "µs": 1e-3, "μs": 1e-3, "ms": 1, "s": 1000, "m": 60000, "h": 3600000}
+    parts = re.findall(r"(\d+(?:\.\d*)?|\.\d+)(ns|us|µs|μs|ms|s|m|h)", value)
+    if not parts or "".join(number + unit for number, unit in parts) != value:
+        raise ValueError("Invalid positive Go duration in benchmark configuration")
+    return sum(float(number) * units[unit] for number, unit in parts)
 
 
 def row_for(result):
@@ -17,6 +43,10 @@ def row_for(result):
     variables = environments[0]["variables"] if environments else {}
     service = result.get("server_service_config") or {}
     batching = service.get("batching") or {}
+    execution = service.get("execution") or {}
+    request = service.get("request") or {}
+    # Read both recorded schemas so historical results remain comparable.
+    wait_ms = duration_milliseconds(batching["max_wait"]) if "max_wait" in batching else batching.get("max_wait_milliseconds")
     # Historical measurements retain their switch value; current servers always batch.
     batching_enabled = batching.get("enabled", True)
     errors = result.get("errors") or {}
@@ -38,9 +68,9 @@ def row_for(result):
            "gomaxprocs": variables.get("GOMAXPROCS", "auto"), "gogc": variables.get("GOGC", "100"),
            "prestop_seconds": environments[0].get("prestop_seconds", "") if environments else "",
            "termination_grace_seconds": environments[0].get("termination_grace_seconds", "") if environments else "",
-           "execution_mib": service.get("max_in_flight_bytes", 0) // (1 << 20), "read_mib": service.get("max_read_bytes", 0) // (1 << 20),
-           "batch_wait_ms": batching.get("max_wait_milliseconds"), "batch_operations": batching.get("max_operations", 1000),
-           "batch_mib": batching.get("max_bytes", 16 << 20) / (1 << 20),
+           "execution_mib": byte_count(execution.get("max_bytes", service.get("max_in_flight_bytes", 0))) / (1 << 20), "read_mib": byte_count(request.get("max_read_bytes", service.get("max_read_bytes", 0))) / (1 << 20),
+           "batch_wait_ms": wait_ms, "batch_operations": batching.get("max_operations", 1000),
+           "batch_mib": byte_count(batching.get("max_bytes", 16 << 20)) / (1 << 20),
            "batching_enabled": batching_enabled, "concurrency": settings["concurrency"],
            "keys": settings["keys"], "hot_keys": settings["hot_keys"], "padding_bytes": settings["padding_bytes"],
            "random_padding": settings.get("random_padding", False),

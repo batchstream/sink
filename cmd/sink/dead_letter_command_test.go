@@ -9,13 +9,14 @@ import (
 	"time"
 
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/config"
 	"github.com/liran/sink/internal/queue"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 func TestDeadLetterReplayPreservesPublisherRouting(t *testing.T) {
-	for _, driver := range []storageDriver{driverMongoDB, driverElasticsearch, driverOpenSearch} {
+	for _, driver := range []config.Driver{config.DriverMongoDB, config.DriverElasticsearch, config.DriverOpenSearch} {
 		for _, kind := range []string{"write", "delete"} {
 			t.Run(string(driver)+"/"+kind, func(t *testing.T) {
 				cluster, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.SeedTopics(3, "source", "source.dlq"))
@@ -39,7 +40,7 @@ func TestDeadLetterReplayPreservesPublisherRouting(t *testing.T) {
 				mutation := queue.Mutation{}
 				if kind == "write" {
 					document := &sink.Document{Encoding: sink.DocumentEncoding_DOCUMENT_ENCODING_JSON, Payload: []byte(`{}`)}
-					if driver == driverMongoDB {
+					if driver == config.DriverMongoDB {
 						document.Encoding = sink.DocumentEncoding_DOCUMENT_ENCODING_BSON
 						document.Payload = []byte{5, 0, 0, 0, 0}
 					}
@@ -50,7 +51,7 @@ func TestDeadLetterReplayPreservesPublisherRouting(t *testing.T) {
 					mutation.Delete = &sink.DeleteOperation{Address: address}
 				}
 				partitionKey, err := queue.MutationKey(mutation)
-				if driver != driverMongoDB {
+				if driver != config.DriverMongoDB {
 					partitionKey, err = queue.MutationKeyWithoutNamespace(mutation)
 				}
 				if err != nil {
@@ -66,7 +67,7 @@ func TestDeadLetterReplayPreservesPublisherRouting(t *testing.T) {
 					t.Fatal(err)
 				}
 				backend := "    search:\n      endpoints: [http://127.0.0.1:1]\n"
-				if driver == driverMongoDB {
+				if driver == config.DriverMongoDB {
 					backend = "    mongodb:\n      uri: mongodb://127.0.0.1:1\n"
 				}
 				contents := fmt.Sprintf(`storages:
@@ -75,10 +76,12 @@ func TestDeadLetterReplayPreservesPublisherRouting(t *testing.T) {
 %s    kafka:
       enabled: true
       brokers: [%q]
-      topic: source
-      dead_letter_topic: source.dlq
-      topic_replication_factor: 1
-      min_insync_replicas: 1
+      topic:
+        name: source
+        replication_factor: 1
+        min_insync_replicas: 1
+      dead_letter:
+        topic: source.dlq
 `, driver, backend, cluster.ListenAddrs()[0])
 				configPath := writeConfig(t, contents)
 				args := []string{"replay", "--config", configPath, "--store", "primary", "--partition", strconv.Itoa(int(letter.Partition)), "--offset", strconv.FormatInt(letter.Offset, 10)}

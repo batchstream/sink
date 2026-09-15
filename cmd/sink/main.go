@@ -7,40 +7,16 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
-	"time"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/merge"
-	sinkmetrics "github.com/liran/sink/internal/metrics"
-	"github.com/liran/sink/internal/protocol"
-	"github.com/liran/sink/internal/queue"
-	queuekafka "github.com/liran/sink/internal/queue/kafka"
-	"github.com/liran/sink/internal/service"
-	storagecontract "github.com/liran/sink/internal/storage"
-	"github.com/liran/sink/internal/storage/mongodb"
-	searchstorage "github.com/liran/sink/internal/storage/search"
-	"github.com/liran/sink/internal/worker"
-	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
-	"go.mongodb.org/mongo-driver/v2/mongo/writeconcern"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"github.com/liran/sink/internal/app"
+	"github.com/liran/sink/internal/config"
 )
 
 var version = "dev"
-
-const (
-	healthCheckInterval = 5 * time.Second
-	healthCheckTimeout  = 3 * time.Second
-)
 
 func main() {
 	err := executeCommand(os.Args[1:], os.Stdout, os.Stderr)
@@ -63,6 +39,8 @@ func executeCommand(args []string, stdout io.Writer, stderr io.Writer) error {
 			return runDeadLetterCommand(args[1:], stdout, stderr)
 		case "lua":
 			return runLuaCommand(args[1:], stdout, stderr)
+		case "config":
+			return runConfigCommand(args[1:], stdout)
 		}
 	}
 	configPath, err := parseConfigPath(args)
@@ -70,6 +48,21 @@ func executeCommand(args []string, stdout io.Writer, stderr io.Writer) error {
 		return err
 	}
 	return run(configPath)
+}
+
+func runConfigCommand(args []string, stdout io.Writer) error {
+	if len(args) == 0 || args[0] != "check" {
+		return errors.New("usage: sink config check --config FILE")
+	}
+	configPath, err := parseConfigPath(args[1:])
+	if err != nil {
+		return err
+	}
+	if _, err := config.Load(configPath); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(stdout, "Configuration schema and limits are valid.")
+	return err
 }
 
 func parseConfigPath(args []string) (string, error) {
@@ -90,562 +83,19 @@ func parseConfigPath(args []string) (string, error) {
 }
 
 func run(configPath string) error {
-	loaded, err := loadConfig(configPath)
+	loaded, err := config.Load(configPath)
 	if err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	app, err := newApplication(ctx, loaded)
+	options := app.Options{Config: loaded, Version: version}
+	running, err := app.New(ctx, options)
 	if err != nil {
 		return err
 	}
-	defer app.close()
-	slog.Info("starting sink", "version", version, "mode", loaded.mode)
-	return app.run(ctx)
-}
-
-type application struct {
-	topics          map[string]*queuekafka.TopicManager
-	background      sync.WaitGroup
-	config          config
-	mongoClients    map[string]*mongo.Client
-	storage         storagecontract.Storage
-	publisher       queue.Publisher
-	kafkaPublishers []*queuekafka.Publisher
-	healthChecks    []*configuredHealthCheck
-	workers         []configuredWorker
-	batchingServer  *service.BatchingServer
-	grpcServer      *grpc.Server
-	health          *health.Server
-	listener        net.Listener
-	metricsServer   *http.Server
-	metricsListener net.Listener
-}
-
-type configuredWorker struct {
-	store  string
-	worker *queuekafka.Worker
-}
-
-type healthPinger interface {
-	Ping(context.Context) error
-}
-
-type configuredHealthCheck struct {
-	service string
-	pinger  healthPinger
-	mu      sync.Mutex
-	active  *healthAttempt
-}
-
-type configuredHealthResult struct {
-	service string
-	status  healthpb.HealthCheckResponse_ServingStatus
-}
-
-func storageHealthService(store string) string {
-	return "sink.storage." + store
-}
-
-func kafkaHealthService(store string) string {
-	return "sink.kafka." + store
-}
-
-func newApplication(ctx context.Context, loaded config) (*application, error) {
-	opened, err := openConfiguredStorage(ctx, loaded)
-	if err != nil {
-		return nil, err
-	}
-	app := &application{
-		config:       loaded,
-		topics:       make(map[string]*queuekafka.TopicManager),
-		mongoClients: opened.mongoClients,
-		storage:      opened.value,
-		healthChecks: opened.healthChecks,
-	}
-	storeNames := make([]string, len(loaded.storages))
-	for index, configured := range loaded.storages {
-		storeNames[index] = configured.name
-	}
-	var observed *sinkmetrics.Metrics
-	if loaded.prometheusAddress != "" {
-		observed, err = sinkmetrics.New(version, storeNames...)
-		if err != nil {
-			app.close()
-			return nil, err
-		}
-		if err := app.configurePrometheus(observed.Handler()); err != nil {
-			app.close()
-			return nil, err
-		}
-	}
-	for _, configured := range loaded.storages {
-		if !configured.kafka.enabled {
-			continue
-		}
-		topics := []string{configured.kafka.topic, configured.kafka.deadLetterTopic}
-		topicOptions := queuekafka.TopicOptions{
-			Brokers:             configured.kafka.brokers,
-			Topics:              topics,
-			Partitions:          configured.kafka.topicPartitions,
-			ReplicationFactor:   configured.kafka.topicReplicationFactor,
-			Retention:           configured.kafka.topicRetention,
-			DeadLetterTopic:     configured.kafka.deadLetterTopic,
-			DeadLetterRetention: configured.kafka.deadLetterRetention,
-			MinInSyncReplicas:   configured.kafka.minInSyncReplicas,
-			MaxRecordBytes:      configured.kafka.maxRecordBytes,
-		}
-		app.topics[configured.name] = queuekafka.NewTopicManager(topicOptions)
-	}
-	if loaded.mode == modeServer || loaded.mode == modeAll {
-		storePublishers := make(map[string]queue.Publisher)
-		for _, configured := range loaded.storages {
-			if !configured.kafka.enabled {
-				continue
-			}
-			publisherOptions := queuekafka.PublisherOptions{
-				Store:            configured.name,
-				Brokers:          configured.kafka.brokers,
-				Topics:           app.topics[configured.name],
-				MaxRecordBytes:   configured.kafka.maxRecordBytes,
-				MaxBufferedBytes: configured.kafka.maxBufferedBytes,
-				Topic:            configured.kafka.topic,
-				Metrics:          observed,
-			}
-			if configured.driver == driverElasticsearch || configured.driver == driverOpenSearch {
-				publisherOptions.MutationKey = queue.MutationKeyWithoutNamespace
-			}
-			publisher, publisherErr := queuekafka.NewPublisher(publisherOptions)
-			if publisherErr != nil {
-				app.close()
-				return nil, fmt.Errorf("create Kafka publisher for store %q: %w", configured.name, publisherErr)
-			}
-			app.kafkaPublishers = append(app.kafkaPublishers, publisher)
-
-			healthCheck := &configuredHealthCheck{
-				service: kafkaHealthService(configured.name),
-				pinger:  publisher,
-			}
-			app.healthChecks = append(app.healthChecks, healthCheck)
-			storePublishers[configured.name] = publisher
-		}
-		if len(storePublishers) > 0 {
-			app.publisher, err = queue.NewRoutingPublisher(storePublishers)
-			if err != nil {
-				app.close()
-				return nil, err
-			}
-		}
-	}
-
-	luaEngine, err := merge.NewLuaEngine(loaded.luaOptions)
-	if err != nil {
-		app.close()
-		return nil, err
-	}
-	serverOptions := service.Options{
-		StoreNames:           storeNames,
-		RequestTimeout:       loaded.requestTimeout,
-		MaxInFlightRequests:  loaded.maxInFlightRequests,
-		MaxInFlightBytes:     loaded.maxInFlightBytes,
-		MaxPublishRequests:   loaded.maxPublishRequests,
-		MaxPublishBytes:      loaded.maxPublishBytes,
-		MaxStoreRequests:     loaded.maxStoreRequests,
-		MaxScanRequests:      loaded.maxScanRequests,
-		MaxScanBytes:         loaded.maxScanBytes,
-		MaxStoreScanRequests: loaded.maxStoreScanRequests,
-		ScanAdmissionWait:    loaded.scanAdmissionWait,
-		StoreExecutionBytes:  loaded.storeExecutionBytes,
-		MaxReadBytes:         loaded.maxReadBytes,
-		Storage:              opened.value,
-		Lua:                  luaEngine,
-		Publisher:            app.publisher,
-		MaxOperations:        loaded.maxOperations,
-		MaxMergeAttempts:     loaded.maxMergeAttempts,
-		Metrics:              observed,
-	}
-	sinkServer, err := service.New(serverOptions)
-	if err != nil {
-		app.close()
-		return nil, err
-	}
-	if loaded.mode == modeServer || loaded.mode == modeAll {
-		batchingOptions := service.BatchingOptions{
-			StoreNames:          storeNames,
-			MaxWait:             loaded.batchingMaxWait,
-			MaxOperations:       loaded.batchingMaxOperations,
-			MaxBytes:            loaded.batchingMaxBytes,
-			MaxQueuedOperations: loaded.batchingMaxQueuedOps,
-			MaxQueuedBytes:      loaded.batchingMaxQueuedBytes,
-			Metrics:             observed,
-		}
-		app.batchingServer, err = service.NewBatchingServer(sinkServer, batchingOptions)
-		if err != nil {
-			app.close()
-			return nil, err
-		}
-		if err := app.configureGRPC(app.batchingServer, observed); err != nil {
-			app.close()
-			return nil, err
-		}
-	}
-	if loaded.mode == modeWorker || loaded.mode == modeAll {
-		processor, processorErr := worker.NewProcessor(sinkServer)
-		if processorErr != nil {
-			app.close()
-			return nil, processorErr
-		}
-		for _, configured := range loaded.storages {
-			if !configured.kafka.enabled {
-				continue
-			}
-			workerOptions := queuekafka.WorkerOptions{
-				ShutdownTimeout:   loaded.shutdownTimeout,
-				Topics:            app.topics[configured.name],
-				ProcessingTimeout: configured.kafka.processingTimeout,
-				MaxRecordBytes:    configured.kafka.maxRecordBytes,
-				Brokers:           configured.kafka.brokers,
-				Store:             configured.name,
-				Topic:             configured.kafka.topic,
-				GroupID:           configured.kafka.groupID,
-				DeadLetterTopic:   configured.kafka.deadLetterTopic,
-				Handler:           processor,
-				MaxPollRecords:    min(configured.kafka.maxPollRecords, loaded.maxOperations),
-				MaxRetryAttempts:  configured.kafka.maxRetryAttempts,
-				RetryBackoff:      configured.kafka.retryBackoff,
-				MaxRetryBackoff:   configured.kafka.maxRetryBackoff,
-				Metrics:           observed,
-			}
-			kafkaWorker, workerErr := queuekafka.NewWorker(workerOptions)
-			if workerErr != nil {
-				app.close()
-				return nil, fmt.Errorf("create Kafka worker for store %q: %w", configured.name, workerErr)
-			}
-			workerInstance := configuredWorker{store: configured.name, worker: kafkaWorker}
-			app.workers = append(app.workers, workerInstance)
-			workerHealth := &configuredHealthCheck{service: "sink.worker." + configured.name, pinger: kafkaWorker}
-			app.healthChecks = append(app.healthChecks, workerHealth)
-			if app.health != nil {
-				app.health.SetServingStatus(workerHealth.service, healthpb.HealthCheckResponse_NOT_SERVING)
-			}
-		}
-	}
-	return app, nil
-}
-
-type openedStorage struct {
-	value        storagecontract.Storage
-	mongoClients map[string]*mongo.Client
-	healthChecks []*configuredHealthCheck
-}
-
-func openConfiguredStorage(ctx context.Context, loaded config) (openedStorage, error) {
-	var opened openedStorage
-	opened.mongoClients = make(map[string]*mongo.Client)
-	backends := make(map[string]storagecontract.Storage, len(loaded.storages))
-	for _, configured := range loaded.storages {
-		backend, err := openStorageBackend(ctx, configured, loaded.shutdownTimeout)
-		if err != nil {
-			disconnectMongoClients(opened.mongoClients, loaded.shutdownTimeout)
-			return opened, fmt.Errorf("open storage %q: %w", configured.name, err)
-		}
-		backends[configured.name] = backend.value
-		healthCheck := &configuredHealthCheck{
-			service: storageHealthService(configured.name),
-			pinger:  backend.value,
-		}
-		opened.healthChecks = append(opened.healthChecks, healthCheck)
-		if backend.mongoClient != nil {
-			opened.mongoClients[configured.name] = backend.mongoClient
-		}
-	}
-	router, err := storagecontract.NewRouter(backends)
-	if err != nil {
-		disconnectMongoClients(opened.mongoClients, loaded.shutdownTimeout)
-		return opened, err
-	}
-	opened.value = router
-	return opened, nil
-}
-
-type openedBackend struct {
-	value       storagecontract.Storage
-	mongoClient *mongo.Client
-}
-
-func openStorageBackend(ctx context.Context, configured backendConfig, shutdownTimeout time.Duration) (openedBackend, error) {
-	switch configured.driver {
-	case driverMongoDB:
-		return openMongoStorage(ctx, configured, shutdownTimeout)
-	case driverElasticsearch, driverOpenSearch:
-		return openSearchStorage(ctx, configured)
-	default:
-		var empty openedBackend
-		return empty, fmt.Errorf("unsupported storage driver %q", configured.driver)
-	}
-}
-
-func openMongoStorage(ctx context.Context, configured backendConfig, shutdownTimeout time.Duration) (openedBackend, error) {
-	var opened openedBackend
-	journal := true
-	concern := &writeconcern.WriteConcern{W: "majority", Journal: &journal}
-	clientOptions := options.Client().ApplyURI(configured.mongoURI).SetWriteConcern(concern).SetServerSelectionTimeout(5 * time.Second)
-	mongoClient, err := mongo.Connect(clientOptions)
-	if err != nil {
-		return opened, fmt.Errorf("connect to MongoDB: %w", err)
-	}
-
-	storageOptions := mongodb.Options{
-		Store:               configured.name,
-		MetadataField:       configured.mongoMetadataField,
-		MaxConcurrentWrites: configured.mongoMaxConcurrentWrites,
-		MaxConcurrentGroups: configured.mongoMaxConcurrentGroups,
-	}
-	store, err := mongodb.New(mongoClient, storageOptions)
-	if err != nil {
-		disconnectContext, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		_ = mongoClient.Disconnect(disconnectContext)
-		return opened, err
-	}
-	opened.value = store
-	opened.mongoClient = mongoClient
-	return opened, nil
-}
-
-func openSearchStorage(ctx context.Context, configured backendConfig) (openedBackend, error) {
-	var opened openedBackend
-	searchOptions := searchstorage.Options{
-		Driver:    configured.searchDriver,
-		Endpoints: configured.searchEndpoints,
-		Store:     configured.name,
-		Username:  configured.searchUsername,
-		Password:  configured.searchPassword,
-		APIKey:    configured.searchAPIKey,
-	}
-	store, err := searchstorage.New(searchOptions)
-	if err != nil {
-		return opened, err
-	}
-	opened.value = store
-	return opened, nil
-}
-
-func (a *application) configureGRPC(server sink.SinkServer, observed *sinkmetrics.Metrics) error {
-	listener, err := net.Listen("tcp", a.config.grpcAddress)
-	if err != nil {
-		return fmt.Errorf("listen for gRPC: %w", err)
-	}
-	serverOptions := make([]grpc.ServerOption, 0, 4)
-	serverOptions = append(serverOptions, grpc.MaxRecvMsgSize(a.config.grpcMaxReceiveBytes))
-	serverOptions = append(serverOptions, grpc.MaxSendMsgSize(a.config.grpcMaxSendBytes))
-	vtCodec := protocol.NewVTProtoCodec()
-	serverOptions = append(serverOptions, grpc.ForceServerCodecV2(vtCodec))
-	if observed != nil {
-		interceptor := observed.UnaryServerInterceptor()
-		serverOptions = append(serverOptions, grpc.UnaryInterceptor(interceptor))
-		serverOptions = append(serverOptions, grpc.StreamInterceptor(observed.StreamServerInterceptor()))
-	}
-	grpcServer := grpc.NewServer(serverOptions...)
-	sink.RegisterSinkServer(grpcServer, server)
-	healthServer := health.NewServer()
-	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
-	for _, configured := range a.healthChecks {
-		healthServer.SetServingStatus(configured.service, healthpb.HealthCheckResponse_NOT_SERVING)
-	}
-	healthpb.RegisterHealthServer(grpcServer, healthServer)
-	a.listener = listener
-	a.grpcServer = grpcServer
-	a.health = healthServer
-	return nil
-}
-
-func (a *application) configurePrometheus(handler http.Handler) error {
-	listener, err := net.Listen("tcp", a.config.prometheusAddress)
-	if err != nil {
-		return fmt.Errorf("listen for Prometheus metrics: %w", err)
-	}
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", handler)
-	mux.HandleFunc("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	mux.HandleFunc("/readyz", a.serveReadiness)
-	server := &http.Server{
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-	a.metricsListener = listener
-	a.metricsServer = server
-	return nil
-}
-
-func (a *application) run(ctx context.Context) error {
-	runContext, cancel := context.WithCancel(ctx)
-	defer func() {
-		cancel()
-		a.background.Wait()
-	}()
-	for _, manager := range a.topics {
-		a.background.Go(func() { manager.Run(runContext) })
-	}
-	runErrors := make(chan error, 2+len(a.workers))
-	if a.grpcServer != nil {
-		go func() {
-			err := a.grpcServer.Serve(a.listener)
-			if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-				runErrors <- fmt.Errorf("serve gRPC: %w", err)
-			}
-		}()
-	}
-	if a.metricsServer != nil {
-		go func() {
-			err := a.metricsServer.Serve(a.metricsListener)
-			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				runErrors <- fmt.Errorf("serve Prometheus metrics: %w", err)
-			}
-		}()
-	}
-	for _, configured := range a.workers {
-		a.background.Go(func() {
-			if err := configured.worker.Run(runContext); err != nil {
-				runErrors <- fmt.Errorf("run Kafka worker for store %q: %w", configured.store, err)
-			}
-		})
-	}
-	if a.health != nil {
-		a.background.Go(func() { a.runHealthChecks(runContext) })
-	}
-	select {
-	case <-runContext.Done():
-		return nil
-	case err := <-runErrors:
-		return err
-	}
-}
-
-func (a *application) runHealthChecks(ctx context.Context) {
-	ticker := time.NewTicker(healthCheckInterval)
-	defer ticker.Stop()
-	for {
-		a.updateHealth(ctx)
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-	}
-}
-
-func (a *application) updateHealth(parent context.Context) {
-	results := make(chan configuredHealthResult, len(a.healthChecks))
-	for _, configured := range a.healthChecks {
-		go func() {
-			ctx, cancel := context.WithTimeout(parent, healthCheckTimeout)
-			defer cancel()
-			status := healthpb.HealthCheckResponse_SERVING
-			if err := configured.check(ctx); err != nil {
-				status = healthpb.HealthCheckResponse_NOT_SERVING
-			}
-			result := configuredHealthResult{service: configured.service, status: status}
-			results <- result
-		}()
-	}
-	for range a.healthChecks {
-		result := <-results
-		a.health.SetServingStatus(result.service, result.status)
-	}
-}
-
-func (a *application) close() {
-	if a.health != nil {
-		a.health.Shutdown()
-	}
-	if a.grpcServer != nil {
-		stopped := make(chan struct{})
-		go func() {
-			a.grpcServer.GracefulStop()
-			close(stopped)
-		}()
-		timer := time.NewTimer(a.config.shutdownTimeout)
-		select {
-		case <-stopped:
-			if !timer.Stop() {
-				<-timer.C
-			}
-		case <-timer.C:
-			a.grpcServer.Stop()
-		}
-	}
-	if a.listener != nil {
-		_ = a.listener.Close()
-	}
-	if a.batchingServer != nil {
-		a.batchingServer.Close()
-	}
-	if a.metricsServer != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), a.config.shutdownTimeout)
-		defer cancel()
-		if err := a.metricsServer.Shutdown(ctx); err != nil {
-			slog.Error("shut down Prometheus metrics", "error", err)
-			_ = a.metricsServer.Close()
-		}
-	}
-	if a.metricsListener != nil {
-		_ = a.metricsListener.Close()
-	}
-	for _, configured := range a.workers {
-		configured.worker.Close()
-	}
-	for _, publisher := range a.kafkaPublishers {
-		publisher.Close()
-	}
-	disconnectMongoClients(a.mongoClients, a.config.shutdownTimeout)
-}
-
-func disconnectMongoClients(clients map[string]*mongo.Client, timeout time.Duration) {
-	if len(clients) == 0 {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	for name, client := range clients {
-		if err := client.Disconnect(ctx); err != nil {
-			slog.Error("disconnect MongoDB", "storage", name, "error", err)
-		}
-	}
-}
-
-func (a *application) serveReadiness(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), healthCheckTimeout)
-	defer cancel()
-	selected := r.URL.Query().Get("service")
-	checks := 0
-	failures := make(chan string, len(a.healthChecks))
-	var work sync.WaitGroup
-	for _, configured := range a.healthChecks {
-		if selected != "" && selected != configured.service {
-			continue
-		}
-		checks++
-		work.Go(func() {
-			if err := configured.check(ctx); err != nil {
-				failures <- configured.service
-			}
-		})
-	}
-	work.Wait()
-	close(failures)
-	if checks == 0 && selected != "" {
-		http.Error(w, "unknown health service", http.StatusNotFound)
-		return
-	}
-	if len(failures) > 0 {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		for service := range failures {
-			_, _ = fmt.Fprintln(w, service)
-		}
-		return
-	}
-	w.WriteHeader(http.StatusOK)
+	defer running.Close()
+	slog.Info("starting sink", "version", version, "mode", loaded.Mode)
+	return running.Run(ctx)
 }

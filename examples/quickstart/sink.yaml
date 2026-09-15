@@ -2,8 +2,8 @@ mode: all
 
 grpc:
   address: ":8080"
-  max_receive_message_bytes: 67108864
-  max_send_message_bytes: 67108864
+  max_receive_message_bytes: 64MiB
+  max_send_message_bytes: 64MiB
 
 prometheus:
   address: ":9090"
@@ -19,31 +19,38 @@ storages:
       enabled: true
       brokers:
         - kafka:19092
-      topic: sink-mutations
-      group_id: sink-quickstart
-      dead_letter_topic: sink-mutations.dlq
-      topic_partitions: 4
-      topic_replication_factor: 1
-      topic_retention_hours: 72
-      max_poll_records: 500
-      max_retry_attempts: 10
-      retry_backoff_milliseconds: 100
-      max_retry_backoff_milliseconds: 10000
+      topic:
+        name: sink-mutations
+        partitions: 4
+        replication_factor: 1
+        retention: 72h
+      consumer:
+        group_id: sink-quickstart
+        max_poll_records: 500
+        retry:
+          max_attempts: 10
+          backoff: 100ms
+          max_backoff: 10s
 
+      dead_letter:
+        topic: sink-mutations.dlq
 service:
-  max_operations: 1000
-  max_merge_attempts: 3
-  batching:
-    max_wait_milliseconds: 2
+  request:
     max_operations: 1000
-    max_bytes: 16777216
-    max_queued_operations: 10000
-    max_queued_bytes: 134217728
-  lua:
-    timeout_milliseconds: 100
-    max_source_bytes: 65536
-    max_result_bytes: 16777216
-    max_cached_programs: 256
-    max_instructions: 1000000
+  batching:
+    max_wait: 2ms
+    max_operations: 1000
+    max_bytes: 16MiB
+    queue:
+      max_operations: 10_000
+      max_bytes: 128MiB
+  merge:
+    max_attempts: 3
+    lua:
+      timeout: 100ms
+      max_source_bytes: 64KiB
+      max_result_bytes: 16MiB
+      max_cached_programs: 256
+      max_instructions: 1_000_000
 
-shutdown_timeout_seconds: 15
+shutdown_timeout: 15s

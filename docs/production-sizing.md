@@ -96,7 +96,8 @@ limits:
 
 ```yaml
 service:
-  max_read_bytes: 8388608
+  request:
+    max_read_bytes: 8MiB
 ```
 
 Validate aggregate sizes for client batches and returned documents before
@@ -354,15 +355,15 @@ At low concurrency, one large batch can leave extra cores idle. A smaller
 `service.batching.max_operations` can increase parallel work, but at high
 concurrency it can also create more batches competing for execution reservations.
 
-`service.max_in_flight_bytes` is an execution reservation, not an RSS limit.
-`service.max_read_bytes` bounds each original RPC's snapshots/results. A
+`service.execution.max_bytes` is an execution reservation, not an RSS limit.
+`service.request.max_read_bytes` bounds each original RPC's snapshots/results. A
 conditional batch reserves up to three read-sized working buffers, plus inputs
 and returned-document reservations. Queue storage, decoded objects, Lua heaps,
 driver buffers and the Go runtime consume additional memory. Setting a 2 GiB
 execution budget in a 2 GiB container is unsafe sizing.
 
 Asynchronous Write/Delete publishing has a separate bounded reservation:
-`service.max_publish_requests` defaults to 32 and `service.max_publish_bytes`
+`service.publish.max_requests` defaults to 32 and `service.publish.max_bytes`
 defaults to 256 MiB. Include this budget in container sizing alongside the
 synchronous execution budget and each Kafka producer buffer. This isolates
 durable enqueueing from slow synchronous `refresh=wait_for` writes and their
@@ -440,7 +441,7 @@ Adding replicas does not remove contention on the same record, and longer
 retry loops consume more backend work.
 
 Use readiness at `/readyz` on the metrics port and allow graceful gRPC drain.
-The server's `shutdown_timeout_seconds` must fit inside the Pod termination
+The server's `shutdown_timeout` must fit inside the Pod termination
 grace period, including any pre-stop delay. Configure a rolling update with
 `maxUnavailable: 0`, allow one surge replica, and use a PodDisruptionBudget for
 voluntary eviction. A disruption budget does not protect against machine

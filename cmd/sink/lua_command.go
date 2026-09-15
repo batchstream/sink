@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/liran/sink/internal/config"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/storage"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -83,11 +84,18 @@ func runLuaTestCommand(args []string, stdout io.Writer, stderr io.Writer) error 
 	}
 	luaOptions := merge.LuaOptions{}
 	if parsed.config != "" {
-		loaded, loadErr := loadConfig(parsed.config)
+		loaded, loadErr := config.Load(parsed.config)
 		if loadErr != nil {
 			return fmt.Errorf("load Lua test limits from config: %w", loadErr)
 		}
-		luaOptions = loaded.luaOptions
+		lua := loaded.Service.Merge.Lua
+		luaOptions = merge.LuaOptions{
+			Timeout:           lua.Timeout,
+			MaxSourceBytes:    lua.MaxSourceBytes,
+			MaxResultBytes:    lua.MaxResultBytes,
+			MaxCachedPrograms: lua.MaxCachedPrograms,
+			MaxInstructions:   int64(lua.MaxInstructions),
+		}
 	}
 	engine, err := merge.NewLuaEngine(luaOptions)
 	if err != nil {
@@ -109,7 +117,7 @@ func parseLuaTestFlags(args []string, stderr io.Writer) (luaTestFlags, error) {
 	flags := flag.NewFlagSet("sink lua test", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.StringVar(&parsed.script, "script", "", "path to the Lua merge script")
-	flags.StringVar(&parsed.config, "config", "", "optional Sink config whose service.lua limits are applied")
+	flags.StringVar(&parsed.config, "config", "", "optional Sink config whose service.merge.lua limits are applied")
 	flags.StringVar(&parsed.cases, "cases", "", "path to one YAML case or a directory of YAML cases")
 	flags.StringVar(&parsed.encoding, "encoding", "", "single-case document encoding: json or bson")
 	flags.StringVar(&parsed.current, "current", "", "optional single-case current JSON or Extended JSON document")

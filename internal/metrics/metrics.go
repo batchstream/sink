@@ -18,52 +18,55 @@ import (
 const namespace = "sink"
 
 type Metrics struct {
-	stores                 map[string]struct{}
-	registry               *prometheus.Registry
-	requests               *prometheus.CounterVec
-	requestDuration        *prometheus.HistogramVec
-	operationResults       *prometheus.CounterVec
-	batcherBatches         *prometheus.CounterVec
-	batcherOperations      *prometheus.HistogramVec
-	batcherBytes           *prometheus.HistogramVec
-	batcherQueueDuration   *prometheus.HistogramVec
-	batcherExecution       *prometheus.HistogramVec
-	batcherQueuedOps       *prometheus.GaugeVec
-	batcherQueuedBytes     *prometheus.GaugeVec
-	batcherRejected        *prometheus.CounterVec
-	requestQueueDuration   *prometheus.HistogramVec
-	writePhaseDuration     *prometheus.HistogramVec
-	writeExecutionRounds   *prometheus.HistogramVec
-	requestQueueExits      *prometheus.CounterVec
-	writeSlowPhases        *prometheus.CounterVec
-	mergeConflicts         *prometheus.CounterVec
-	mergeExhausted         *prometheus.CounterVec
-	mergeFoldedChains      *prometheus.CounterVec
-	mergeFoldedOperations  *prometheus.CounterVec
-	kafkaPublished         *prometheus.CounterVec
-	kafkaPublishDuration   *prometheus.HistogramVec
-	kafkaWorkerMutations   *prometheus.CounterVec
-	kafkaWorkerRetries     *prometheus.CounterVec
-	kafkaWorkerDeadLetters *prometheus.CounterVec
-	admissionRequests      prometheus.Gauge
-	admissionBytes         prometheus.Gauge
-	admissionRejected      prometheus.Counter
-	admissionPoolRequests  *prometheus.GaugeVec
-	admissionPoolBytes     *prometheus.GaugeVec
-	admissionPoolRejected  *prometheus.CounterVec
-	scanQueuedRequests     *prometheus.GaugeVec
-	scanQueuedBytes        *prometheus.GaugeVec
-	scanAdmissionWait      *prometheus.HistogramVec
-	storeExecutionBytes    *prometheus.GaugeVec
-	workerLastPoll         *prometheus.GaugeVec
-	workerLastCommit       *prometheus.GaugeVec
-	workerOldest           *prometheus.GaugeVec
-	workerPending          *prometheus.GaugeVec
-	workerRecoveries       *prometheus.CounterVec
-	workerFetchErrors      *prometheus.CounterVec
-	workerDelivery         *prometheus.HistogramVec
-	workerQuarantined      *prometheus.CounterVec
-	workerOffsetGap        *prometheus.GaugeVec
+	stores                  map[string]struct{}
+	registry                *prometheus.Registry
+	requests                *prometheus.CounterVec
+	requestDuration         *prometheus.HistogramVec
+	operationResults        *prometheus.CounterVec
+	batcherBatches          *prometheus.CounterVec
+	batcherOperations       *prometheus.HistogramVec
+	batcherBytes            *prometheus.HistogramVec
+	batcherQueueDuration    *prometheus.HistogramVec
+	batcherExecution        *prometheus.HistogramVec
+	batcherQueuedOps        *prometheus.GaugeVec
+	batcherQueuedBytes      *prometheus.GaugeVec
+	batcherRejected         *prometheus.CounterVec
+	requestQueueDuration    *prometheus.HistogramVec
+	writePhaseDuration      *prometheus.HistogramVec
+	writeExecutionRounds    *prometheus.HistogramVec
+	requestQueueExits       *prometheus.CounterVec
+	writeSlowPhases         *prometheus.CounterVec
+	mergeConflicts          *prometheus.CounterVec
+	mergeExhausted          *prometheus.CounterVec
+	mergeFoldedChains       *prometheus.CounterVec
+	mergeFoldedOperations   *prometheus.CounterVec
+	kafkaPublished          *prometheus.CounterVec
+	kafkaPublishDuration    *prometheus.HistogramVec
+	kafkaWorkerMutations    *prometheus.CounterVec
+	kafkaWorkerRetries      *prometheus.CounterVec
+	kafkaWorkerDeadLetters  *prometheus.CounterVec
+	admissionRequests       prometheus.Gauge
+	admissionBytes          prometheus.Gauge
+	admissionRejected       prometheus.Counter
+	admissionPoolRequests   *prometheus.GaugeVec
+	admissionPoolBytes      *prometheus.GaugeVec
+	admissionPoolRejected   *prometheus.CounterVec
+	scanQueuedRequests      *prometheus.GaugeVec
+	scanQueuedBytes         *prometheus.GaugeVec
+	scanAdmissionWait       *prometheus.HistogramVec
+	executionQueuedRequests *prometheus.GaugeVec
+	executionQueuedBytes    *prometheus.GaugeVec
+	executionAdmissionWait  *prometheus.HistogramVec
+	storeExecutionBytes     *prometheus.GaugeVec
+	workerLastPoll          *prometheus.GaugeVec
+	workerLastCommit        *prometheus.GaugeVec
+	workerOldest            *prometheus.GaugeVec
+	workerPending           *prometheus.GaugeVec
+	workerRecoveries        *prometheus.CounterVec
+	workerFetchErrors       *prometheus.CounterVec
+	workerDelivery          *prometheus.HistogramVec
+	workerQuarantined       *prometheus.CounterVec
+	workerOffsetGap         *prometheus.GaugeVec
 }
 
 type BatchObservation struct {
@@ -282,6 +285,12 @@ func New(version string, storeNames ...string) (*Metrics, error) {
 	scanQueuedBytes := prometheus.NewGaugeVec(scanQueueBytesOptions, []string{"store"})
 	scanWaitOptions := prometheus.HistogramOpts{Namespace: namespace, Name: "scan_admission_wait_duration_seconds", Help: "Time queued Scan pages waited before admission, rejection or cancellation.", Buckets: prometheus.DefBuckets}
 	scanAdmissionWait := prometheus.NewHistogramVec(scanWaitOptions, []string{"store"})
+	executionQueueRequestsOptions := prometheus.GaugeOpts{Namespace: namespace, Name: "execution_queued_requests", Help: "Direct synchronous RPCs waiting for execution admission."}
+	executionQueuedRequests := prometheus.NewGaugeVec(executionQueueRequestsOptions, []string{"store"})
+	executionQueueBytesOptions := prometheus.GaugeOpts{Namespace: namespace, Name: "execution_queued_bytes", Help: "Input and bookkeeping bytes charged to the direct synchronous admission queue."}
+	executionQueuedBytes := prometheus.NewGaugeVec(executionQueueBytesOptions, []string{"store"})
+	executionWaitOptions := prometheus.HistogramOpts{Namespace: namespace, Name: "execution_admission_wait_duration_seconds", Help: "Time queued direct synchronous RPCs waited before admission, rejection or cancellation.", Buckets: prometheus.DefBuckets}
+	executionAdmissionWait := prometheus.NewHistogramVec(executionWaitOptions, []string{"store"})
 	storeBytesOptions := prometheus.GaugeOpts{Namespace: namespace, Name: "execution_store_bytes", Help: "Execution reservation bytes charged to each store, including cross-store calls."}
 	storeExecutionBytes := prometheus.NewGaugeVec(storeBytesOptions, []string{"store"})
 	lastPollOptions := prometheus.GaugeOpts{Namespace: namespace, Name: "kafka_worker_last_poll_timestamp_seconds", Help: "Last completed Kafka poll by configured store."}
@@ -329,6 +338,7 @@ func New(version string, storeNames ...string) (*Metrics, error) {
 		admissionRejected,
 		admissionPoolRequests, admissionPoolBytes, admissionPoolRejected,
 		scanQueuedRequests, scanQueuedBytes, scanAdmissionWait,
+		executionQueuedRequests, executionQueuedBytes, executionAdmissionWait,
 		storeExecutionBytes,
 		workerLastPoll, workerLastCommit, workerOldest, workerPending, workerRecoveries, workerFetchErrors, workerDelivery,
 	}
@@ -338,46 +348,49 @@ func New(version string, storeNames ...string) (*Metrics, error) {
 		}
 	}
 	metrics := &Metrics{
-		admissionPoolRequests:  admissionPoolRequests,
-		admissionPoolBytes:     admissionPoolBytes,
-		admissionPoolRejected:  admissionPoolRejected,
-		scanQueuedRequests:     scanQueuedRequests,
-		scanQueuedBytes:        scanQueuedBytes,
-		scanAdmissionWait:      scanAdmissionWait,
-		storeExecutionBytes:    storeExecutionBytes,
-		workerOffsetGap:        workerOffsetGap,
-		workerQuarantined:      workerQuarantined,
-		stores:                 stores,
-		registry:               registry,
-		requests:               requests,
-		requestDuration:        requestDuration,
-		operationResults:       operationResults,
-		batcherBatches:         batcherBatches,
-		batcherOperations:      batcherOperations,
-		batcherBytes:           batcherBytes,
-		batcherQueueDuration:   batcherQueueDuration,
-		batcherExecution:       batcherExecution,
-		batcherQueuedOps:       batcherQueuedOps,
-		batcherQueuedBytes:     batcherQueuedBytes,
-		batcherRejected:        batcherRejected,
-		requestQueueDuration:   requestQueueDuration,
-		writePhaseDuration:     writePhaseDuration,
-		writeExecutionRounds:   writeExecutionRounds,
-		requestQueueExits:      requestQueueExits,
-		writeSlowPhases:        writeSlowPhases,
-		mergeConflicts:         mergeConflicts,
-		mergeExhausted:         mergeExhausted,
-		mergeFoldedChains:      mergeFoldedChains,
-		mergeFoldedOperations:  mergeFoldedOperations,
-		kafkaPublished:         kafkaPublished,
-		kafkaPublishDuration:   kafkaPublishDuration,
-		kafkaWorkerMutations:   kafkaWorkerMutations,
-		kafkaWorkerRetries:     kafkaWorkerRetries,
-		kafkaWorkerDeadLetters: kafkaWorkerDeadLetters,
-		admissionRequests:      admissionRequests,
-		admissionBytes:         admissionBytes,
-		admissionRejected:      admissionRejected,
-		workerLastPoll:         workerLastPoll, workerLastCommit: workerLastCommit, workerOldest: workerOldest,
+		admissionPoolRequests:   admissionPoolRequests,
+		admissionPoolBytes:      admissionPoolBytes,
+		admissionPoolRejected:   admissionPoolRejected,
+		scanQueuedRequests:      scanQueuedRequests,
+		scanQueuedBytes:         scanQueuedBytes,
+		scanAdmissionWait:       scanAdmissionWait,
+		executionQueuedRequests: executionQueuedRequests,
+		executionQueuedBytes:    executionQueuedBytes,
+		executionAdmissionWait:  executionAdmissionWait,
+		storeExecutionBytes:     storeExecutionBytes,
+		workerOffsetGap:         workerOffsetGap,
+		workerQuarantined:       workerQuarantined,
+		stores:                  stores,
+		registry:                registry,
+		requests:                requests,
+		requestDuration:         requestDuration,
+		operationResults:        operationResults,
+		batcherBatches:          batcherBatches,
+		batcherOperations:       batcherOperations,
+		batcherBytes:            batcherBytes,
+		batcherQueueDuration:    batcherQueueDuration,
+		batcherExecution:        batcherExecution,
+		batcherQueuedOps:        batcherQueuedOps,
+		batcherQueuedBytes:      batcherQueuedBytes,
+		batcherRejected:         batcherRejected,
+		requestQueueDuration:    requestQueueDuration,
+		writePhaseDuration:      writePhaseDuration,
+		writeExecutionRounds:    writeExecutionRounds,
+		requestQueueExits:       requestQueueExits,
+		writeSlowPhases:         writeSlowPhases,
+		mergeConflicts:          mergeConflicts,
+		mergeExhausted:          mergeExhausted,
+		mergeFoldedChains:       mergeFoldedChains,
+		mergeFoldedOperations:   mergeFoldedOperations,
+		kafkaPublished:          kafkaPublished,
+		kafkaPublishDuration:    kafkaPublishDuration,
+		kafkaWorkerMutations:    kafkaWorkerMutations,
+		kafkaWorkerRetries:      kafkaWorkerRetries,
+		kafkaWorkerDeadLetters:  kafkaWorkerDeadLetters,
+		admissionRequests:       admissionRequests,
+		admissionBytes:          admissionBytes,
+		admissionRejected:       admissionRejected,
+		workerLastPoll:          workerLastPoll, workerLastCommit: workerLastCommit, workerOldest: workerOldest,
 		workerPending: workerPending, workerRecoveries: workerRecoveries, workerFetchErrors: workerFetchErrors, workerDelivery: workerDelivery,
 	}
 	return metrics, nil
@@ -428,6 +441,21 @@ func (m *Metrics) ObserveScanAdmissionWait(store string, duration time.Duration)
 		return
 	}
 	m.scanAdmissionWait.WithLabelValues(m.storeLabel(store)).Observe(duration.Seconds())
+}
+
+func (m *Metrics) AdjustExecutionQueue(store string, requests int, bytes int) {
+	if m == nil {
+		return
+	}
+	m.executionQueuedRequests.WithLabelValues(m.storeLabel(store)).Add(float64(requests))
+	m.executionQueuedBytes.WithLabelValues(m.storeLabel(store)).Add(float64(bytes))
+}
+
+func (m *Metrics) ObserveExecutionAdmissionWait(store string, duration time.Duration) {
+	if m == nil {
+		return
+	}
+	m.executionAdmissionWait.WithLabelValues(m.storeLabel(store)).Observe(duration.Seconds())
 }
 
 func (m *Metrics) AdjustStoreExecutionBytes(store string, bytes int) {

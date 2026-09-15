@@ -49,12 +49,12 @@ func TestAdmissionPreservesCancellationAfterWakeup(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer releaseBusy()
 				other := admissionRequest{encodedBytes: 1}
 				_, releaseOther, err := pool.admitRequest(t.Context(), other)
 				if err != nil {
 					t.Fatal(err)
 				}
+				defer releaseOther()
 				ctx := &admissionExpiringContext{Context: t.Context(), done: make(chan struct{}), err: cause}
 				waiting := admissionRequest{encodedBytes: 8, wait: true}
 				finished := make(chan error, 1)
@@ -66,14 +66,14 @@ func TestAdmissionPreservesCancellationAfterWakeup(t *testing.T) {
 					finished <- err
 				}()
 				synctest.Wait()
-				releaseOther()
+				releaseBusy()
 				if err := <-finished; status.Code(err) != status.FromContextError(cause).Code() {
 					t.Fatalf("caller cancellation became capacity rejection: %v", err)
 				}
-				if pool.inFlightBytes != 3 || pool.inFlightRequests != 1 || len(pool.admissionWaiters) != 0 {
+				if pool.inFlightBytes != 1 || pool.inFlightRequests != 1 || len(pool.admissionWaiters) != 0 {
 					t.Fatal("canceled waiter leaked admission state")
 				}
-				followup := admissionRequest{encodedBytes: 7}
+				followup := admissionRequest{encodedBytes: 9}
 				_, release, err := pool.admitRequest(t.Context(), followup)
 				if status.Code(err) != codes.OK {
 					t.Fatalf("canceled waiter blocked available capacity: %v", err)

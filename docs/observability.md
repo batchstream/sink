@@ -45,7 +45,10 @@ Sink metrics:
 | `sink_admission_rejected_total` | counter | none | Global/per-store execution admission rejections. |
 | `sink_admission_pool_requests` | gauge | `store`, `pool` | Executing requests in the independent `execution` or `publish` pool. |
 | `sink_admission_pool_bytes` | gauge | `store`, `pool` | Bytes reserved in each independent pool. The legacy in-flight gauges report their sum. |
-| `sink_admission_pool_rejected_total` | counter | `store`, `pool`, `reason` | Rejections from request/store/scan slots (`requests`), byte limits (`bytes`), an older byte waiter (`fairness`), a full Scan waiting queue (`queue`), or Scan admission wait expiry (`wait_timeout`). |
+| `sink_admission_pool_rejected_total` | counter | `store`, `pool`, `reason` | Rejections from request/store/scan slots (`requests`), global bytes (`bytes`), store bytes (`store_bytes`), an older byte waiter (`fairness`), a full direct/Scan waiting queue (`queue`), admission wait expiry (`wait_timeout`), or write reservation growth (`resize`). |
+| `sink_execution_queued_requests` | gauge | `store` | Direct synchronous RPCs waiting for admission, separate from batching and Scan queues. |
+| `sink_execution_queued_bytes` | gauge | `store` | Input and bookkeeping bytes charged to the direct admission queue. |
+| `sink_execution_admission_wait_duration_seconds` | histogram | `store` | Direct RPC queue time until admission, rejection or cancellation. |
 | `sink_scan_queued_requests` | gauge | `store` | Scan pages waiting for execution admission. |
 | `sink_scan_queued_bytes` | gauge | `store` | Conservative reservation bytes charged to the separate Scan waiting queue. |
 | `sink_scan_admission_wait_duration_seconds` | histogram | `store` | Time queued Scan pages waited before admission, rejection or cancellation. |

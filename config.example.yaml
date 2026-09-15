@@ -30,6 +30,11 @@ service:
     max_requests: 128
     max_bytes: 256MiB
     max_requests_per_store: 32
+    queue:
+      max_requests: 1024
+      max_requests_per_store: 256
+      max_bytes: 32MiB
+      max_wait: 2s
     scan:
       admission_wait: 2s
   publish:

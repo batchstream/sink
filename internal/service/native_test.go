@@ -91,7 +91,7 @@ func nativeRPCFixture(t *testing.T, silent bool) (sink.SinkClient, *nativeFixtur
 		idle = 200 * time.Millisecond
 	}
 	options := service.Options{Storage: router, Lua: lua, MaxInFlightRequests: 1, MaxReadBytes: 4096,
-		RequestTimeout: idle, StoreNames: []string{"primary"}}
+		RequestTimeout: idle, AdmissionWait: 10 * time.Millisecond, StoreNames: []string{"primary"}}
 	core, err := service.New(options)
 	if err != nil {
 		t.Fatal(err)

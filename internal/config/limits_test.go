@@ -46,6 +46,9 @@ service:
 	if service.Publish.MaxRequestsPerStore != 7 || service.Publish.MaxRequests != 32 || service.Publish.MaxBytes != 256<<20 {
 		t.Fatalf("execution limits leaked into publication: %+v", service.Publish)
 	}
+	if service.Execution.Queue.MaxWait != time.Second || service.Execution.Queue.MaxRequests != 1024 || service.Execution.Queue.MaxBytes != 32<<20 {
+		t.Fatalf("invalid direct admission defaults: %+v", service.Execution.Queue)
+	}
 }
 
 func TestDecodeRejectsInvalidResourceLimitsWithoutReturningPartialConfig(t *testing.T) {
@@ -59,6 +62,10 @@ func TestDecodeRejectsInvalidResourceLimitsWithoutReturningPartialConfig(t *test
 		{section: "execution", field: "max_requests", values: []string{"0", "-1", "10001"}},
 		{section: "execution", field: "max_bytes", values: []string{"0", "-1", "18253611008"}},
 		{section: "execution", field: "max_requests_per_store", values: []string{"0", "10001"}},
+		{section: "execution:\n    queue", field: "max_requests", values: []string{"0", "10001"}},
+		{section: "execution:\n    queue", field: "max_bytes", values: []string{"0", "17GiB"}},
+		{section: "execution:\n    queue", field: "max_requests_per_store", values: []string{"0", "1025"}},
+		{section: "execution:\n    queue", field: "max_wait", values: []string{"0s", "-1s", "30.001s"}},
 		{section: "execution:\n    scan", field: "max_requests", values: []string{"0", "129"}},
 		{section: "execution:\n    scan", field: "max_bytes", values: []string{"0", "268435457"}},
 		{section: "execution:\n    scan", field: "max_requests_per_store", values: []string{"0", "33"}},

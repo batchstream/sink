@@ -32,6 +32,7 @@
 | [Reliability and recovery](reliability.md) | Plan idempotence, monitor dependencies, handle failures, and replay dead letters |
 | [Production sizing](production-sizing.md) | Use measured workload limits to size a replicated deployment |
 | [Synchronous performance](synchronous-performance.md) | Reproduce benchmarks and interpret their scope |
+| [Small-server admission performance](synchronous-admission-performance.md) | Compare bounded admission and returning Put throughput under a 1 CPU / 256 MiB limit |
 | [Kubernetes capacity harness](../benchmarks/kubernetes/README.md) | Measure disposable test deployments with explicit safeguards |
 
 ## Contribute and qualify changes

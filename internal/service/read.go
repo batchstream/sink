@@ -32,6 +32,7 @@ func (s *Server) read(ctx context.Context, req *sink.ReadRequest, budgets *reque
 		return outcome, err
 	}
 	admission := admissionRequest{encodedBytes: req.SizeVT() + failureResponseBytes(len(req.GetOperations())) + 2*s.maxReadBytes, stores: operationStores(req.GetOperations()), wait: budgets != nil}
+	admission.inputBytes = req.SizeVT() + 128*len(req.GetOperations())
 	ctx, release, err := s.admitRequest(ctx, admission)
 	if err != nil {
 		return outcome, err

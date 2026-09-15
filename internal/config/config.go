@@ -57,7 +57,15 @@ type Execution struct {
 	MaxRequests         int
 	MaxBytes            int
 	MaxRequestsPerStore int
+	Queue               AdmissionQueue
 	Scan                Scan
+}
+
+type AdmissionQueue struct {
+	MaxRequests         int
+	MaxBytes            int
+	MaxRequestsPerStore int
+	MaxWait             time.Duration
 }
 
 type Scan struct {

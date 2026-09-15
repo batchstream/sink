@@ -272,6 +272,10 @@ counts multiply capacity. Configure the same Kafka policy on servers and workers
 | `service.publish.max_requests` | `32` | Concurrent asynchronous Write/Delete requests, at most 10000, independent of storage execution. |
 | `service.publish.max_bytes` | `256MiB` | Asynchronous request, expanded-source, and bounded failure-response reservations, at most 16 GiB, additional to `service.execution.max_bytes`. Kafka producer buffers are additional. |
 | `service.execution.max_requests_per_store` | `32` | Concurrent storage execution requests per store, at most 10000. |
+| `service.execution.queue.max_requests` | `1024` | Direct synchronous RPCs waiting for execution, at most 10000. Separate from batching and Scan queues. |
+| `service.execution.queue.max_requests_per_store` | min(`256`, queue request limit) | Pending direct RPCs touching a store; cannot exceed the global queue count. Cross-store requests count once against every touched store. |
+| `service.execution.queue.max_bytes` | min(`32MiB`, execution byte limit) | Input plus bookkeeping bytes retained by pending direct RPCs, at most 16 GiB. Additional to execution and batching budgets. |
+| `service.execution.queue.max_wait` | min(`2s`, `service.request.timeout`) | Maximum direct admission wait; cannot exceed the request timeout. A shorter caller deadline wins. |
 | `service.publish.max_requests_per_store` | `32` | Concurrent Kafka publishing requests per store, at most 10000, independent of execution. |
 | `storages[].limits.max_execution_bytes` | omitted | Optional execution byte ceiling for this store, positive and no greater than `service.execution.max_bytes`. Omitted stores share the global limit. Does not limit publishing. |
 | `service.execution.scan.max_requests` | half `service.execution.max_requests`, at least 1 | Scan-only request sublimit, no greater than the total request limit. |
@@ -291,6 +295,21 @@ the driver's complete wire response, which arrives before the smaller Sink
 response/page limit can be enforced. Returned writes reserve an additional
 response budget per original RPC before execution. See [native access](native-access.md)
 for stateless Scan checkpoints, page-local cleanup, cancellation and retry semantics.
+
+Query, Count, Execute and Read/Write/Delete calls that bypass cross-RPC batching
+wait for transient execution saturation instead of immediately rejecting it.
+Their shared input queue has independent count, byte, per-store and time bounds
+under `service.execution.queue`. Waiting consumes no execution slot or document
+buffer reservation. The request timeout includes admission wait; caller
+cancellation removes the pending entry. A full queue, expired admission wait or
+reservation that can never fit still returns `RESOURCE_EXHAUSTED`. A caller's
+own deadline returns `DEADLINE_EXCEEDED`. Asynchronous publication retains its
+independent pool and immediate backpressure.
+
+For returned Put documents, admission uses the known payload sizes plus envelope
+allowances instead of reserving a maximum-size response for every caller. A
+mixed batch with any returned Merge retains the conservative per-caller response
+allowance because Lua results are not known before execution.
 
 Scan waits fairly for execution capacity for at most
 `service.execution.scan.admission_wait`. Its separate waiting queue is bounded

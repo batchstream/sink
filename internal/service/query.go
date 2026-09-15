@@ -41,6 +41,7 @@ func (s *Server) Query(ctx context.Context, req *sink.QueryRequest) (*sink.Query
 	}
 	encodedBytes := nativeExecutionBytes(req.GetCommand(), request) + req.SizeVT() - req.GetCommand().SizeVT()
 	admission := admissionRequest{encodedBytes: encodedBytes, stores: []string{request.Store}}
+	admission.inputBytes = req.SizeVT()
 	ctx, release, err := s.admitRequest(ctx, admission)
 	if err != nil {
 		return nil, err
@@ -76,6 +77,7 @@ func (s *Server) Count(ctx context.Context, req *sink.CountRequest) (*sink.Count
 		return nil, nativeStatus(storage.ErrNativeUnsupported)
 	}
 	admission := admissionRequest{encodedBytes: nativeExecutionBytes(req.GetCommand(), request), stores: []string{request.Store}}
+	admission.inputBytes = req.SizeVT()
 	ctx, release, err := s.admitRequest(ctx, admission)
 	if err != nil {
 		return nil, err

@@ -457,7 +457,7 @@ use the lowercase spelling shown below. Storage names are also case-sensitive.
 | `service.batching.max_bytes` | positive integer | No | `16777216` | Integer greater than `0` | Encoded-byte target for one automatically formed batch; one larger valid RPC still runs alone. |
 | `service.batching.max_queued_operations` | positive integer | No | max(`10000`, `service.max_operations`) | Integer at least `service.max_operations` and `service.batching.max_operations` | Maximum operations waiting in each store and method queue. |
 | `service.batching.max_queued_bytes` | positive integer | No | max(`134217728`, `grpc.max_receive_message_bytes`) | Integer at least `grpc.max_receive_message_bytes` and `service.batching.max_bytes` | Maximum encoded request bytes waiting in each store and method queue. |
-| `service.lua.timeout_milliseconds` | positive integer | No | `100` | Integer greater than `0` | Maximum wall-clock duration of one Lua execution. |
+| `service.lua.timeout_milliseconds` | positive integer | No | `100` | Integer greater than `0` | Maximum wall-clock duration of one Lua execution, including document conversion and result encoding. CPU admission wait is bounded by the caller's context instead. |
 | `service.lua.max_source_bytes` | positive integer | No | `65536` | Integer greater than `0` | Maximum Lua source size per merge operation. |
 | `service.lua.max_result_bytes` | positive integer | No | `16777216` | Integer greater than `0` | Maximum input/current document and encoded result bytes; expanded output is also bounded before conversion. |
 | `service.lua.max_cached_programs` | positive integer | No | `256` | Integer greater than `0` | Maximum compiled Lua programs retained in the process-local LRU cache. |
@@ -478,6 +478,13 @@ use the lowercase spelling shown below. Storage names are also case-sensitive.
 | `shutdown_timeout_seconds` | positive integer | No | `15` | Integer greater than `0` | Maximum graceful-shutdown time for gRPC and MongoDB disconnect operations. |
 
 ### Reliability limits
+
+Each Lua engine admits at most `GOMAXPROCS` executions concurrently, using the
+value at engine startup. Chunk validation and merge execution share these CPU
+slots. Waiting for a slot observes the caller's cancellation and deadline; the
+Lua execution timeout starts after admission and still covers input conversion,
+the script, and output encoding. This bounds active interpreter work without
+allowing a queued request to outlive its caller.
 
 All settings in this table are optional; values are positive integers. Limits are process-local; replica
 counts multiply capacity. Configure the same Kafka policy on servers and workers.

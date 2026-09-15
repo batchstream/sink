@@ -43,7 +43,7 @@ func TestCountReservesBoundedResponsesAndReleasesCapacity(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			opts := service.Options{Storage: backend, Lua: engine, StoreNames: []string{"primary"}}
+			opts := service.Options{Storage: backend, Lua: engine, StoreNames: []string{"primary"}, AdmissionWait: 10 * time.Millisecond}
 			server, err := service.New(opts)
 			if err != nil {
 				t.Fatal(err)

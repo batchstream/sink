@@ -54,8 +54,7 @@ func (r *admissionReservation) resize(bytes int) error {
 	store := pool.metrics.RequestStores(r.stores)
 	pool.metrics.AdjustAdmissionPool(store, pool.name, 0, delta)
 	if delta < 0 {
-		close(pool.admissionChanged)
-		pool.admissionChanged = make(chan struct{})
+		pool.wakeAdmissionWaiter()
 	}
 	return nil
 }

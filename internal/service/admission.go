@@ -18,27 +18,33 @@ const defaultRequestTimeout = 30 * time.Second
 // Publishing has its own bounded pool so storage latency and snapshot waiters
 // cannot consume the capacity needed to durably enqueue asynchronous work.
 type admissionPool struct {
-	name                 string
-	metrics              *sinkmetrics.Metrics
-	requestTimeout       time.Duration
-	maxInFlightRequests  int
-	maxInFlightBytes     int
-	maxStoreRequests     int
-	admissionMu          sync.Mutex
-	admissionChanged     chan struct{}
-	admissionWaiters     []*admissionRequest
-	inFlightRequests     int
-	inFlightBytes        int
-	storeRequests        map[string]int
-	maxScanRequests      int
-	maxScanBytes         int
-	maxStoreScanRequests int
-	scanRequests         int
-	scanBytes            int
-	storeScanRequests    map[string]int
-	scanAdmissionWait    time.Duration
-	storeBytes           map[string]int
-	maxStoreBytes        map[string]int
+	name                   string
+	metrics                *sinkmetrics.Metrics
+	requestTimeout         time.Duration
+	maxInFlightRequests    int
+	maxInFlightBytes       int
+	maxStoreRequests       int
+	admissionMu            sync.Mutex
+	admissionWaiters       []*admissionRequest
+	inFlightRequests       int
+	inFlightBytes          int
+	storeRequests          map[string]int
+	maxScanRequests        int
+	maxScanBytes           int
+	maxStoreScanRequests   int
+	scanRequests           int
+	scanBytes              int
+	storeScanRequests      map[string]int
+	scanAdmissionWait      time.Duration
+	storeBytes             map[string]int
+	maxStoreBytes          map[string]int
+	maxQueuedRequests      int
+	maxQueuedBytes         int
+	maxStoreQueuedRequests int
+	admissionWait          time.Duration
+	queuedRequests         int
+	queuedBytes            int
+	storeQueuedRequests    map[string]int
 }
 
 type admissionRequest struct {
@@ -49,16 +55,27 @@ type admissionRequest struct {
 	scan         bool
 	publish      bool
 	reservation  *admissionReservation
+	inputBytes   int
+	direct       bool
+	ready        chan struct{}
 }
 
 func (s *Server) admitRequest(ctx context.Context, request admissionRequest) (context.Context, context.CancelFunc, error) {
 	if request.publish {
 		return s.publishAdmission.admitRequest(ctx, request)
 	}
+	if !request.wait && !request.scan && request.inputBytes > 0 {
+		request.wait = true
+		request.direct = true
+		// Charge decoded input and per-call bookkeeping, not hypothetical
+		// response buffers that are only allocated after execution admission.
+		request.inputBytes += 256
+	}
 	return s.admissionPool.admitRequest(ctx, request)
 }
 
 func (s *admissionPool) admitRequest(ctx context.Context, request admissionRequest) (context.Context, context.CancelFunc, error) {
+	started := time.Now()
 	store := s.metrics.RequestStores(request.stores)
 	waitCtx := ctx
 	if request.scan && request.wait {
@@ -66,8 +83,14 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 		waitCtx, cancel = context.WithTimeout(ctx, s.scanAdmissionWait)
 		defer cancel()
 	}
+	if request.direct {
+		var cancel context.CancelFunc
+		waitCtx, cancel = context.WithTimeout(ctx, s.admissionWait)
+		defer cancel()
+	}
 	var queued *admissionRequest
 	var scanQueuedAt time.Time
+	var directQueuedAt time.Time
 	defer func() {
 		if queued != nil {
 			s.admissionMu.Lock()
@@ -76,6 +99,9 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 		}
 		if !scanQueuedAt.IsZero() {
 			s.metrics.ObserveScanAdmissionWait(store, time.Since(scanQueuedAt))
+		}
+		if !directQueuedAt.IsZero() {
+			s.metrics.ObserveExecutionAdmissionWait(store, time.Since(directQueuedAt))
 		}
 	}()
 	for {
@@ -117,18 +143,27 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 		if full {
 			canWait := request.wait && s.admissionCanFit(request)
 			if canWait && queued == nil {
+				if request.direct && s.directWaitQueueFull(request) {
+					s.admissionMu.Unlock()
+					return ctx, nil, s.rejectAdmission(request, "queue")
+				}
 				if request.scan && s.scanWaitQueueFull(request) {
 					s.admissionMu.Unlock()
 					return ctx, nil, s.rejectAdmission(request, "queue")
 				}
+				request.ready = make(chan struct{}, 1)
 				queued = &request
 				s.admissionWaiters = append(s.admissionWaiters, queued)
+				if request.direct {
+					directQueuedAt = time.Now()
+					s.adjustDirectQueue(request, 1)
+				}
 				if request.scan {
 					scanQueuedAt = time.Now()
 					s.metrics.AdjustScanQueue(store, 1, request.encodedBytes)
 				}
 			}
-			changed := s.admissionChanged
+			changed := request.ready
 			s.admissionMu.Unlock()
 			if canWait {
 				select {
@@ -176,6 +211,9 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 	if timeout == 0 {
 		timeout = s.requestTimeout
 	}
+	if request.direct {
+		timeout -= time.Since(started)
+	}
 	execution, cancel := context.WithTimeout(ctx, timeout)
 	release := func() {
 		cancel()
@@ -203,8 +241,7 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 				s.storeRequests[name]--
 			}
 		}
-		close(s.admissionChanged)
-		s.admissionChanged = make(chan struct{})
+		s.wakeAdmissionWaiter()
 		s.admissionMu.Unlock()
 		s.metrics.AdjustAdmissionPool(store, s.name, -1, -bytes)
 	}
@@ -300,12 +337,33 @@ func (s *admissionPool) removeAdmissionWaiter(request *admissionRequest) {
 		return
 	}
 	s.admissionWaiters = slices.Delete(s.admissionWaiters, index, index+1)
+	if request.direct {
+		s.adjustDirectQueue(*request, -1)
+	}
 	if request.scan {
 		store := s.metrics.RequestStores(request.stores)
 		s.metrics.AdjustScanQueue(store, -1, -request.encodedBytes)
 	}
-	close(s.admissionChanged)
-	s.admissionChanged = make(chan struct{})
+	s.wakeAdmissionWaiter()
+}
+
+// The caller holds admissionMu. Hand capacity to the oldest eligible waiter;
+// admission or cancellation of that waiter wakes the next one. Broadcasting
+// every release makes all queued RPCs contend for the same lock and CPU quota.
+func (s *admissionPool) wakeAdmissionWaiter() {
+	for _, request := range s.admissionWaiters {
+		if s.admissionSlotsFull(*request) {
+			continue
+		}
+		if request.encodedBytes <= s.maxInFlightBytes-s.inFlightBytes {
+			select {
+			case request.ready <- struct{}{}:
+			default:
+			}
+		}
+		// Reserve accumulating global bytes for this older eligible request.
+		return
+	}
 }
 
 func operationStores[T interface{ GetAddress() *sink.RecordAddress }](operations []T) []string {
@@ -330,7 +388,7 @@ type writeExecutionEstimate struct {
 func (s *Server) estimateWriteExecution(req *sink.WriteRequest, callers int, returningCallers int) writeExecutionEstimate {
 	estimate := writeExecutionEstimate{}
 	bytes := req.SizeVT() + failureResponseBytes(len(req.GetOperations()))
-	bytes += s.maxReadBytes * returningCallers
+	bytes += s.estimateWriteReturns(req, returningCallers)
 	largestSource := 0
 	for _, program := range req.GetLuaPrograms() {
 		largestSource = max(largestSource, len(program.GetSource()))
@@ -391,6 +449,25 @@ func (s *Server) estimateWriteExecution(req *sink.WriteRequest, callers int, ret
 	}
 	estimate.bytes = bytes
 	return estimate
+}
+
+func (s *Server) estimateWriteReturns(req *sink.WriteRequest, callers int) int {
+	maximum := s.maxReadBytes * callers
+	bytes := 0
+	for _, operation := range req.GetOperations() {
+		if !operation.GetReturnDocument() {
+			continue
+		}
+		if operation.GetMerge() != nil {
+			// Lua output is unknown until execution; retain the original RPC
+			// allowance for every returning caller in a mixed batch.
+			return maximum
+		}
+		// Returned Put documents are known before execution. Every returned
+		// operation owns a copy, including repeated writes of the same key.
+		bytes += len(operation.GetPut().GetDocument().GetPayload()) + 128
+	}
+	return min(bytes, maximum)
 }
 
 func returningCallerCount(req *sink.WriteRequest, budgets *requestBudgets) int {

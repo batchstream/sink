@@ -38,10 +38,18 @@ type requestFile struct {
 }
 
 type executionFile struct {
-	MaxRequests         *int      `yaml:"max_requests"`
-	MaxBytes            *byteSize `yaml:"max_bytes"`
-	MaxRequestsPerStore *int      `yaml:"max_requests_per_store"`
-	Scan                scanFile  `yaml:"scan"`
+	MaxRequests         *int               `yaml:"max_requests"`
+	MaxBytes            *byteSize          `yaml:"max_bytes"`
+	MaxRequestsPerStore *int               `yaml:"max_requests_per_store"`
+	Queue               admissionQueueFile `yaml:"queue"`
+	Scan                scanFile           `yaml:"scan"`
+}
+
+type admissionQueueFile struct {
+	MaxRequests         *int           `yaml:"max_requests"`
+	MaxBytes            *byteSize      `yaml:"max_bytes"`
+	MaxRequestsPerStore *int           `yaml:"max_requests_per_store"`
+	MaxWait             *time.Duration `yaml:"max_wait"`
 }
 
 type scanFile struct {

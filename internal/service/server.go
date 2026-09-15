@@ -54,6 +54,7 @@ func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *req
 	estimate := s.estimateWriteExecution(req, budgets.callerCount(), returningCallerCount(req, budgets))
 	reservation := &admissionReservation{}
 	admission := admissionRequest{encodedBytes: estimate.bytes, stores: operationStores(req.GetOperations()), wait: budgets != nil, reservation: reservation}
+	admission.inputBytes = req.SizeVT() + 128*len(req.GetOperations())
 	admission.publish = req.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED
 	started := time.Now()
 	ctx, release, err := s.admitRequest(ctx, admission)
@@ -161,6 +162,7 @@ func (s *Server) delete(ctx context.Context, req *sink.DeleteRequest, budgets *r
 		return nil, status.Error(codes.InvalidArgument, "delete request has an invalid completion mode")
 	}
 	admission := admissionRequest{encodedBytes: req.SizeVT() + failureResponseBytes(len(req.GetOperations())), stores: operationStores(req.GetOperations()), wait: budgets != nil}
+	admission.inputBytes = req.SizeVT() + 128*len(req.GetOperations())
 	admission.publish = req.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED
 	ctx, release, err := s.admitRequest(ctx, admission)
 	if err != nil {

@@ -98,6 +98,7 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 		return nil, nativeStatus(storage.ErrNativeUnsupported)
 	}
 	admission := admissionRequest{encodedBytes: nativeExecutionBytes(req.GetCommand(), request), stores: []string{request.Store}}
+	admission.inputBytes = req.SizeVT()
 	ctx, release, err := s.admitRequest(ctx, admission)
 	if err != nil {
 		return nil, err

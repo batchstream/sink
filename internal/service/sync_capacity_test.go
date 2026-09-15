@@ -29,6 +29,29 @@ func TestSynchronousSmallMergesShareBoundedWorkingSet(t *testing.T) {
 	}
 }
 
+func TestReturnedPutsShareKnownDocumentReservation(t *testing.T) {
+	backend := &syncCapacityStorage{Storage: memory.New()}
+	server := completionServer(t, backend)
+	server.server.maxInFlightBytes = 128 << 20
+	calls := make([]*batchCall[*sink.WriteRequest, *sink.WriteResponse], 128)
+	for index := range calls {
+		operation := completionPut(fmt.Sprintf("returned-%d", index), index)
+		operation.ReturnDocument = true
+		calls[index] = completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, operation)
+	}
+	server.executeWrites(t.Context(), calls)
+	for index, call := range calls {
+		result := <-call.result
+		want := fmt.Sprintf(`{"value":%d}`, index)
+		if result.err != nil || result.response.Results[0].Status != sink.WriteStatus_WRITE_STATUS_APPLIED || string(result.response.Results[0].GetDocument().GetPayload()) != want {
+			t.Fatalf("returned Put %d lost its document: %v, %v", index, result.response, result.err)
+		}
+	}
+	if backend.writes.Load() != 1 || server.server.inFlightBytes != 0 {
+		t.Fatalf("known small results fragmented a batch: writes=%d retained=%d", backend.writes.Load(), server.server.inFlightBytes)
+	}
+}
+
 func TestSynchronousMergeStreamsLargeSnapshotsAndOutputs(t *testing.T) {
 	for _, scenario := range []string{"snapshots", "outputs", "conflicts", "returns"} {
 		t.Run(scenario, func(t *testing.T) {

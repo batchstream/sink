@@ -18,26 +18,30 @@ const (
 )
 
 type Options struct {
-	Storage                 storage.Storage
-	Lua                     *merge.LuaEngine
-	Publisher               queue.Publisher
-	MaxOperations           int
-	MaxMergeAttempts        int
-	Metrics                 *sinkmetrics.Metrics
-	RequestTimeout          time.Duration
-	MaxInFlightRequests     int
-	MaxInFlightBytes        int
-	MaxPublishRequests      int
-	MaxPublishBytes         int
-	MaxPublishStoreRequests int
-	MaxStoreRequests        int
-	MaxReadBytes            int
-	MaxScanRequests         int
-	MaxScanBytes            int
-	MaxStoreScanRequests    int
-	ScanAdmissionWait       time.Duration
-	StoreExecutionBytes     map[string]int
-	StoreNames              []string
+	Storage                   storage.Storage
+	Lua                       *merge.LuaEngine
+	Publisher                 queue.Publisher
+	MaxOperations             int
+	MaxMergeAttempts          int
+	Metrics                   *sinkmetrics.Metrics
+	RequestTimeout            time.Duration
+	MaxInFlightRequests       int
+	MaxInFlightBytes          int
+	MaxAdmissionRequests      int
+	MaxAdmissionBytes         int
+	MaxStoreAdmissionRequests int
+	AdmissionWait             time.Duration
+	MaxPublishRequests        int
+	MaxPublishBytes           int
+	MaxPublishStoreRequests   int
+	MaxStoreRequests          int
+	MaxReadBytes              int
+	MaxScanRequests           int
+	MaxScanBytes              int
+	MaxStoreScanRequests      int
+	ScanAdmissionWait         time.Duration
+	StoreExecutionBytes       map[string]int
+	StoreNames                []string
 }
 
 func New(opts Options) (*Server, error) {
@@ -71,6 +75,25 @@ func New(opts Options) (*Server, error) {
 	if opts.MaxReadBytes == 0 {
 		opts.MaxReadBytes = storage.DefaultMaxReadBytes
 	}
+	if opts.MaxAdmissionRequests < 0 || opts.MaxAdmissionBytes < 0 || opts.MaxStoreAdmissionRequests < 0 || opts.AdmissionWait < 0 {
+		return nil, errors.New("create Sink server: admission queue limits cannot be negative")
+	}
+	if opts.MaxAdmissionRequests == 0 {
+		opts.MaxAdmissionRequests = 1024
+	}
+	if opts.MaxAdmissionBytes == 0 {
+		opts.MaxAdmissionBytes = min(32<<20, opts.MaxInFlightBytes)
+	}
+	if opts.MaxStoreAdmissionRequests == 0 {
+		opts.MaxStoreAdmissionRequests = min(256, opts.MaxAdmissionRequests)
+	}
+	if opts.MaxStoreAdmissionRequests > opts.MaxAdmissionRequests {
+		return nil, errors.New("create Sink server: per-store admission queue cannot exceed the global queue")
+	}
+	if opts.AdmissionWait == 0 {
+		opts.AdmissionWait = 2 * time.Second
+	}
+	opts.AdmissionWait = min(opts.AdmissionWait, opts.RequestTimeout)
 	if opts.MaxPublishRequests < 0 || opts.MaxPublishBytes < 0 || opts.MaxPublishStoreRequests < 0 {
 		return nil, errors.New("create Sink server: publish limits cannot be negative")
 	}
@@ -128,21 +151,25 @@ func New(opts Options) (*Server, error) {
 	}
 
 	executionAdmission := &admissionPool{
-		name:                 "execution",
-		metrics:              opts.Metrics,
-		requestTimeout:       opts.RequestTimeout,
-		maxInFlightRequests:  opts.MaxInFlightRequests,
-		maxInFlightBytes:     opts.MaxInFlightBytes,
-		maxStoreRequests:     opts.MaxStoreRequests,
-		storeRequests:        storeRequests,
-		admissionChanged:     make(chan struct{}),
-		maxScanRequests:      opts.MaxScanRequests,
-		maxScanBytes:         opts.MaxScanBytes,
-		maxStoreScanRequests: opts.MaxStoreScanRequests,
-		storeScanRequests:    make(map[string]int),
-		scanAdmissionWait:    opts.ScanAdmissionWait,
-		storeBytes:           storeBytes,
-		maxStoreBytes:        storeLimits,
+		name:                   "execution",
+		metrics:                opts.Metrics,
+		requestTimeout:         opts.RequestTimeout,
+		maxInFlightRequests:    opts.MaxInFlightRequests,
+		maxInFlightBytes:       opts.MaxInFlightBytes,
+		maxStoreRequests:       opts.MaxStoreRequests,
+		storeRequests:          storeRequests,
+		maxScanRequests:        opts.MaxScanRequests,
+		maxScanBytes:           opts.MaxScanBytes,
+		maxStoreScanRequests:   opts.MaxStoreScanRequests,
+		storeScanRequests:      make(map[string]int),
+		scanAdmissionWait:      opts.ScanAdmissionWait,
+		storeBytes:             storeBytes,
+		maxStoreBytes:          storeLimits,
+		maxQueuedRequests:      opts.MaxAdmissionRequests,
+		maxQueuedBytes:         opts.MaxAdmissionBytes,
+		maxStoreQueuedRequests: opts.MaxStoreAdmissionRequests,
+		admissionWait:          opts.AdmissionWait,
+		storeQueuedRequests:    make(map[string]int),
 	}
 	publishAdmission := &admissionPool{
 		name:                "publish",
@@ -152,7 +179,6 @@ func New(opts Options) (*Server, error) {
 		maxInFlightBytes:    opts.MaxPublishBytes,
 		maxStoreRequests:    opts.MaxPublishStoreRequests,
 		storeRequests:       publishStoreRequests,
-		admissionChanged:    make(chan struct{}),
 	}
 	server := &Server{
 		storage:          opts.Storage,

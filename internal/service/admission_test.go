@@ -40,7 +40,7 @@ func TestCoreAdmissionCoversCrossStoreAndBypassRequests(t *testing.T) {
 	}
 	backend := &blockedReadStorage{Storage: memory.New(), started: make(chan struct{}, 4)}
 	opts := Options{Storage: backend, Lua: lua, Metrics: observed, StoreNames: []string{"a", "b"},
-		MaxStoreRequests: 1, MaxInFlightRequests: 2, MaxReadBytes: 1024, RequestTimeout: 100 * time.Millisecond}
+		MaxStoreRequests: 1, MaxInFlightRequests: 2, MaxReadBytes: 1024, RequestTimeout: 100 * time.Millisecond, AdmissionWait: 10 * time.Millisecond}
 	s, err := New(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -61,7 +61,9 @@ func TestCoreAdmissionCoversCrossStoreAndBypassRequests(t *testing.T) {
 	body := recorder.Body.String()
 	for _, line := range []string{
 		`sink_admission_pool_requests{pool="execution",store="a"} 1`,
-		`sink_admission_pool_rejected_total{pool="execution",reason="requests",store="_multiple"} 1`,
+		`sink_admission_pool_rejected_total{pool="execution",reason="wait_timeout",store="_multiple"} 1`,
+		`sink_execution_queued_requests{store="_multiple"} 0`,
+		`sink_execution_queued_bytes{store="_multiple"} 0`,
 		`sink_in_flight_requests 1`,
 		`sink_admission_rejected_total 1`,
 	} {

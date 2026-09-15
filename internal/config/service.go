@@ -19,6 +19,14 @@ func resolveService(file serviceFile, grpc GRPC, v *validator) Service {
 	execution.MaxRequests = v.bounded("service.execution.max_requests", file.Execution.MaxRequests, 128, 10000)
 	execution.MaxBytes = v.bytes("service.execution.max_bytes", file.Execution.MaxBytes, 256<<20, 16<<30)
 	execution.MaxRequestsPerStore = v.bounded("service.execution.max_requests_per_store", file.Execution.MaxRequestsPerStore, 32, 10000)
+	queue := &execution.Queue
+	queue.MaxRequests = v.bounded("service.execution.queue.max_requests", file.Execution.Queue.MaxRequests, 1024, 10000)
+	queue.MaxBytes = v.bytes("service.execution.queue.max_bytes", file.Execution.Queue.MaxBytes, min(32<<20, execution.MaxBytes), 16<<30)
+	queue.MaxRequestsPerStore = v.bounded("service.execution.queue.max_requests_per_store", file.Execution.Queue.MaxRequestsPerStore, min(256, queue.MaxRequests), queue.MaxRequests)
+	queue.MaxWait = v.duration("service.execution.queue.max_wait", file.Execution.Queue.MaxWait, min(2*time.Second, request.Timeout))
+	if queue.MaxWait > request.Timeout {
+		v.reject(errors.New("service.execution.queue.max_wait cannot exceed service.request.timeout"))
+	}
 	scan := &execution.Scan
 	scan.MaxRequests = v.bounded("service.execution.scan.max_requests", file.Execution.Scan.MaxRequests, max(1, execution.MaxRequests/2), execution.MaxRequests)
 	scan.MaxBytes = v.bytes("service.execution.scan.max_bytes", file.Execution.Scan.MaxBytes, max(1, execution.MaxBytes/2), execution.MaxBytes)

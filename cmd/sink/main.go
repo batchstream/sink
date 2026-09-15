@@ -257,6 +257,7 @@ func newApplication(ctx context.Context, loaded config) (*application, error) {
 		MaxScanBytes:         loaded.maxScanBytes,
 		MaxStoreScanRequests: loaded.maxStoreScanRequests,
 		ScanAdmissionWait:    loaded.scanAdmissionWait,
+		StoreExecutionBytes:  loaded.storeExecutionBytes,
 		MaxReadBytes:         loaded.maxReadBytes,
 		Storage:              opened.value,
 		Lua:                  luaEngine,

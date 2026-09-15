@@ -37,6 +37,8 @@ type admissionPool struct {
 	scanBytes            int
 	storeScanRequests    map[string]int
 	scanAdmissionWait    time.Duration
+	storeBytes           map[string]int
+	maxStoreBytes        map[string]int
 }
 
 type admissionRequest struct {
@@ -46,6 +48,7 @@ type admissionRequest struct {
 	timeout      time.Duration
 	scan         bool
 	publish      bool
+	reservation  *admissionReservation
 }
 
 func (s *Server) admitRequest(ctx context.Context, request admissionRequest) (context.Context, context.CancelFunc, error) {
@@ -85,6 +88,11 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 		s.admissionMu.Lock()
 		full := s.admissionSlotsFull(request) || request.encodedBytes > s.maxInFlightBytes-s.inFlightBytes
 		reason := "requests"
+		for _, name := range request.stores {
+			if limit := s.maxStoreBytes[name]; limit > 0 && request.encodedBytes > limit-s.storeBytes[name] {
+				reason = "store_bytes"
+			}
+		}
 		if request.encodedBytes > s.maxInFlightBytes-s.inFlightBytes {
 			reason = "bytes"
 		}
@@ -134,6 +142,13 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 		}
 		s.inFlightRequests++
 		s.inFlightBytes += request.encodedBytes
+		s.adjustStoreBytes(request.stores, request.encodedBytes)
+		if request.reservation != nil {
+			request.reservation.pool = s
+			request.reservation.stores = request.stores
+			request.reservation.bytes = request.encodedBytes
+			request.reservation.maximum = request.encodedBytes
+		}
 		if request.scan {
 			s.scanRequests++
 			s.scanBytes += request.encodedBytes
@@ -162,8 +177,14 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 	release := func() {
 		cancel()
 		s.admissionMu.Lock()
+		bytes := request.encodedBytes
+		if request.reservation != nil {
+			bytes = request.reservation.bytes
+			request.reservation.released = true
+		}
 		s.inFlightRequests--
-		s.inFlightBytes -= request.encodedBytes
+		s.inFlightBytes -= bytes
+		s.adjustStoreBytes(request.stores, -bytes)
 		if request.scan {
 			s.scanRequests--
 			s.scanBytes -= request.encodedBytes
@@ -182,13 +203,34 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 		close(s.admissionChanged)
 		s.admissionChanged = make(chan struct{})
 		s.admissionMu.Unlock()
-		s.metrics.AdjustAdmissionPool(store, s.name, -1, -request.encodedBytes)
+		s.metrics.AdjustAdmissionPool(store, s.name, -1, -bytes)
 	}
 	return execution, release, nil
 }
 
 func (s *admissionPool) admissionCanFit(request admissionRequest) bool {
-	return request.encodedBytes <= s.maxInFlightBytes && (!request.scan || request.encodedBytes <= s.maxScanBytes)
+	return request.encodedBytes <= s.executionByteLimit(request.stores) && (!request.scan || request.encodedBytes <= s.maxScanBytes)
+}
+
+func (s *admissionPool) executionByteLimit(stores []string) int {
+	limit := s.maxInFlightBytes
+	for _, name := range stores {
+		if storeLimit := s.maxStoreBytes[name]; storeLimit > 0 {
+			limit = min(limit, storeLimit)
+		}
+	}
+	return limit
+}
+
+// The caller holds admissionMu. Cross-store calls conservatively charge their
+// entire reservation to each touched store, and only once to the global pool.
+func (s *admissionPool) adjustStoreBytes(stores []string, bytes int) {
+	for _, name := range stores {
+		if _, configured := s.storeBytes[name]; configured {
+			s.storeBytes[name] += bytes
+			s.metrics.AdjustStoreExecutionBytes(name, bytes)
+		}
+	}
 }
 
 // The caller holds admissionMu. Queued scans have separate count, byte and
@@ -239,6 +281,9 @@ func (s *admissionPool) admissionSlotsFull(request admissionRequest) bool {
 		if request.scan && s.storeScanRequests[name] >= s.maxStoreScanRequests {
 			return true
 		}
+		if limit := s.maxStoreBytes[name]; limit > 0 && request.encodedBytes > limit-s.storeBytes[name] {
+			return true
+		}
 		if count, configured := s.storeRequests[name]; configured && count >= s.maxStoreRequests {
 			return true
 		}
@@ -274,11 +319,13 @@ func operationStores[T interface{ GetAddress() *sink.RecordAddress }](operations
 
 // Include retained output and expanded source copies, before parsing or cloning.
 // This bounds admitted payload bytes; VM/driver overhead is sized separately.
-func (s *Server) writeExecutionBytes(req *sink.WriteRequest) int {
-	return s.writeExecutionBytesFor(req, 1, returningCallerCount(req, nil))
+type writeExecutionEstimate struct {
+	bytes        int
+	workingBytes int
 }
 
-func (s *Server) writeExecutionBytesFor(req *sink.WriteRequest, callers int, returningCallers int) int {
+func (s *Server) estimateWriteExecution(req *sink.WriteRequest, callers int, returningCallers int) writeExecutionEstimate {
+	estimate := writeExecutionEstimate{}
 	bytes := req.SizeVT() + failureResponseBytes(len(req.GetOperations()))
 	bytes += s.maxReadBytes * returningCallers
 	largestSource := 0
@@ -336,9 +383,11 @@ func (s *Server) writeExecutionBytesFor(req *sink.WriteRequest, callers int, ret
 		// chunk and one output batch. One additional candidate can coexist with
 		// the output batch while it is committed. Caller quotas remain separate.
 		workingSets := min(2*retained, 3)
-		bytes += s.maxReadBytes * workingSets
+		estimate.workingBytes = s.maxReadBytes * workingSets
+		bytes += estimate.workingBytes
 	}
-	return bytes
+	estimate.bytes = bytes
+	return estimate
 }
 
 func returningCallerCount(req *sink.WriteRequest, budgets *requestBudgets) int {

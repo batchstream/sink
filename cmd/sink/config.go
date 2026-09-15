@@ -66,6 +66,7 @@ type config struct {
 	maxScanBytes           int
 	maxStoreScanRequests   int
 	scanAdmissionWait      time.Duration
+	storeExecutionBytes    map[string]int
 	maxReadBytes           int
 }
 
@@ -156,6 +157,7 @@ type serviceConfigFile struct {
 	MaxScanBytes                  *int               `yaml:"max_scan_bytes"`
 	MaxStoreScanRequests          *int               `yaml:"max_store_scan_requests"`
 	ScanAdmissionWaitMilliseconds *int               `yaml:"scan_admission_wait_milliseconds"`
+	StoreExecutionBytes           map[string]int     `yaml:"store_execution_bytes"`
 	MaxReadBytes                  *int               `yaml:"max_read_bytes"`
 	MaxOperations                 *int               `yaml:"max_operations"`
 	MaxMergeAttempts              *int               `yaml:"max_merge_attempts"`

@@ -42,6 +42,7 @@ type Options struct {
 	MaxScanBytes         int
 	MaxStoreScanRequests int
 	ScanAdmissionWait    time.Duration
+	StoreExecutionBytes  map[string]int
 	StoreNames           []string
 }
 
@@ -120,9 +121,18 @@ func New(opts Options) (*Server, error) {
 	}
 	storeRequests := make(map[string]int, len(opts.StoreNames))
 	publishStoreRequests := make(map[string]int, len(opts.StoreNames))
+	storeBytes := make(map[string]int, len(opts.StoreNames))
 	for _, name := range opts.StoreNames {
 		storeRequests[name] = 0
 		publishStoreRequests[name] = 0
+		storeBytes[name] = 0
+	}
+	storeLimits := make(map[string]int, len(opts.StoreExecutionBytes))
+	for name, limit := range opts.StoreExecutionBytes {
+		if _, configured := storeRequests[name]; !configured || limit <= 0 || limit > opts.MaxInFlightBytes {
+			return nil, fmt.Errorf("create Sink server: execution byte limit for %q must name a configured store and be between 1 and the global limit", name)
+		}
+		storeLimits[name] = limit
 	}
 
 	maxOperations := opts.MaxOperations
@@ -148,6 +158,8 @@ func New(opts Options) (*Server, error) {
 		maxStoreScanRequests: opts.MaxStoreScanRequests,
 		storeScanRequests:    make(map[string]int),
 		scanAdmissionWait:    opts.ScanAdmissionWait,
+		storeBytes:           storeBytes,
+		maxStoreBytes:        storeLimits,
 	}
 	publishAdmission := &admissionPool{
 		name:                "publish",
@@ -192,8 +204,9 @@ func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *req
 	}
 	observation := s.newWriteObservation(req)
 	defer observation.finish()
-	encodedBytes := s.writeExecutionBytesFor(req, budgets.callerCount(), returningCallerCount(req, budgets))
-	admission := admissionRequest{encodedBytes: encodedBytes, stores: operationStores(req.GetOperations()), wait: budgets != nil}
+	estimate := s.estimateWriteExecution(req, budgets.callerCount(), returningCallerCount(req, budgets))
+	reservation := &admissionReservation{}
+	admission := admissionRequest{encodedBytes: estimate.bytes, stores: operationStores(req.GetOperations()), wait: budgets != nil, reservation: reservation}
 	admission.publish = req.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED
 	started := time.Now()
 	ctx, release, err := s.admitRequest(ctx, admission)
@@ -248,7 +261,9 @@ func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *req
 	}
 
 	groups := buildWriteGroups(operations)
+	memory := &writeMemoryReservation{reservation: reservation, estimate: estimate}
 	executionOptions := writeExecutionOptions{
+		memory:           memory,
 		returns:          newWriteReturns(req, budgets, s.maxReadBytes),
 		budgets:          budgets,
 		completion:       completion,

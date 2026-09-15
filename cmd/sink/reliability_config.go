@@ -24,6 +24,17 @@ func (c *config) loadReliabilityConfig(file serviceConfigFile) error {
 	if err != nil {
 		return err
 	}
+	c.storeExecutionBytes = make(map[string]int, len(file.StoreExecutionBytes))
+	for name, bytes := range file.StoreExecutionBytes {
+		configured := false
+		for _, backend := range c.storages {
+			configured = configured || backend.name == name
+		}
+		if !configured || bytes <= 0 || bytes > c.maxInFlightBytes {
+			return fmt.Errorf("service.store_execution_bytes[%q] must name a configured store and be between 1 and service.max_in_flight_bytes", name)
+		}
+		c.storeExecutionBytes[name] = bytes
+	}
 	c.maxStoreRequests, err = boundedInt("service.max_store_requests", file.MaxStoreRequests, 32, 10000)
 	if err != nil {
 		return err

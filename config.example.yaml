@@ -24,6 +24,8 @@ service:
   max_publish_requests: 32
   max_publish_bytes: 268435456
   max_store_requests: 32
+  # Optional per-store execution byte ceilings; names must match storages.
+  store_execution_bytes: {}
   scan_admission_wait_milliseconds: 2000
   max_read_bytes: 33554432
   max_operations: 1000

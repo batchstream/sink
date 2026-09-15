@@ -18,8 +18,8 @@ func resolveKafka(prefix string, file kafkaFile, v *validator) Kafka {
 	topic.ReplicationFactor = v.bounded(prefix+".topic.replication_factor", file.Topic.ReplicationFactor, 2, 1<<15-1)
 	topic.Retention = v.duration(prefix+".topic.retention", file.Topic.Retention, 72*time.Hour)
 	topic.MinInSyncReplicas = v.bounded(prefix+".topic.min_insync_replicas", file.Topic.MinInSyncReplicas, min(2, topic.ReplicationFactor), topic.ReplicationFactor)
-	loaded.Producer.MaxBufferedBytes = v.bounded(prefix+".producer.max_buffered_bytes", file.Producer.MaxBufferedBytes, 64<<20, 1<<30)
-	topic.MaxRecordBytes = v.bounded(prefix+".topic.max_record_bytes", file.Topic.MaxRecordBytes, 900<<10, min(64<<20, loaded.Producer.MaxBufferedBytes))
+	loaded.Producer.MaxBufferedBytes = v.bytes(prefix+".producer.max_buffered_bytes", file.Producer.MaxBufferedBytes, 64<<20, 1<<30)
+	topic.MaxRecordBytes = v.bytes(prefix+".topic.max_record_bytes", file.Topic.MaxRecordBytes, 900<<10, min(64<<20, loaded.Producer.MaxBufferedBytes))
 	loaded.DeadLetter.Topic = strings.TrimSpace(file.DeadLetter.Topic)
 	if topic.Name != "" && loaded.DeadLetter.Topic == "" {
 		loaded.DeadLetter.Topic = topic.Name + ".dlq"

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -58,8 +59,8 @@ func resolve(file configFile) (Config, error) {
 	}
 	v := validator{}
 	loaded.GRPC.Address = valueOrDefault(file.GRPC.Address, ":8080")
-	loaded.GRPC.MaxReceiveMessageBytes = v.integer("grpc.max_receive_message_bytes", file.GRPC.MaxReceiveMessageBytes, 64<<20)
-	loaded.GRPC.MaxSendMessageBytes = v.integer("grpc.max_send_message_bytes", file.GRPC.MaxSendMessageBytes, 64<<20)
+	loaded.GRPC.MaxReceiveMessageBytes = v.bytes("grpc.max_receive_message_bytes", file.GRPC.MaxReceiveMessageBytes, 64<<20, math.MaxInt)
+	loaded.GRPC.MaxSendMessageBytes = v.bytes("grpc.max_send_message_bytes", file.GRPC.MaxSendMessageBytes, 64<<20, math.MaxInt)
 	loaded.Prometheus.Address = strings.TrimSpace(file.Prometheus.Address)
 	loaded.ShutdownTimeout = v.duration("shutdown_timeout", file.ShutdownTimeout, 15*time.Second)
 	loaded.Service = resolveService(file.Service, loaded.GRPC, &v)

@@ -35,7 +35,7 @@ func resolveStorage(prefix string, file storageFile, maxExecutionBytes int) (Sto
 	}
 	v := validator{}
 	if file.Limits.MaxExecutionBytes != nil {
-		loaded.Limits.MaxExecutionBytes = v.bounded(prefix+".limits.max_execution_bytes", file.Limits.MaxExecutionBytes, maxExecutionBytes, maxExecutionBytes)
+		loaded.Limits.MaxExecutionBytes = v.bytes(prefix+".limits.max_execution_bytes", file.Limits.MaxExecutionBytes, maxExecutionBytes, maxExecutionBytes)
 	}
 	loaded.Driver = Driver(strings.TrimSpace(string(file.Driver)))
 	switch loaded.Driver {

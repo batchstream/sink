@@ -97,7 +97,7 @@ limits:
 ```yaml
 service:
   request:
-    max_read_bytes: 8388608
+    max_read_bytes: 8MiB
 ```
 
 Validate aggregate sizes for client batches and returned documents before

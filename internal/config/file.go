@@ -14,9 +14,9 @@ type configFile struct {
 }
 
 type gRPCFile struct {
-	Address                string `yaml:"address"`
-	MaxReceiveMessageBytes *int   `yaml:"max_receive_message_bytes"`
-	MaxSendMessageBytes    *int   `yaml:"max_send_message_bytes"`
+	Address                string    `yaml:"address"`
+	MaxReceiveMessageBytes *byteSize `yaml:"max_receive_message_bytes"`
+	MaxSendMessageBytes    *byteSize `yaml:"max_send_message_bytes"`
 }
 
 type prometheusFile struct {
@@ -34,39 +34,39 @@ type serviceFile struct {
 type requestFile struct {
 	Timeout       *time.Duration `yaml:"timeout"`
 	MaxOperations *int           `yaml:"max_operations"`
-	MaxReadBytes  *int           `yaml:"max_read_bytes"`
+	MaxReadBytes  *byteSize      `yaml:"max_read_bytes"`
 }
 
 type executionFile struct {
-	MaxRequests         *int     `yaml:"max_requests"`
-	MaxBytes            *int     `yaml:"max_bytes"`
-	MaxRequestsPerStore *int     `yaml:"max_requests_per_store"`
-	Scan                scanFile `yaml:"scan"`
+	MaxRequests         *int      `yaml:"max_requests"`
+	MaxBytes            *byteSize `yaml:"max_bytes"`
+	MaxRequestsPerStore *int      `yaml:"max_requests_per_store"`
+	Scan                scanFile  `yaml:"scan"`
 }
 
 type scanFile struct {
 	MaxRequests         *int           `yaml:"max_requests"`
-	MaxBytes            *int           `yaml:"max_bytes"`
+	MaxBytes            *byteSize      `yaml:"max_bytes"`
 	MaxRequestsPerStore *int           `yaml:"max_requests_per_store"`
 	AdmissionWait       *time.Duration `yaml:"admission_wait"`
 }
 
 type publishFile struct {
-	MaxRequestsPerStore *int `yaml:"max_requests_per_store"`
-	MaxRequests         *int `yaml:"max_requests"`
-	MaxBytes            *int `yaml:"max_bytes"`
+	MaxRequestsPerStore *int      `yaml:"max_requests_per_store"`
+	MaxRequests         *int      `yaml:"max_requests"`
+	MaxBytes            *byteSize `yaml:"max_bytes"`
 }
 
 type batchingFile struct {
 	MaxWait       *time.Duration `yaml:"max_wait"`
 	MaxOperations *int           `yaml:"max_operations"`
-	MaxBytes      *int           `yaml:"max_bytes"`
+	MaxBytes      *byteSize      `yaml:"max_bytes"`
 	Queue         batchQueueFile `yaml:"queue"`
 }
 
 type batchQueueFile struct {
-	MaxOperations *int `yaml:"max_operations"`
-	MaxBytes      *int `yaml:"max_bytes"`
+	MaxOperations *int      `yaml:"max_operations"`
+	MaxBytes      *byteSize `yaml:"max_bytes"`
 }
 
 type mergeFile struct {
@@ -76,8 +76,8 @@ type mergeFile struct {
 
 type luaFile struct {
 	Timeout           *time.Duration `yaml:"timeout"`
-	MaxSourceBytes    *int           `yaml:"max_source_bytes"`
-	MaxResultBytes    *int           `yaml:"max_result_bytes"`
+	MaxSourceBytes    *byteSize      `yaml:"max_source_bytes"`
+	MaxResultBytes    *byteSize      `yaml:"max_result_bytes"`
 	MaxCachedPrograms *int           `yaml:"max_cached_programs"`
 	MaxInstructions   *int           `yaml:"max_instructions"`
 }
@@ -106,7 +106,7 @@ type searchFile struct {
 }
 
 type storeLimitsFile struct {
-	MaxExecutionBytes *int `yaml:"max_execution_bytes"`
+	MaxExecutionBytes *byteSize `yaml:"max_execution_bytes"`
 }
 
 type kafkaFile struct {
@@ -124,11 +124,11 @@ type topicFile struct {
 	ReplicationFactor *int           `yaml:"replication_factor"`
 	Retention         *time.Duration `yaml:"retention"`
 	MinInSyncReplicas *int           `yaml:"min_insync_replicas"`
-	MaxRecordBytes    *int           `yaml:"max_record_bytes"`
+	MaxRecordBytes    *byteSize      `yaml:"max_record_bytes"`
 }
 
 type producerFile struct {
-	MaxBufferedBytes *int `yaml:"max_buffered_bytes"`
+	MaxBufferedBytes *byteSize `yaml:"max_buffered_bytes"`
 }
 
 type consumerFile struct {

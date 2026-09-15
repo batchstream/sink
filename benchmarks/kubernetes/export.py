@@ -6,6 +6,21 @@ import csv
 import json
 import pathlib
 import re
+from fractions import Fraction
+
+
+def byte_count(value):
+    if type(value) is int:
+        return value
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)[ \t]*(B|KB|MB|GB|TB|KiB|MiB|GiB|TiB)", value)
+    if not match:
+        raise ValueError("Invalid byte size in benchmark configuration")
+    units = {"B": 1, "KB": 1000, "MB": 1000**2, "GB": 1000**3, "TB": 1000**4,
+             "KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30, "TiB": 1 << 40}
+    count = Fraction(match[1]) * units[match[2]]
+    if count.denominator != 1 or count <= 0 or count > (1 << 63) - 1:
+        raise ValueError("Byte size must resolve to a positive whole-byte integer")
+    return int(count)
 
 
 def duration_milliseconds(value):
@@ -53,9 +68,9 @@ def row_for(result):
            "gomaxprocs": variables.get("GOMAXPROCS", "auto"), "gogc": variables.get("GOGC", "100"),
            "prestop_seconds": environments[0].get("prestop_seconds", "") if environments else "",
            "termination_grace_seconds": environments[0].get("termination_grace_seconds", "") if environments else "",
-           "execution_mib": execution.get("max_bytes", service.get("max_in_flight_bytes", 0)) // (1 << 20), "read_mib": request.get("max_read_bytes", service.get("max_read_bytes", 0)) // (1 << 20),
+           "execution_mib": byte_count(execution.get("max_bytes", service.get("max_in_flight_bytes", 0))) / (1 << 20), "read_mib": byte_count(request.get("max_read_bytes", service.get("max_read_bytes", 0))) / (1 << 20),
            "batch_wait_ms": wait_ms, "batch_operations": batching.get("max_operations", 1000),
-           "batch_mib": batching.get("max_bytes", 16 << 20) / (1 << 20),
+           "batch_mib": byte_count(batching.get("max_bytes", 16 << 20)) / (1 << 20),
            "batching_enabled": batching_enabled, "concurrency": settings["concurrency"],
            "keys": settings["keys"], "hot_keys": settings["hot_keys"], "padding_bytes": settings["padding_bytes"],
            "random_padding": settings.get("random_padding", False),

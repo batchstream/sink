@@ -238,11 +238,11 @@ def deploy_server(opts):
     config = {"mode": "server", "grpc": {"address": ":8080"}, "prometheus": {"address": ":9090"},
               "storages": [{"name": "mongo", "driver": "mongodb", "mongodb": {"uri": f"mongodb://{seeds}/?replicaSet=rs0", "max_concurrent_writes": opts.mongo_concurrency}},
                            {"name": "search", "driver": "opensearch", "search": {"endpoints": ["http://opensearch:9200"]}}],
-              "service": {"request": {"timeout": "10s", "max_operations": 1000, "max_read_bytes": opts.read_mib << 20},
-                          "execution": {"max_requests": 128, "max_requests_per_store": 32, "max_bytes": opts.execution_mib << 20},
+              "service": {"request": {"timeout": "10s", "max_operations": 1000, "max_read_bytes": f"{opts.read_mib}MiB"},
+                          "execution": {"max_requests": 128, "max_requests_per_store": 32, "max_bytes": f"{opts.execution_mib}MiB"},
                           "batching": {"max_wait": f"{opts.wait_ms}ms", "max_operations": opts.batch_operations,
-                                       "max_bytes": opts.batch_mib << 20, "queue": {"max_bytes": 64 << 20}},
-                          "merge": {"max_attempts": 3, "lua": {"timeout": "100ms", "max_result_bytes": 16 << 20}}},
+                                       "max_bytes": f"{opts.batch_mib}MiB", "queue": {"max_bytes": "64MiB"}},
+                          "merge": {"max_attempts": 3, "lua": {"timeout": "100ms", "max_result_bytes": "16MiB"}}},
               "shutdown_timeout": "30s"}
     config_text = json.dumps(config)
     config_map = {"apiVersion": "v1", "kind": "ConfigMap", "metadata": metadata("sink-config", namespace), "data": {"sink.json": config_text}}

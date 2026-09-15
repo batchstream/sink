@@ -1,9 +1,10 @@
+# Sizes use binary units (KiB, MiB, GiB); durations use ms, s, m, or h.
 mode: server
 
 grpc:
   address: ":8080"
-  max_receive_message_bytes: 67108864
-  max_send_message_bytes: 67108864
+  max_receive_message_bytes: 64MiB
+  max_send_message_bytes: 64MiB
 
 prometheus:
   address: ":9090"
@@ -18,37 +19,37 @@ storages:
       max_concurrent_groups: 16
     # Optional ceiling within service.execution.max_bytes.
     # limits:
-    #   max_execution_bytes: 134217728
+    #   max_execution_bytes: 128MiB
 
 service:
   request:
     timeout: 30s
-    max_read_bytes: 33554432
+    max_read_bytes: 32MiB
     max_operations: 1000
   execution:
     max_requests: 128
-    max_bytes: 268435456
+    max_bytes: 256MiB
     max_requests_per_store: 32
     scan:
       admission_wait: 2s
   publish:
     max_requests_per_store: 32
     max_requests: 32
-    max_bytes: 268435456
+    max_bytes: 256MiB
   batching:
     max_wait: 2ms
     max_operations: 1000
-    max_bytes: 16777216
+    max_bytes: 16MiB
     queue:
-      max_operations: 10000
-      max_bytes: 134217728
+      max_operations: 10_000
+      max_bytes: 128MiB
   merge:
     max_attempts: 3
     lua:
       timeout: 100ms
-      max_source_bytes: 65536
-      max_result_bytes: 16777216
+      max_source_bytes: 64KiB
+      max_result_bytes: 16MiB
       max_cached_programs: 256
-      max_instructions: 1000000
+      max_instructions: 1_000_000
 
 shutdown_timeout: 15s

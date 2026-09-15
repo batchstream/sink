@@ -43,6 +43,21 @@ numeric time values and old field names are rejected. Defaults are resolved once
 before the application opens resources. Omitted values use defaults; explicit
 zero or negative limits fail validation.
 
+### Human-readable values
+
+All byte limits accept sizes such as `64KiB`, `16MiB`, or `1GiB`. Binary units
+`KiB`, `MiB`, `GiB`, and `TiB` use powers of 1024; decimal units `KB`, `MB`, `GB`,
+and `TB` use powers of 1000. `B` means bytes. Units are case-sensitive: `1MB`
+is 1,000,000 bytes, while `1MiB` is 1,048,576 bytes. A space between the number
+and unit is optional. Fractions such as `1.5MiB` are accepted only when they
+resolve to an exact whole number of bytes. Ambiguous units such as `M`, overflow,
+and fractional bytes are rejected. Integer YAML values still mean raw bytes;
+quoted unitless numbers are rejected.
+
+Counts such as `max_requests` and `max_operations` remain integers. Time values
+use duration strings such as `2ms`, `30s`, or `1m30s`. The `_bytes` field names
+describe what the limit measures; they do not require writing raw byte counts.
+
 This is a breaking YAML change. See the [migration guide](configuration-migration.md)
 for the complete old-to-new mapping. The gRPC and SDK contracts are unchanged.
 
@@ -57,8 +72,8 @@ mode: server
 
 grpc:
   address: ":8080"
-  max_receive_message_bytes: 67108864
-  max_send_message_bytes: 67108864
+  max_receive_message_bytes: 64MiB
+  max_send_message_bytes: 64MiB
 
 prometheus:
   address: ":9090"
@@ -87,7 +102,7 @@ storages:
         retry:
           max_attempts: 10
           backoff: 100ms
-          max_backoff: 10000ms
+          max_backoff: 10s
 
       dead_letter:
         topic: catalog-mutations.dlq
@@ -119,18 +134,18 @@ service:
     max_attempts: 3
     lua:
       timeout: 100ms
-      max_source_bytes: 65536
-      max_result_bytes: 16777216
+      max_source_bytes: 64KiB
+      max_result_bytes: 16MiB
       max_cached_programs: 256
-      max_instructions: 1000000
+      max_instructions: 1_000_000
 
   batching:
     max_wait: 2ms
     max_operations: 1000
-    max_bytes: 16777216
+    max_bytes: 16MiB
     queue:
-      max_operations: 10000
-      max_bytes: 134217728
+      max_operations: 10_000
+      max_bytes: 128MiB
 shutdown_timeout: 15s
 ```
 
@@ -203,8 +218,8 @@ use the lowercase spelling shown below. Storage names are also case-sensitive.
 | --- | --- | --- | --- | --- | --- |
 | `mode` | enum string | No | `server` | `server`, `worker`, `all` | Process role. See [Mode values](#mode-values). |
 | `grpc.address` | string | No | `:8080` | Any valid TCP listen address | TCP listen address for the gRPC and gRPC health services. Used in `server` and `all` modes. |
-| `grpc.max_receive_message_bytes` | positive integer | No | `67108864` | Integer greater than `0` | Maximum encoded gRPC request size accepted by the server. |
-| `grpc.max_send_message_bytes` | positive integer | No | `67108864` | Integer greater than `0` | Maximum encoded gRPC response size sent by the server. |
+| `grpc.max_receive_message_bytes` | byte size | No | `64MiB` | Size greater than `0B` | Maximum encoded gRPC request size accepted by the server. |
+| `grpc.max_send_message_bytes` | byte size | No | `64MiB` | Size greater than `0B` | Maximum encoded gRPC response size sent by the server. |
 | `prometheus.address` | string | No | empty (disabled) | Empty or any valid TCP listen address | HTTP listen address for Prometheus `/metrics`. Available in every runtime mode. |
 | `storages` | list | Yes | none | One or more storage objects | Storage instances available for address routing. |
 | `storages[].name` | string | Yes | none | Any unique, non-empty name | Exact value selected by `address.store`. |
@@ -221,12 +236,12 @@ use the lowercase spelling shown below. Storage names are also case-sensitive.
 | `service.merge.max_attempts` | positive integer | No | `3` | Integer greater than `0` | Maximum revision-conflict attempts for Merge and folded conditional Put chains. |
 | `service.batching.max_wait` | duration string | No | `2ms` | Positive Go duration within the bounds below | Maximum collection delay measured from the first request in a batch. |
 | `service.batching.max_operations` | positive integer | No | `service.request.max_operations` | Integer from `1` through `service.request.max_operations` | Operation target for one automatically formed batch. |
-| `service.batching.max_bytes` | positive integer | No | `16777216` | Integer greater than `0` | Encoded-byte target for one automatically formed batch; one larger valid RPC still runs alone. |
+| `service.batching.max_bytes` | byte size | No | `16MiB` | Size greater than `0B` | Encoded-byte target for one automatically formed batch; one larger valid RPC still runs alone. |
 | `service.batching.queue.max_operations` | positive integer | No | max(`10000`, `service.request.max_operations`) | Integer at least `service.request.max_operations` and `service.batching.max_operations` | Maximum operations waiting in each store and method queue. |
-| `service.batching.queue.max_bytes` | positive integer | No | max(`134217728`, `grpc.max_receive_message_bytes`) | Integer at least `grpc.max_receive_message_bytes` and `service.batching.max_bytes` | Maximum encoded request bytes waiting in each store and method queue. |
+| `service.batching.queue.max_bytes` | byte size | No | max(`128MiB`, `grpc.max_receive_message_bytes`) | Size at least `grpc.max_receive_message_bytes` and `service.batching.max_bytes` | Maximum encoded request bytes waiting in each store and method queue. |
 | `service.merge.lua.timeout` | duration string | No | `100ms` | Positive Go duration within the bounds below | Maximum wall-clock duration of one Lua execution. |
-| `service.merge.lua.max_source_bytes` | positive integer | No | `65536` | Integer greater than `0` | Maximum Lua source size per merge operation. |
-| `service.merge.lua.max_result_bytes` | positive integer | No | `16777216` | Integer greater than `0` | Maximum input/current document and encoded result bytes; expanded output is also bounded before conversion. |
+| `service.merge.lua.max_source_bytes` | byte size | No | `64KiB` | Size greater than `0B` | Maximum Lua source size per merge operation. |
+| `service.merge.lua.max_result_bytes` | byte size | No | `16MiB` | Size greater than `0B` | Maximum input/current document and encoded result bytes; expanded output is also bounded before conversion. |
 | `service.merge.lua.max_cached_programs` | positive integer | No | `256` | Integer greater than `0` | Maximum compiled Lua programs retained in the process-local LRU cache. |
 | `service.merge.lua.max_instructions` | positive integer | No | `1000000` | Integer greater than `0` | Maximum VM instruction checkpoints per execution. |
 | `storages[].kafka` | object | No | absent | A store-specific Kafka configuration | Holds the asynchronous delivery and Topic-management policy. Kafka remains disabled unless `enabled` is `true`. |
@@ -253,9 +268,9 @@ counts multiply capacity. Configure the same Kafka policy on servers and workers
 | --- | --- | --- |
 | `service.request.timeout` | `30s` | Unary request timeout including batching queue wait and each Scan page; at most 300 seconds. A shorter caller deadline wins. |
 | `service.execution.max_requests` | `128` | Storage execution request count, at most 10000, including cross-store calls. Asynchronous publishing uses its own pool. |
-| `service.execution.max_bytes` | `268435456` | Admitted request/output reservation bytes, at most 16 GiB. Reads reserve snapshot and response budgets; Merge and folded conditional Put chains reserve current and output budgets; Lua source expansion and bounded per-operation failure responses are charged. This is not an RSS or VM heap limit. |
+| `service.execution.max_bytes` | `256MiB` | Admitted request/output reservation bytes, at most 16 GiB. Reads reserve snapshot and response budgets; Merge and folded conditional Put chains reserve current and output budgets; Lua source expansion and bounded per-operation failure responses are charged. This is not an RSS or VM heap limit. |
 | `service.publish.max_requests` | `32` | Concurrent asynchronous Write/Delete requests, at most 10000, independent of storage execution. |
-| `service.publish.max_bytes` | `268435456` | Asynchronous request, expanded-source, and bounded failure-response reservations, at most 16 GiB, additional to `service.execution.max_bytes`. Kafka producer buffers are additional. |
+| `service.publish.max_bytes` | `256MiB` | Asynchronous request, expanded-source, and bounded failure-response reservations, at most 16 GiB, additional to `service.execution.max_bytes`. Kafka producer buffers are additional. |
 | `service.execution.max_requests_per_store` | `32` | Concurrent storage execution requests per store, at most 10000. |
 | `service.publish.max_requests_per_store` | `32` | Concurrent Kafka publishing requests per store, at most 10000, independent of execution. |
 | `storages[].limits.max_execution_bytes` | omitted | Optional execution byte ceiling for this store, positive and no greater than `service.execution.max_bytes`. Omitted stores share the global limit. Does not limit publishing. |
@@ -263,11 +278,11 @@ counts multiply capacity. Configure the same Kafka policy on servers and workers
 | `service.execution.scan.max_bytes` | half `service.execution.max_bytes`, at least 1 | Scan-only byte sublimit; global byte admission still applies. BSON Scan reserves 48 MiB driver wire space plus page copies. |
 | `service.execution.scan.max_requests_per_store` | half `service.execution.max_requests_per_store`, at least 1 | Per-store Scan sublimit, no greater than the total per-store request limit. |
 | `service.execution.scan.admission_wait` | min(`2s`, `service.request.timeout`) | Maximum Scan admission wait, included in the page deadline. Cannot exceed `service.request.timeout`. |
-| `service.request.max_read_bytes` | min(`33554432`, half gRPC send limit) | Per-original-RPC Read or returned-Write documents, conditional write snapshot/output per attempt, and native Execute response. Scan pages use the smaller of this limit and 4 MiB. Cannot exceed half the gRPC send limit. |
+| `service.request.max_read_bytes` | min(`32MiB`, half gRPC send limit) | Per-original-RPC Read or returned-Write documents, conditional write snapshot/output per attempt, and native Execute response. Scan pages use the smaller of this limit and 4 MiB. Cannot exceed half the gRPC send limit. |
 | `storages[].kafka.dead_letter.retention` | `720h` | Independent DLQ retention, 30 days; at least `1ms` and bounded by Go duration range. |
 | `storages[].kafka.topic.min_insync_replicas` | min(`2`, replication factor) | Minimum ISR, at most replication factor. Publishers require all ISR acknowledgements. |
-| `storages[].kafka.topic.max_record_bytes` | `921600` | Encoded mutation envelope plus key, including expanded Lua source; at most 64 MiB and no larger than the producer buffer. Topic/producer batch limits include an extra 16 KiB for framing and DLQ headers. Broker/replica fetch limits must also support increases. |
-| `storages[].kafka.producer.max_buffered_bytes` | `67108864` | Producer buffer capacity, at most 1 GiB. Full buffers return retryable resource exhaustion. |
+| `storages[].kafka.topic.max_record_bytes` | `900KiB` | Encoded mutation envelope plus key, including expanded Lua source; at most 64 MiB and no larger than the producer buffer. Topic/producer batch limits include an extra 16 KiB for framing and DLQ headers. Broker/replica fetch limits must also support increases. |
+| `storages[].kafka.producer.max_buffered_bytes` | `64MiB` | Producer buffer capacity, at most 1 GiB. Full buffers return retryable resource exhaustion. |
 | `storages[].kafka.consumer.processing_timeout` | `20s` | Backend work per fetched batch, at most 20 seconds, followed by at most 5 seconds of offset/DLQ settlement. |
 
 Native Execute and Scan share process/store request admission and reserve input
@@ -306,14 +321,14 @@ prevents that store from consuming the last 256 MiB alone:
 ```yaml
 service:
   execution:
-    max_bytes: 1073741824
+    max_bytes: 1GiB
 storages:
   - name: pse-search
     driver: opensearch
     search:
       endpoints: [http://opensearch:9200]
     limits:
-      max_execution_bytes: 805306368
+      max_execution_bytes: 768MiB
 ```
 
 The limit belongs to the storage entry. This example is a sizing starting

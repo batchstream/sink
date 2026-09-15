@@ -10,7 +10,10 @@ encoding, topic names and consumer group identities do not change.
    command configuration using the tables below.
 2. Convert numeric time values to duration strings, keeping their units:
    `30` seconds becomes `30s`, `2` milliseconds becomes `2ms`, and `72` hours
-   becomes `72h`. Keep counts and byte limits as integers.
+   becomes `72h`. Convert byte limits to readable sizes without changing their
+   value: `65536` becomes `64KiB`, `16777216` becomes `16MiB`, and `268435456`
+   becomes `256MiB`. Counts remain integers; raw integer bytes also remain valid.
+   Use `MiB` for powers of 1024 and `MB` for powers of 1000.
 3. Preserve all explicit resource limits, topic names, group IDs, partition
    counts, replication settings, retention and store names. Copy the former
    `service.max_store_requests` into **both**

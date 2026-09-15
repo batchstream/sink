@@ -31,24 +31,24 @@ func addSinkV1Functions(luaVM *vm.VM, bridge *luaJSONBridge, observedAt time.Tim
 		observedAtText = observedAt.UTC().Format(time.RFC3339Nano)
 	}
 	library := sinkV1Library{bridge: bridge, observedAt: observedAtText}
-	arrayLibrary := vm.NewEmptyTable()
+	arrayLibrary := vm.NewTableWithSize(0, 4)
 	arrayLibrary.SetString("append_all", vm.NewNativeFunc(library.arrayAppendAll))
 	arrayLibrary.SetString("deduplicate", vm.NewNativeFunc(library.arrayDeduplicate))
 	arrayLibrary.SetString("keep_tail", vm.NewNativeFunc(library.arrayKeepTail))
 	arrayLibrary.SetString("union_strings", vm.NewNativeFunc(library.arrayUnionStrings))
 
-	objectLibrary := vm.NewEmptyTable()
+	objectLibrary := vm.NewTableWithSize(0, 2)
 	objectLibrary.SetString("replace_nonempty_string", vm.NewNativeFunc(library.objectReplaceNonemptyString))
 	objectLibrary.SetString("replace_nonempty_array", vm.NewNativeFunc(library.objectReplaceNonemptyArray))
-	timeLibrary := vm.NewEmptyTable()
+	timeLibrary := vm.NewTableWithSize(0, 1)
 	timeLibrary.SetString("now", vm.NewNativeFunc(library.timeNow))
 
-	v1Library := vm.NewEmptyTable()
+	v1Library := vm.NewTableWithSize(0, 3)
 	v1Library.SetString("array", vm.NewTable(arrayLibrary))
 	v1Library.SetString("object", vm.NewTable(objectLibrary))
 	v1Library.SetString("time", vm.NewTable(timeLibrary))
 
-	sinkLibrary := vm.NewEmptyTable()
+	sinkLibrary := vm.NewTableWithSize(0, 1)
 	sinkLibrary.SetString("v1", vm.NewTable(v1Library))
 	luaVM.SetGlobal("sink", vm.NewTable(sinkLibrary))
 }

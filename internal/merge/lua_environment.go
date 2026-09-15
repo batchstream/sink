@@ -9,7 +9,8 @@ import (
 
 // Capture only the restricted standard library, before installing any
 // request-bound JSON or sink functions. Executions share immutable native
-// functions; every global/library/metatable remains a fresh mutable table.
+// functions, including wrappers bound only to this engine's byte limit;
+// every global/library/metatable remains a fresh mutable table.
 type luaEnvironment struct {
 	globals    *luaEnvironmentTable
 	stringMeta *luaEnvironmentTable
@@ -26,11 +27,12 @@ type luaEnvironmentEntry struct {
 	table *luaEnvironmentTable
 }
 
-func newLuaEnvironment() *luaEnvironment {
+func newLuaEnvironment(maximum int) *luaEnvironment {
 	luaVM := vm.New()
 	defer luaVM.Close(context.Background())
 	stdlib.Open(luaVM)
 	restrictLuaEnvironment(luaVM)
+	boundLuaAllocations(luaVM, maximum)
 	captured := make(map[vm.LuaTable]*luaEnvironmentTable)
 	environment := &luaEnvironment{
 		globals:    captureLuaEnvironment(luaVM.Globals(), captured),
@@ -62,14 +64,19 @@ func captureLuaEnvironment(source vm.LuaTable, captured map[vm.LuaTable]*luaEnvi
 }
 
 func (e *luaEnvironment) install(luaVM *vm.VM) {
+	// Keep the VM's global table identity, but reserve keys for the captured
+	// globals and the request-bound json/sink libraries before populating it.
+	globals := luaVM.Globals().(*vm.Table)
+	allocated := vm.NewTableWithSize(0, len(e.globals.entries)+2)
+	*globals = *allocated
 	cloned := make(map[*luaEnvironmentTable]vm.LuaTable)
-	cloned[e.globals] = luaVM.Globals()
+	cloned[e.globals] = globals
 	for _, entry := range e.globals.entries {
 		value := entry.value
 		if entry.table != nil {
 			value = vm.NewTable(entry.table.clone(cloned))
 		}
-		_ = luaVM.Globals().Set(entry.key, value)
+		_ = globals.Set(entry.key, value)
 	}
 	luaVM.SetStringMeta(e.stringMeta.clone(cloned))
 }

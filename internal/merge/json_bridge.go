@@ -68,7 +68,7 @@ func newLuaJSONBridge(luaVM *vm.VM) *luaJSONBridge {
 	}
 	bridge.nullTable.SetMetatable(bridge.nullMeta)
 
-	jsonLibrary := vm.NewEmptyTable()
+	jsonLibrary := vm.NewTableWithSize(0, 4)
 	jsonLibrary.SetString("null", vm.NewTable(bridge.nullTable))
 	jsonLibrary.SetString("object", vm.NewNativeFunc(func(state *vm.VM) int {
 		table := bridge.newObject(0)
@@ -106,7 +106,7 @@ func (b *luaJSONBridge) newArray(capacity int) *vm.Table {
 }
 
 func protectedMetatable(label string) *vm.Table {
-	meta := vm.NewEmptyTable()
+	meta := vm.NewTableWithSize(0, 1)
 	meta.SetString(vm.MetaMetatable, vm.NewString(label))
 	return meta
 }

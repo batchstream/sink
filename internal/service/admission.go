@@ -83,6 +83,9 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 			return ctx, nil, err
 		}
 		if queued != nil && waitCtx.Err() != nil {
+			if err := contextError(ctx); err != nil {
+				return ctx, nil, err
+			}
 			return ctx, nil, s.rejectAdmission(request, "wait_timeout")
 		}
 		s.admissionMu.Lock()

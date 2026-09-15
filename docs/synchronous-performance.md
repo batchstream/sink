@@ -235,7 +235,7 @@ No suite or SDK source was modified.
 ## Read batching
 
 Read micro-batches share one bounded snapshot buffer and one output buffer, each
-limited by `service.max_read_bytes`. Admission reserves those two buffers plus
+limited by `service.request.max_read_bytes`. Admission reserves those two buffers plus
 the encoded request instead of reserving two buffers for every original RPC.
 Small records from independent callers can therefore share one backend read.
 For 128 collected single-record reads, the default 32 MiB read limit and 256 MiB

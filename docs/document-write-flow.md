@@ -265,7 +265,7 @@ another writer has not changed the version since it was read. MongoDB uses
 Sink's internal revision field; search backends use `_seq_no` and
 `_primary_term`. On a definite revision conflict, Sink currently allows
 **3 attempts by default, including the initial attempt**, controlled by
-`service.max_merge_attempts`. Exhaustion produces a retryable `CONFLICT`.
+`service.merge.max_attempts`. Exhaustion produces a retryable `CONFLICT`.
 A network timeout or lost acknowledgement is not a definite revision
 conflict and does not establish that the previous attempt had no effect.
 
@@ -389,7 +389,7 @@ Use these entry points to keep this guide aligned with future changes:
 | Protocol, addresses, completion modes, and result statuses | [sink.proto](../proto/sink/sink.proto) |
 | SDK parameter binding, encoding, and error aggregation | [sink-go dataset.go at the reviewed revision](https://github.com/liran/sink-go/blob/a658b054cea20c71f753ce21a5754885fc254318/dataset.go) |
 | SDK batch splitting and Write RPCs | [sink-go client.go at the reviewed revision](https://github.com/liran/sink-go/blob/a658b054cea20c71f753ce21a5754885fc254318/client.go) |
-| Server and worker component wiring | `newApplication` in [main.go](../cmd/sink/main.go) |
+| Server and worker component wiring | `New` in [app.go](../internal/app/app.go) |
 | Synchronous batching and completion-mode separation | [batching_server.go](../internal/service/batching_server.go), [mutation_batches.go](../internal/service/mutation_batches.go) |
 | Request dispatch, admission control, and Put/Merge execution | `Write` in [server.go](../internal/service/server.go), [admission.go](../internal/service/admission.go), [write.go](../internal/service/write.go) |
 | Write folding for one document | [write_group.go](../internal/service/write_group.go), [folding contract](merge-folding.md) |

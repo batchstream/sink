@@ -7,6 +7,37 @@ quickstart. Deployment settings and their validation rules live in the
 
 ![Sink routes each record operation through a synchronous or Kafka-backed path to one matching store](assets/sink-overview.svg)
 
+## Code ownership
+
+```mermaid
+flowchart TD
+    CLI[cmd/sink: command dispatch and signals] --> Config[internal/config: YAML, defaults, validation]
+    CLI --> App[internal/app: resources and lifecycle]
+    App --> Service[internal/service: RPC execution and admission]
+    App --> Storage[internal/storage: backend adapters and routing]
+    App --> Kafka[internal/queue/kafka: durable delivery]
+    App --> Merge[internal/merge: Lua execution]
+    App --> Metrics[internal/metrics: instrumentation]
+```
+
+Configuration decoding opens no dependencies. `config.Decode` returns a fully
+resolved value or an error; its private file types retain omission only while
+resolving defaults. Service, storage and Kafka sections validate their own
+settings. Cross-store Kafka resource identity is checked after all stores are
+resolved.
+
+`internal/app` owns dependency construction and cleanup. Its service, Kafka,
+storage, transport, health and lifecycle files assemble the concrete components;
+failed construction closes resources already opened. `cmd/sink` only dispatches
+commands and establishes the signal context. Lua tests and `sink config check`
+use the configuration package directly without constructing the application.
+
+The configuration package does not import service or backend packages.
+Runtime option translation happens at application assembly. Within
+`internal/service`, `options.go` owns constructor defaults and admission setup;
+RPC handlers stay in the request execution files.
+
+
 ## Request path
 
 Applications send BSON or JSON record operations over gRPC. Each operation carries a

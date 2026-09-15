@@ -95,7 +95,7 @@ explicit Reads. Releases containing this change must describe these semantics.
 
 A definite revision conflict restarts the whole snapshot-based chain, including
 previous conditional/Lua failures. Lua observation times remain fixed. The
-existing service.max_merge_attempts limit also bounds folded conditional Put
+existing service.merge.max_attempts limit also bounds folded conditional Put
 chains. Exhaustion returns a retryable CONFLICT for every operation in that
 unresolved chain. An ambiguous transport failure, lost acknowledgement, or
 cancellation is not replayed internally. Existing business idempotence

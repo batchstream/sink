@@ -26,6 +26,9 @@
 | Guide | What you will learn |
 | --- | --- |
 | [Configuration reference](configuration.md) | Configure named stores, resource limits, Kafka, and process modes |
+| [Configuration migration](configuration-migration.md) | Move existing YAML to grouped settings and duration strings |
+| [Metrics and health](observability.md) | Inspect metrics, label budgets, and dependency health |
+| [Batching behavior](batching.md) | Understand collection queues, ordering, and capacity |
 | [Reliability and recovery](reliability.md) | Plan idempotence, monitor dependencies, handle failures, and replay dead letters |
 | [Production sizing](production-sizing.md) | Use measured workload limits to size a replicated deployment |
 | [Synchronous performance](synchronous-performance.md) | Reproduce benchmarks and interpret their scope |

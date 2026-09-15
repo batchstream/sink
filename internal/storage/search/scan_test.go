@@ -96,3 +96,48 @@ func TestScanByteLimitedPageResumesWithoutSkipping(t *testing.T) {
 		t.Fatalf("last=%+v err=%v", page, err)
 	}
 }
+
+func TestScanProjectionOverridesNativeSourceSelection(t *testing.T) {
+	cases := []struct {
+		name       string
+		projection *storage.Projection
+		want       string
+	}{
+		{name: "native", want: "false"},
+		{name: "all", projection: &storage.Projection{}, want: "true"},
+		{name: "include", projection: &storage.Projection{Fields: []string{"nested.name"}}, want: `{"includes":["nested.name"]}`},
+		{name: "exclude", projection: &storage.Projection{Fields: []string{"padding"}, Exclude: true}, want: `{"excludes":["padding"]}`},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]json.RawMessage
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+				}
+				if string(body["_source"]) != test.want {
+					t.Errorf("source=%s want=%s", body["_source"], test.want)
+				}
+				for _, key := range []string{"_source", "_source_includes", "_source_excludes"} {
+					if r.URL.Query().Has(key) != (test.projection == nil) {
+						t.Errorf("incorrect source parameter precedence: %s", r.URL.RawQuery)
+					}
+				}
+				_, _ = w.Write([]byte(`{"timed_out":false,"_shards":{"total":1,"successful":1,"failed":0},"hits":{"hits":[]}}`))
+			})
+			backend := httptest.NewServer(handler)
+			defer backend.Close()
+			opts := Options{Driver: DriverOpenSearch, Store: "search", Endpoints: []string{backend.URL}}
+			store, err := New(opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			command := storage.NativeRequest{Store: "search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON,
+				Payload: []byte(`{"sort":["uid"],"_source":false}`), Query: "_source=false&_source_includes=old&_source_excludes=new", MaxBytes: 4096}
+			request := storage.ScanRequest{Request: command, BatchSize: 2, Projection: test.projection}
+			if _, err := store.Scan(t.Context(), request); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

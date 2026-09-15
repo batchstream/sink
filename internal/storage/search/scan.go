@@ -71,13 +71,19 @@ func (s *Store) Scan(ctx context.Context, req storage.ScanRequest) (storage.Scan
 	if err != nil {
 		return empty, err
 	}
-	encoded, err := json.Marshal(req.Request)
+	sizingRequest := req
+	sizingRequest.Cursor = nil
+	sizingRequest.BatchSize = 0
+	encoded, err := json.Marshal(sizingRequest)
 	if err != nil {
 		return empty, storage.InvalidArgumentError(err)
 	}
 	sizingKey := sha256.Sum256(encoded)
 	opts, body, err := pageOptions(req.Request)
 	if err != nil {
+		return empty, storage.InvalidArgumentError(err)
+	}
+	if err := applyProjection(&opts, body, req.Projection); err != nil {
 		return empty, storage.InvalidArgumentError(err)
 	}
 	if opts.query.Has("sort") {

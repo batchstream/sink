@@ -276,21 +276,33 @@ byte limits as Execute.
 ## Scan
 
 Scan is one unary RPC per page. `ScanRequest` contains the shared `Command`,
-`batch_size` (default 100, maximum 1000), and an opaque bytes `cursor`.
+`batch_size` (default 100, maximum 1000), an opaque bytes `cursor`, and optional
+`projection` using the same `fields` and `exclude` controls as Query.
 `ScanResponse` contains native `documents` and `next_cursor`. A byte-limited
 page may contain fewer than `batch_size` documents. Only an empty `next_cursor`
 marks the end observed by this request; a short page alone does not.
 
+Projection is pushed down to the backend before documents are transferred to
+Sink. An absent projection preserves native find `projection` or search `_source`
+selection. A present projection replaces it; empty `fields` selects all fields.
+Search paths are relative to `_source`; hit metadata and sort values remain.
+MongoDB follows native identity-field rules and retains the original `_id`
+internally when excluded from returned documents. Projection reduces payload
+memory and transfer size; it does not reduce the fixed BSON driver allowance
+reserved for Scan admission.
+
 Start with an empty cursor. For subsequent calls, resend the same Command and
-pass the previous `next_cursor` as `cursor`. Batch size can change between calls.
+Projection, and pass the previous `next_cursor` as `cursor`. Batch size can change between calls.
 After successfully processing a page, persist its cursor; on completion, persist
 an explicit completed state rather than using an empty cursor to restart later.
 
 Cursors carry the seek position and a fingerprint binding it to the complete
-Command, including the store, namespace, body, parameters and caller headers.
+Command, including the store, namespace, body, parameters and caller headers,
+and the explicit Projection.
 They are independent of any Sink process or database session, so a request can
 continue on another Pod. Treat them as opaque and preserve them byte-for-byte;
-changing the Command or using a corrupt cursor returns `INVALID_ARGUMENT`.
+changing the Command or Projection, or using a corrupt cursor, returns
+`INVALID_ARGUMENT`. Existing cursors without explicit projection remain valid.
 Cursor size is limited to 64 KiB. They are continuation markers, not credentials;
 backend authentication and request validation apply on every call. Checksums
 protect against accidental corruption, not caller forgery.

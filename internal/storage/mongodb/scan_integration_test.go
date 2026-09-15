@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -215,5 +216,63 @@ func TestMongoScanSeekUsesIndexAndClosesByteLimitedPage(t *testing.T) {
 	page, err = backend.Scan(t.Context(), request)
 	if err != nil || len(page.Documents) != 1 || bson.Raw(page.Documents[0].Payload).Lookup("_id").Int32() != 1 {
 		t.Fatalf("byte-limited resume=%+v err=%v", page, err)
+	}
+}
+
+func TestMongoScanProjectionAndContinuation(t *testing.T) {
+	fixture := newIntegrationFixture(t)
+	for number := range 3 {
+		details := bson.D{{Key: "keep", Value: number}, {Key: "drop", Value: "unused"}}
+		document := bson.D{{Key: "_id", Value: number}, {Key: "number", Value: number}, {Key: "nested", Value: details}, {Key: "padding", Value: strings.Repeat("x", 32<<10)}}
+		if _, err := fixture.collection.InsertOne(t.Context(), document); err != nil {
+			t.Fatal(err)
+		}
+	}
+	native := bson.D{{Key: "number", Value: 1}}
+	command := bson.D{{Key: "find", Value: "documents"}, {Key: "projection", Value: native}}
+	cases := []struct {
+		name       string
+		projection *storage.Projection
+		maximum    int
+	}{
+		{name: "native", maximum: 4096},
+		{name: "all", projection: &storage.Projection{}, maximum: 256 << 10},
+		{name: "include nested", projection: &storage.Projection{Fields: []string{"nested.keep"}}, maximum: 4096},
+		{name: "exclude id and padding", projection: &storage.Projection{Fields: []string{"_id", "padding"}, Exclude: true}, maximum: 4096},
+		{name: "exclude only id", projection: &storage.Projection{Fields: []string{"_id"}, Exclude: true}, maximum: 256 << 10},
+		{name: "id only", projection: &storage.Projection{Fields: []string{"_id"}}, maximum: 4096},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			request := storage.ScanRequest{Request: mongoNativeRequest(t, fixture.database, command), BatchSize: 1, Projection: test.projection}
+			request.Request.MaxBytes = test.maximum
+			query := storage.QueryRequest{Request: request.Request, PageSize: 10, Projection: test.projection}
+			baseline, err := fixture.store.Query(t.Context(), query)
+			if err != nil || len(baseline.Documents) != 3 {
+				t.Fatalf("baseline=%+v err=%v", baseline, err)
+			}
+			for number := range 3 {
+				page, err := fixture.store.Scan(t.Context(), request)
+				if err != nil || len(page.Documents) != 1 || (len(page.NextCursor) != 0) != (number < 2) {
+					t.Fatalf("page %d: %+v err=%v", number, page, err)
+				}
+				var got, want bson.M
+				if err := bson.Unmarshal(page.Documents[0].Payload, &got); err != nil {
+					t.Fatal(err)
+				}
+				if err := bson.Unmarshal(baseline.Documents[number].Payload, &want); err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("projection differs from Query on page %d", number)
+				}
+				request.Cursor = page.NextCursor
+			}
+		})
+	}
+	request := storage.ScanRequest{Request: mongoNativeRequest(t, fixture.database, command), BatchSize: 1}
+	request.Projection = &storage.Projection{Fields: []string{"_id.part"}}
+	if _, err := fixture.store.Scan(t.Context(), request); err == nil {
+		t.Fatal("partial identity projection accepted")
 	}
 }

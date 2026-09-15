@@ -144,22 +144,8 @@ func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.Qu
 		}
 		opts.query.Del("sort")
 	}
-	if req.Projection != nil {
-		body["_source"] = json.RawMessage("true")
-		if len(req.Projection.Fields) > 0 {
-			mode := "includes"
-			if req.Projection.Exclude {
-				mode = "excludes"
-			}
-			projection := map[string][]string{mode: req.Projection.Fields}
-			body["_source"], err = json.Marshal(projection)
-			if err != nil {
-				return empty, storage.InvalidArgumentError(err)
-			}
-		}
-		for _, name := range []string{"_source", "_source_includes", "_source_excludes"} {
-			opts.query.Del(name)
-		}
+	if err := applyProjection(&opts, body, req.Projection); err != nil {
+		return empty, storage.InvalidArgumentError(err)
 	}
 	opts.payload, err = json.Marshal(body)
 	if err != nil {
@@ -252,4 +238,29 @@ func (s *Store) Count(ctx context.Context, req storage.CountRequest) (storage.Co
 	}
 	result := storage.CountResponse{Count: uint64(*total.Value)}
 	return result, nil
+}
+
+// applyProjection shares source selection and query-parameter precedence between
+// Query and Scan. Hit metadata, including continuation sort values, is preserved.
+func applyProjection(opts *requestOptions, body map[string]json.RawMessage, p *storage.Projection) error {
+	if p == nil {
+		return nil
+	}
+	body["_source"] = json.RawMessage("true")
+	if len(p.Fields) > 0 {
+		mode := "includes"
+		if p.Exclude {
+			mode = "excludes"
+		}
+		projection := map[string][]string{mode: p.Fields}
+		encoded, err := json.Marshal(projection)
+		if err != nil {
+			return err
+		}
+		body["_source"] = encoded
+	}
+	for _, name := range []string{"_source", "_source_includes", "_source_excludes"} {
+		opts.query.Del(name)
+	}
+	return nil
 }

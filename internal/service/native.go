@@ -150,6 +150,12 @@ func (s *Server) Scan(ctx context.Context, req *sink.ScanRequest) (*sink.ScanRes
 		batchSize = 100
 	}
 	scan := storage.ScanRequest{Request: request, BatchSize: batchSize, Cursor: req.GetCursor()}
+	if projection := req.GetProjection(); projection != nil {
+		scan.Projection = &storage.Projection{Fields: projection.GetFields(), Exclude: projection.GetExclude()}
+	}
+	if err := scan.Projection.Validate(); err != nil {
+		return nil, nativeStatus(err)
+	}
 	if batchSize > 1000 || len(scan.Cursor) > storage.MaxScanCursorBytes {
 		return nil, status.Error(codes.InvalidArgument, "scan batch or cursor exceeds its limit")
 	}

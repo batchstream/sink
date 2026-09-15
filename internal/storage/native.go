@@ -42,9 +42,10 @@ type NativeResponse struct {
 }
 
 type ScanRequest struct {
-	Request   NativeRequest
-	BatchSize int
-	Cursor    []byte
+	Request    NativeRequest
+	BatchSize  int
+	Cursor     []byte
+	Projection *Projection
 }
 
 type ScanResponse struct {
@@ -90,14 +91,19 @@ func (r QueryRequest) Validate() error {
 		}
 		seen[field.Field] = true
 	}
-	if r.Projection != nil {
-		seen = make(map[string]bool)
-		for _, field := range r.Projection.Fields {
-			if strings.TrimSpace(field) == "" || !utf8.ValidString(field) || seen[field] {
-				return InvalidArgumentError(errors.New("projection fields must be nonempty, valid UTF-8 and unique"))
-			}
-			seen[field] = true
+	return r.Projection.Validate()
+}
+
+func (p *Projection) Validate() error {
+	if p == nil {
+		return nil
+	}
+	seen := make(map[string]bool)
+	for _, field := range p.Fields {
+		if strings.TrimSpace(field) == "" || !utf8.ValidString(field) || seen[field] {
+			return InvalidArgumentError(errors.New("projection fields must be nonempty, valid UTF-8 and unique"))
 		}
+		seen[field] = true
 	}
 	return nil
 }

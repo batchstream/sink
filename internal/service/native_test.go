@@ -26,6 +26,7 @@ type nativeFixtureStorage struct {
 	silent          bool
 	started         chan struct{}
 	queries         chan storage.QueryRequest
+	scans           chan storage.ScanRequest
 	counts          chan storage.CountRequest
 	executeErr      error
 	executeResponse *storage.NativeResponse
@@ -56,8 +57,11 @@ func (s *nativeFixtureStorage) Execute(_ context.Context, _ storage.NativeReques
 	return response, s.executeErr
 }
 
-func (s *nativeFixtureStorage) Scan(ctx context.Context, _ storage.ScanRequest) (storage.ScanResponse, error) {
+func (s *nativeFixtureStorage) Scan(ctx context.Context, req storage.ScanRequest) (storage.ScanResponse, error) {
 	var response storage.ScanResponse
+	if s.scans != nil {
+		s.scans <- req
+	}
 	if s.silent {
 		close(s.started)
 		defer close(s.stopped)

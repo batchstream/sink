@@ -38,7 +38,14 @@ func (r ScanRequest) Resume() (ScanCursor, error) {
 	if r.BatchSize < 1 || r.BatchSize > 1000 {
 		return cursor, InvalidArgumentError(errors.New("scan batch size must be between 1 and 1000"))
 	}
-	command := r.Request
+	if err := r.Projection.Validate(); err != nil {
+		return cursor, err
+	}
+	// Omit absent projection to preserve the command hash of existing cursors.
+	command := struct {
+		NativeRequest
+		Projection *Projection `json:",omitempty"`
+	}{NativeRequest: r.Request, Projection: r.Projection}
 	command.MaxBytes = 0
 	encoded, err := json.Marshal(command)
 	if err != nil {

@@ -21,6 +21,16 @@ func scanFind(command bson.D, req storage.ScanRequest, position []byte) (bson.D,
 	if !ok || collection == "" {
 		return empty, false, errors.New("Scan requires a collection name")
 	}
+	if req.Projection != nil {
+		projected := make(bson.D, 0, len(command)+1)
+		for _, field := range command {
+			if field.Key != "projection" {
+				projected = append(projected, field)
+			}
+		}
+		field := bson.E{Key: "projection", Value: nativeProjection(req.Projection)}
+		command = append(projected, field)
+	}
 	result := bson.D{command[0]}
 	filter := bson.D{}
 	direction := int32(1)

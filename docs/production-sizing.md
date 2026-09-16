@@ -52,6 +52,9 @@ KEDA or another external scaler consumes these metrics. Minimum/maximum replicas
 resource requests, scale-down stabilization and Worker scale-to-zero belong to
 deployment configuration. Keep at least one production Engine replica per Store.
 
+Validate the [backend image and kernel combination](backend-environment.md) before
+using capacity measurements, including MongoDB allocator settings.
+
 ## Qualification before rollout
 
 1. Exercise the unchanged public SDK through Gateway, including asynchronous

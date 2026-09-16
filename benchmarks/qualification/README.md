@@ -48,8 +48,8 @@ revisions separately: `revision.txt` identifies the runner checkout. Use multipl
 runs; allocator improvements do not establish end-to-end capacity gains, and
 closed-loop saturation does not guarantee an open-loop SLO.
 
-Set `SINK_PERF_ENGINE_CONFIG` or `SINK_PERF_GATEWAY_CONFIG` to absolute paths to compare configuration
-choices with the same images and container limits. Retain that configuration
+Set `SINK_PERF_ENGINE_CONFIG` or `SINK_PERF_GATEWAY_CONFIG` to absolute paths to
+compare configuration choices with the same images and container limits. Retain that configuration
 with the results; a shorter batching wait can reduce latency while increasing
 backend calls, so measure both small RPCs and explicit batches before tuning.
 
@@ -61,3 +61,9 @@ per-RPC response they can serve. Validate real response sizes before changing it
 
 Run separate [DNS/drain qualification](../../docs/rolling-upgrades.md) and the
 public production suite's Kafka/Worker faults. Performance runs inject no faults.
+
+MongoDB test containers set `GLIBC_TUNABLES=glibc.pthread.rseq=1`, matching the
+quickstart and storage integration runner. This disables the affected TCMalloc
+per-CPU path on kernels with the rseq compatibility problem. Keep this setting
+identical for baseline and candidate runs; allocator configuration affects
+performance. See the [backend environment requirements](../../docs/backend-environment.md).

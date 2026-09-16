@@ -132,11 +132,9 @@ business operations must tolerate replay. Keep one ordered asynchronous path
 for order-sensitive records. Concurrent sync writes, multiple producers, and
 late DLQ replay need application-level version/order checks.
 
-Search Kafka keys follow the physical store/dataset/key identity and intentionally
-exclude logical namespace. When upgrading from a deployment that included search
-namespace in Kafka keys, stop publishers, drain the old topic, and then deploy the
-new publishers and workers together; mixed key schemes can route one record to
-different partitions.
+Kafka keys are the complete canonical record URI for every Store adapter. Deploy
+this format in new topics with matching publishers and Workers; old mutation
+messages are not supported by the new cluster. See [record addresses](record-addresses.md).
 
 After processing and offset settlement stop, worker group departure uses
 `shutdown_timeout`. If Kafka does not acknowledge departure within that
@@ -176,8 +174,7 @@ sink dlq replay --config /etc/sink/config.yaml --store primary \
   --partition 0 --offset 12 --count 3 > dlq-replay.jsonl
 ```
 
-Replay uses the configured store's normal publisher routing: search keys exclude
-namespace, while MongoDB keys include it. This keeps replayed and newly accepted
+Replay uses the complete canonical record URI as its Kafka key for every Store. This keeps replayed and newly accepted
 operations for the same record on the same partition when its partition count
 is unchanged. Replay does not recover an operation's original position in time.
 Replay reports `accepted` or `failed_or_unknown` for each selected position and
@@ -265,7 +262,7 @@ Readiness failure during an outage should not trigger liveness restart loops.
 
 Protect gRPC and metrics with an authenticated TLS ingress/service mesh and
 network policy. Restrict who can submit Lua and which storage credentials Sink
-uses. The record's `store`, namespace and dataset are routing fields, not
+uses. The record URI is a routing address, not
 authorization checks. Validate these deployment controls before exposing Sink.
 
 ## Monitoring and acceptance

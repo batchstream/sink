@@ -12,6 +12,7 @@ import (
 
 	"github.com/liran/sink/internal/storage"
 	"github.com/liran/sink/internal/storage/mongodb"
+	"github.com/liran/sink/internal/testuri"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -309,12 +310,7 @@ func TestMongoDBConcurrentUpsertsDoNotSurfaceDuplicateKey(t *testing.T) {
 }
 
 func (f *integrationFixture) address(key string) storage.Address {
-	address := storage.Address{
-		Store:     "primary",
-		Namespace: f.database,
-		Dataset:   "documents",
-		Key:       storage.Key{Type: "string", Data: []byte(key)},
-	}
+	address := testuri.Address("primary", []string{f.database, "documents"}, storage.Key{Type: "string", Data: []byte(key)})
 	return address
 }
 

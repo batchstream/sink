@@ -1,6 +1,8 @@
 package service
 
 import (
+	"github.com/liran/sink/internal/testuri"
+
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/liran/sink/internal/protocol"
 
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/storage"
@@ -76,7 +80,7 @@ func readCapacityCall(ctx context.Context, keys ...string) *batchCall[*sink.Read
 
 func seedReadCapacity(t testing.TB, backend *memory.Store, key string, size int) {
 	t.Helper()
-	address, err := convertAddress(completionAddress(key))
+	address, err := protocol.ParseAddress(completionAddress(key))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,4 +283,8 @@ func TestReadBatchCancellationKeepsOtherCallerAlive(t *testing.T) {
 	if err := awaitCompletion(t, healthy); err != nil {
 		t.Fatalf("healthy caller canceled: %v", err)
 	}
+}
+
+func (s *readCapacityStorage) BatchKey(address storage.Address) (string, error) {
+	return testuri.BatchKey(address)
 }

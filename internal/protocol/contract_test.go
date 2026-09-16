@@ -5,6 +5,9 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -28,39 +31,21 @@ func TestSinkServiceContract(t *testing.T) {
 	}
 }
 
-func TestMergeMissingModeFieldRemainsReserved(t *testing.T) {
-	message := sink.File_sink_sink_proto.Messages().ByName("MergeOperation")
-	if message == nil {
-		t.Fatal("MergeOperation descriptor is missing")
+func TestRecordAddressContainsOnlyCanonicalURI(t *testing.T) {
+	message := sink.File_sink_sink_proto.Messages().ByName("RecordAddress")
+	if message == nil || message.Fields().Len() != 1 || message.Fields().Get(0).Name() != "uri" {
+		t.Fatal("RecordAddress must contain only uri")
 	}
-	if field := message.Fields().ByNumber(2); field != nil {
-		t.Fatalf("MergeOperation field 2 was reused by %s", field.FullName())
-	}
-	if !message.ReservedRanges().Has(2) {
-		t.Fatal("MergeOperation field 2 is not reserved")
-	}
-	reservedName := false
-	for index := range message.ReservedNames().Len() {
-		if message.ReservedNames().Get(index) == "missing_document_mode" {
-			reservedName = true
-			break
+	for _, name := range []protoreflect.Name{"RecordKey", "OpaqueValue"} {
+		if sink.File_sink_sink_proto.Messages().ByName(name) != nil {
+			t.Fatalf("obsolete message %s remains", name)
 		}
-	}
-	if !reservedName {
-		t.Fatal("MergeOperation missing_document_mode name is not reserved")
 	}
 }
 
 func TestWriteRequestVTRoundTripPreservesActions(t *testing.T) {
-	key := &sink.RecordKey{
-		Kind: &sink.RecordKey_StringValue{StringValue: "record-1"},
-	}
-	address := &sink.RecordAddress{
-		Store:     "primary",
-		Namespace: "catalog",
-		Dataset:   "products",
-		Key:       key,
-	}
+	key := uri.StringKey("record-1")
+	address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{"catalog", "products"}, key)}
 	document := &sink.Document{
 		Encoding: sink.DocumentEncoding_DOCUMENT_ENCODING_JSON,
 		Payload:  []byte(`{"created_at":"2026-08-29T04:34:56Z","value":1}`),

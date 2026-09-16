@@ -5,7 +5,6 @@ import (
 
 	"github.com/liran/sink/internal/config"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
-	"github.com/liran/sink/internal/queue"
 	queuekafka "github.com/liran/sink/internal/queue/kafka"
 	"github.com/liran/sink/internal/service"
 	"github.com/liran/sink/internal/worker"
@@ -37,9 +36,7 @@ func (app *Application) configureKafka(observed *sinkmetrics.Metrics) error {
 		MaxBufferedBytes: configured.Kafka.Producer.MaxBufferedBytes,
 		Topic:            configured.Kafka.Topic.Name, Metrics: observed,
 	}
-	if configured.Driver == config.DriverElasticsearch || configured.Driver == config.DriverOpenSearch {
-		publisherOptions.MutationKey = queue.MutationKeyWithoutNamespace
-	}
+
 	publisher, err := queuekafka.NewPublisher(publisherOptions)
 	if err != nil {
 		return fmt.Errorf("create Kafka publisher for store %q: %w", configured.Name, err)

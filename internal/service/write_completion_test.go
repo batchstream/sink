@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/storage"
 	"github.com/liran/sink/internal/storage/memory"
@@ -55,7 +57,7 @@ func (s *heldReadStorage) Write(ctx context.Context, req storage.WriteRequest) (
 	var indexes []int
 	s.mu.Lock()
 	for index, operation := range req.Operations {
-		key := string(operation.Address.Key.Data)
+		key := string(testuri.Key(operation.Address).Data)
 		s.writes[key]++
 		if s.conflict && key == "slow" {
 			s.conflict = false
@@ -258,7 +260,7 @@ func TestWriteBatchingIsolatesDatasetRefreshWait(t *testing.T) {
 	mode := sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE
 	slow := completionWriteCall(t.Context(), mode, completionPut("product", 1))
 	fast := completionWriteCall(t.Context(), mode, completionPut("fast", 2))
-	fast.request.Operations[0].Address.Dataset = "another-index"
+	fast.request.Operations[0].Address.Uri = testuri.WithSegment(fast.request.Operations[0].Address.GetUri(), -2, "another-index")
 	done := make(chan error, 1)
 	go func() { _, err := server.Write(t.Context(), slow.request); done <- err }()
 	waitForQueuedCalls(t, server.writes, 1)
@@ -283,4 +285,8 @@ func TestWriteBatchingIsolatesDatasetRefreshWait(t *testing.T) {
 		t.Fatalf("slow dataset returned before visibility: %v", err)
 	default:
 	}
+}
+
+func (s *heldReadStorage) BatchKey(address storage.Address) (string, error) {
+	return testuri.BatchKey(address)
 }

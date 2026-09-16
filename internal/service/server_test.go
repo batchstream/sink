@@ -13,6 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
@@ -455,7 +458,7 @@ func TestEngineRejectsCrossStoreAsyncWriteBeforePublishing(t *testing.T) {
 	server := newTestServer(t, memory.New(), publisher)
 	primary := putWriteOperation("primary-async", "accepted")
 	foreign := putWriteOperation("foreign-async", "rejected")
-	foreign.Address.Store = "other"
+	foreign.Address.Uri = testuri.WithStore(foreign.Address.GetUri(), "other")
 	request := &sink.WriteRequest{
 		CompletionMode: sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED,
 		Operations:     []*sink.WriteOperation{primary, foreign},
@@ -682,15 +685,8 @@ func readRequest(key string) *sink.ReadRequest {
 }
 
 func protoAddress(key string) *sink.RecordAddress {
-	recordKey := &sink.RecordKey{
-		Kind: &sink.RecordKey_StringValue{StringValue: key},
-	}
-	address := &sink.RecordAddress{
-		Store:     "primary",
-		Namespace: "catalog",
-		Dataset:   "products",
-		Key:       recordKey,
-	}
+	recordKey := uri.StringKey(key)
+	address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{"catalog", "products"}, recordKey)}
 	return address
 }
 
@@ -703,15 +699,10 @@ func protoDocument(value string) *sink.Document {
 }
 
 func storageAddress(key string) storage.Address {
-	address := storage.Address{
-		Store:     "primary",
-		Namespace: "catalog",
-		Dataset:   "products",
-		Key: storage.Key{
-			Type: "string",
-			Data: []byte(key),
-		},
-	}
+	address := testuri.Address("primary", []string{"catalog", "products"}, storage.Key{
+		Type: "string",
+		Data: []byte(key),
+	})
 	return address
 }
 
@@ -723,4 +714,19 @@ func storageJSONDocument(value string) storage.Document {
 func storageDocument(value string) storage.Document {
 	document := storage.Document{Encoding: storage.DocumentEncodingJSON, Payload: []byte(value)}
 	return document
+}
+
+func (s *retryTimeStorage) BatchKey(address storage.Address) (string, error) {
+	return testuri.BatchKey(address)
+}
+
+func (s *visibilityStorage) BatchKey(address storage.Address) (string, error) {
+	return testuri.BatchKey(address)
+}
+
+func (s unavailableStorage) BatchKey(address storage.Address) (string, error) {
+	return testuri.BatchKey(address)
+}
+func (s conflictStorage) BatchKey(address storage.Address) (string, error) {
+	return testuri.BatchKey(address)
 }

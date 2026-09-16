@@ -6,6 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/queue"
@@ -24,7 +27,7 @@ func TestEmptySearchKeyIsPermanentWithoutBackendAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	key := storage.Key{Type: "string"}
-	address := storage.Address{Store: "search", Namespace: "test", Dataset: "documents", Key: key}
+	address := testuri.Address("search", []string{"documents"}, key)
 	read := storage.ReadRequest{Operations: []storage.ReadOperation{{Address: address}}}
 	readResult, err := store.Read(t.Context(), read)
 	if err != nil {
@@ -55,9 +58,9 @@ func TestEmptySearchKeyIsPermanentWithoutBackendAccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	kind := &sink.RecordKey_StringValue{StringValue: ""}
-	wireKey := &sink.RecordKey{Kind: kind}
-	wireAddress := &sink.RecordAddress{Store: "search", Namespace: "test", Dataset: "documents", Key: wireKey}
+	kind := uri.StringKey("")
+	wireKey := kind
+	wireAddress := &sink.RecordAddress{Uri: testuri.Record("search", []string{"documents"}, wireKey)}
 	document := &sink.Document{Encoding: sink.DocumentEncoding_DOCUMENT_ENCODING_JSON, Payload: []byte(`{"value":1}`)}
 	put := &sink.PutOperation{Mode: sink.WriteMode_WRITE_MODE_UPSERT, Document: document}
 	action := &sink.WriteOperation_Put{Put: put}

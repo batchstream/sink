@@ -2,81 +2,12 @@ package service
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"unicode/utf8"
 
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/storage"
 )
-
-func convertAddress(address *sink.RecordAddress) (storage.Address, error) {
-	var emptyAddress storage.Address
-	if address == nil {
-		return emptyAddress, errors.New("record address is required")
-	}
-	if address.GetStore() == "" {
-		return emptyAddress, errors.New("record address store is required")
-	}
-	if address.GetNamespace() == "" {
-		return emptyAddress, errors.New("record address namespace is required")
-	}
-	if address.GetDataset() == "" {
-		return emptyAddress, errors.New("record address dataset is required")
-	}
-	if !utf8.ValidString(address.GetStore()) || !utf8.ValidString(address.GetNamespace()) || !utf8.ValidString(address.GetDataset()) {
-		return emptyAddress, errors.New("record address fields must contain valid UTF-8")
-	}
-
-	key, err := convertKey(address.GetKey())
-	if err != nil {
-		return emptyAddress, err
-	}
-	converted := storage.Address{
-		Store:     address.GetStore(),
-		Namespace: address.GetNamespace(),
-		Dataset:   address.GetDataset(),
-		Key:       key,
-	}
-	return converted, nil
-}
-
-func convertKey(key *sink.RecordKey) (storage.Key, error) {
-	var emptyKey storage.Key
-	if key == nil {
-		return emptyKey, errors.New("record key is required")
-	}
-
-	converted := storage.Key{}
-	switch kind := key.GetKind().(type) {
-	case *sink.RecordKey_StringValue:
-		if !utf8.ValidString(kind.StringValue) {
-			return emptyKey, errors.New("string record key must contain valid UTF-8; use a bytes key for binary data")
-		}
-		converted.Type = "string"
-		converted.Data = []byte(kind.StringValue)
-	case *sink.RecordKey_Int64Value:
-		converted.Type = "int64"
-		converted.Data = make([]byte, 8)
-		binary.BigEndian.PutUint64(converted.Data, uint64(kind.Int64Value))
-	case *sink.RecordKey_BytesValue:
-		converted.Type = "bytes"
-		converted.Data = bytes.Clone(kind.BytesValue)
-	case *sink.RecordKey_OpaqueValue:
-		if kind.OpaqueValue == nil || kind.OpaqueValue.GetType() == "" {
-			return emptyKey, errors.New("opaque record key type is required")
-		}
-		if !utf8.ValidString(kind.OpaqueValue.GetType()) {
-			return emptyKey, errors.New("opaque record key type must contain valid UTF-8")
-		}
-		converted.Type = "opaque:" + kind.OpaqueValue.GetType()
-		converted.Data = bytes.Clone(kind.OpaqueValue.GetData())
-	default:
-		return emptyKey, errors.New("record key kind is required")
-	}
-	return converted, nil
-}
 
 func convertDocument(document *sink.Document) (storage.Document, error) {
 	var emptyDocument storage.Document

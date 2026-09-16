@@ -1,6 +1,8 @@
 package app
 
 import (
+	"github.com/liran/sink/internal/testuri"
+
 	"context"
 	"errors"
 	"testing"
@@ -79,4 +81,8 @@ func assertHealthStatus(t *testing.T, server *health.Server, service string, wan
 	if response.GetStatus() != wanted {
 		t.Fatalf("health status = %s, want %s", response.GetStatus(), wanted)
 	}
+}
+
+func (s *healthStorage) BatchKey(address storage.Address) (string, error) {
+	return testuri.BatchKey(address)
 }

@@ -53,7 +53,7 @@ func (s *Store) prepareWrite(index int, operation storage.WriteOperation) (write
 	if err != nil {
 		return empty, err
 	}
-	id, err := mongoID(operation.Address.Key)
+	id, err := mongoID(collection.recordKey)
 	if err != nil {
 		return empty, storage.InvalidArgumentError(err)
 	}

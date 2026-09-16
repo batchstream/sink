@@ -3,6 +3,8 @@
 package search_test
 
 import (
+	"github.com/liran/sink/internal/testuri"
+
 	"bytes"
 	"context"
 	"encoding/json"
@@ -98,4 +100,8 @@ func TestSearchMergeFoldingCommitsAndMakesFinalStateVisibleOnce(t *testing.T) {
 	if len(searchResult.Hits.Hits) != 1 || searchResult.Hits.Hits[0].Source.Counter != operations {
 		t.Fatalf("final state not searchable after acknowledgement: %s", body)
 	}
+}
+
+func (s *foldingSearchStorage) BatchKey(address storage.Address) (string, error) {
+	return testuri.BatchKey(address)
 }

@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"testing"
 	"time"
+
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
@@ -342,14 +345,14 @@ func TestReadAndDeleteFoldingKeepFullAddressesSeparate(t *testing.T) {
 			second := protoAddress("same")
 			switch difference {
 			case "store":
-				second.Store = "secondary"
+				second.Uri = testuri.WithStore(second.GetUri(), "secondary")
 			case "namespace":
-				second.Namespace = "another"
+				second.Uri = testuri.WithSegment(second.GetUri(), 0, "another")
 			case "dataset":
-				second.Dataset = "another"
+				second.Uri = testuri.WithSegment(second.GetUri(), -2, "another")
 			case "key_type":
-				kind := &sink.RecordKey_BytesValue{BytesValue: []byte("same")}
-				second.Key.Kind = kind
+				kind := uri.BytesKey([]byte("same"))
+				second.Uri = testuri.WithKey(second.GetUri(), kind)
 			}
 			read := &sink.ReadRequest{}
 			remove := &sink.DeleteRequest{CompletionMode: sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED}

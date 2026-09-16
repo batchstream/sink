@@ -24,6 +24,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/protocol"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -247,9 +249,20 @@ func validateSettings(opts *settings) error {
 }
 
 func address(opts settings, key int) *sink.RecordAddress {
-	kind := &sink.RecordKey_StringValue{StringValue: fmt.Sprintf("record-%d", key)}
-	recordKey := &sink.RecordKey{Kind: kind}
-	result := &sink.RecordAddress{Store: opts.Store, Namespace: opts.Dataset, Dataset: opts.Dataset, Key: recordKey}
+	segments := []string{opts.Dataset}
+	if opts.Store == "mongo" {
+		segments = []string{opts.Dataset, opts.Dataset}
+	}
+	resource, err := uri.New(opts.Store, segments)
+	if err != nil {
+		panic(err)
+	}
+	record, err := uri.AppendKey(resource.String(), uri.StringKey(fmt.Sprintf("record-%d", key)))
+	if err != nil {
+		panic(err)
+	}
+	result := &sink.RecordAddress{Uri: record.String()}
+
 	return result
 }
 

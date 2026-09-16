@@ -1,6 +1,8 @@
 package service_test
 
 import (
+	"github.com/liran/sink/internal/testuri"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -812,4 +814,12 @@ func assertNoBatchErrors(t *testing.T, errors <-chan error) {
 			t.Fatalf("batched RPC error = %v", err)
 		}
 	}
+}
+
+func (s *latencyStorage) BatchKey(address storage.Address) (string, error) {
+	return testuri.BatchKey(address)
+}
+
+func (s *countingStorage) BatchKey(address storage.Address) (string, error) {
+	return testuri.BatchKey(address)
 }

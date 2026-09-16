@@ -31,7 +31,7 @@ gateway: # Stateless routing, bounded forwarding, and lazy downstream connection
   reload_interval: 5s # Poll interval for atomic route-file replacements.
   dns_refresh_interval: 30s # Refresh DNS-backed Engine replica addresses.
   idle_timeout: 5m # Evict unused downstream channels after this idle duration.
-  max_connections: 256 # Cached downstream channels; <=10000; active calls protected.
+  max_connections: 256 # Cached endpoint channels and discovery views; <=10000; active calls protected.
   max_requests: 128 # Concurrent public Gateway requests; maximum 10000.
   max_requests_per_store: 32 # Default min(32, max_requests); per-Store forwarding cap.
   max_bytes: 256MiB # Input/envelope/response reservations; maximum 1TiB.

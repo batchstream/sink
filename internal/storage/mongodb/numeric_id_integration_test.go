@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/liran/sink/internal/storage"
+	"github.com/liran/sink/internal/testuri"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -31,7 +32,7 @@ func TestMongoDBNumericIDRoundTrip(t *testing.T) {
 			data := make([]byte, 8)
 			binary.BigEndian.PutUint64(data, 42)
 			key := storage.Key{Type: "int64", Data: data}
-			address := storage.Address{Store: "primary", Namespace: fixture.database, Dataset: "documents", Key: key}
+			address := testuri.Address("primary", []string{fixture.database, "documents"}, key)
 			value := bson.D{{Key: "_id", Value: test.id}, {Key: "value", Value: "created"}}
 			document := bsonStorageDocument(t, value)
 			condition := storage.Precondition{Kind: storage.PreconditionRecordNotExists}

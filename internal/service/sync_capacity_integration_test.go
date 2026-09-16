@@ -20,6 +20,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/protocol"
@@ -74,7 +77,7 @@ func benchmarkSynchronousStorage(b *testing.B, test syncCapacityCase) {
 	read := &sink.ReadRequest{}
 	for index := range test.concurrency {
 		address := completionAddress(fmt.Sprintf("writer-%d", index))
-		address.Namespace, address.Dataset = fixture.namespace, fixture.dataset
+		address.Uri = fixture.recordURI(address)
 		value := map[string]any{"value": 0, "padding": strings.Repeat("x", 1024)}
 		document := syncCapacityDocument(b, fixture.encoding, value)
 		put := &sink.PutOperation{Document: document, Mode: sink.WriteMode_WRITE_MODE_UPSERT}
@@ -316,7 +319,7 @@ func TestSynchronousStorageStreamsLargeRecords(t *testing.T) {
 				for index := range 8 {
 					key := fmt.Sprintf("record-%d", index)
 					operation := completionMerge(key, 1)
-					operation.Address.Namespace, operation.Address.Dataset = fixture.namespace, fixture.dataset
+					operation.Address.Uri = fixture.recordURI(operation.Address)
 					operation.ReturnDocument = true
 					incoming := map[string]any{"value": 1}
 					operation.GetMerge().IncomingDocument = syncCapacityDocument(t, fixture.encoding, incoming)
@@ -327,7 +330,7 @@ func TestSynchronousStorageStreamsLargeRecords(t *testing.T) {
 					}
 					value := map[string]any{"value": 0, "padding": padding}
 					document := syncCapacityDocument(t, fixture.encoding, value)
-					address, err := convertAddress(operation.Address)
+					address, err := protocol.ParseAddress(operation.Address)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -382,4 +385,16 @@ func TestSynchronousStorageStreamsLargeRecords(t *testing.T) {
 			})
 		}
 	}
+}
+
+func (f syncCapacityFixture) recordURI(address *sink.RecordAddress) string {
+	parsed, err := uri.Parse(address.GetUri())
+	if err != nil {
+		panic(err)
+	}
+	parts := []string{f.dataset}
+	if f.encoding == sink.DocumentEncoding_DOCUMENT_ENCODING_BSON {
+		parts = []string{f.namespace, f.dataset}
+	}
+	return testuri.Record(parsed.Store(), parts, testuri.Key(parsed))
 }

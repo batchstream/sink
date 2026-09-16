@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/liran/sink-go/uri"
+
 	"github.com/liran/sink/internal/storage"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
@@ -86,25 +88,45 @@ type resolvedCollection struct {
 	database   string
 	collection string
 	value      *mongo.Collection
+	recordKey  storage.Key
 }
 
 func (s *Store) resolve(address storage.Address) (resolvedCollection, error) {
 	var resolved resolvedCollection
-	if address.Store != s.store {
-		err := fmt.Errorf("logical store %q is not configured", address.Store)
+	if address.Store() != s.store {
+		err := fmt.Errorf("logical store %q is not configured", address.Store())
 		return resolved, storage.InvalidArgumentError(err)
 	}
-	if address.Namespace == "" || address.Dataset == "" {
-		err := errors.New("logical namespace and dataset are required")
+	segments := address.Segments()
+	if len(segments) != 3 {
+		return resolved, storage.InvalidArgumentError(errors.New("MongoDB record URI requires database/collection/typed-key"))
+	}
+	if strings.ContainsAny(segments[0], "/\\. \"$\x00") || strings.ContainsRune(segments[1], '\x00') {
+		return resolved, storage.InvalidArgumentError(errors.New("invalid MongoDB database or collection name"))
+	}
+	key, err := uri.ParseKey(segments[2])
+	if err != nil {
 		return resolved, storage.InvalidArgumentError(err)
 	}
+	if _, err := mongoID(key); err != nil {
+		return resolved, storage.InvalidArgumentError(err)
+	}
+	resolved.database = segments[0]
+	resolved.collection = segments[1]
+	resolved.recordKey = key
+	resolved.value = s.client.Database(segments[0]).Collection(segments[1])
 
-	resolved.database = address.Namespace
-	resolved.collection = address.Dataset
-	resolved.value = s.client.Database(address.Namespace).Collection(address.Dataset)
 	return resolved, nil
 }
 
 func (r resolvedCollection) key() string {
 	return r.database + "\x00" + r.collection
+}
+
+func (s *Store) BatchKey(address storage.Address) (string, error) {
+	resolved, err := s.resolve(address)
+	if err != nil {
+		return "", err
+	}
+	return resolved.key(), nil
 }

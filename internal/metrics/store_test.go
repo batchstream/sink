@@ -19,7 +19,7 @@ func TestMixedStoreRPCsCountEachRequestOnceAndAttributeEveryResult(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	addresses := []*sink.RecordAddress{{Store: "alpha"}, {Store: "beta"}, {Store: "alpha"}, nil, {Store: "untrusted-store"}}
+	addresses := []*sink.RecordAddress{{Uri: "sink://alpha/fixture/s:key"}, {Uri: "sink://beta/fixture/s:key"}, {Uri: "sink://alpha/fixture/s:key"}, nil, {Uri: "sink://untrusted-store/fixture/s:key"}}
 	read := &sink.ReadRequest{}
 	write := &sink.WriteRequest{}
 	remove := &sink.DeleteRequest{}
@@ -142,7 +142,7 @@ func TestStoreClassificationBoundsUnknownEmptyAndNilRequests(t *testing.T) {
 	for _, stores := range [][]string{{"mongo", "mongo"}, {"mongo", "unknown"}, {"", "mongo"}, {"unknown", "unknown"}, {"first-unknown", "second-unknown"}} {
 		request := &sink.WriteRequest{}
 		for _, store := range stores {
-			address := &sink.RecordAddress{Store: store}
+			address := &sink.RecordAddress{Uri: "sink://" + store + "/fixture/s:key"}
 			operation := &sink.WriteOperation{Address: address}
 			request.Operations = append(request.Operations, operation)
 		}

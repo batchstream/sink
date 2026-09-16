@@ -91,7 +91,7 @@ Sink moves the database client boundary into a separately sized service tier.
 Crawler processes keep gRPC connections to Sink, while each Sink process owns
 the backend clients and their database connections. The synchronous batcher
 then coalesces concurrent small RPCs for the same store into bounded storage
-batches. Automatic mutation batches also share namespace, dataset, and completion
+batches. Automatic mutation batches also share adapter resource and completion
 mode, limiting refresh waits to their own dataset. Completed write document
 chains release their scheduling dependencies; each original RPC returns when
 all of its results are final. MongoDB can use collection-level bulk operations, and Elasticsearch or
@@ -110,32 +110,12 @@ when possible.
 
 ## Address routing
 
-A record address contains `store`, `namespace`, `dataset`, and `key`. Sink does
-not use a separate binding layer: the client-provided `store` must exactly match
-a Gateway route and the case-sensitive `storage.name` of its Engine.
-
-| Address field | MongoDB | Elasticsearch and OpenSearch |
-| --- | --- | --- |
-| `store` | Configured storage name | Configured storage name |
-| `namespace` | Database name | Logical business namespace |
-| `dataset` | Collection name | Complete existing index or alias name |
-| `key` | MongoDB `_id` | Document `_id` |
-
-Record operations use binary string identity. MongoDB Read, Write and Delete
-explicitly use `simple` collation, even when the collection has a different
-default. Existing unique indexes still enforce their configured collation and
-may reject inserting a differently cased key. Native commands retain their
-explicit or collection-default collation. Search string keys must be nonempty;
-invalid keys fail permanently before contacting the backend.
-Address fields, string keys, and opaque key type names must contain valid UTF-8.
-This is checked before reads, writes, deletes, or Kafka publication, including
-when the optimized protobuf codec accepts invalid strings. Use bytes keys for
-arbitrary binary identities; their data is not subject to UTF-8 validation.
-
-One public request may target several Stores. Gateway splits it into Store
-groups, forwards them, and restores the original result order. Groups that share
-document budgets run sequentially; other eligible groups use bounded parallelism. An unknown store produces a failure for only the
-affected operation.
+Record addresses use `sink://<store>/<store-defined-path>`. Gateway selects the
+Store and hashes the full canonical URI to choose an Engine. MongoDB interprets
+`database/collection/typed-key`; Elasticsearch and OpenSearch interpret
+`index/typed-key`. Shared execution and queue code use the full URI as identity.
+See [record URIs and Engine affinity](record-addresses.md) for canonical spelling,
+SDK examples, connection discovery, replica changes and deployment boundaries.
 
 ## Documents and storage adapters
 
@@ -167,7 +147,7 @@ formatting whitespace to satisfy Bulk NDJSON framing. It uses
 `_primary_term` as an opaque revision token. Several configured endpoints are
 used for transport failover.
 
-The address's `dataset` must name a complete existing index or alias. Applications
+The first search URI path segment must name a complete existing index or designated alias. Applications
 can explicitly create indexes and update mappings, settings, and aliases through
 `Execute`; record writes do not initialize them.
 

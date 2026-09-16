@@ -5,6 +5,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/queue"
@@ -127,42 +130,8 @@ func TestProcessorBatchPreservesMixedMutationOrderPerRecord(t *testing.T) {
 	}
 }
 
-type namespaceAgnosticStorage struct {
-	backend *memory.Store
-}
-
-func (s *namespaceAgnosticStorage) IdentityKey(address storage.Address) string {
-	address.Namespace = ""
-	return address.RoutingKey()
-}
-
-func (s *namespaceAgnosticStorage) Ping(ctx context.Context) error {
-	return s.backend.Ping(ctx)
-}
-
-func (s *namespaceAgnosticStorage) Read(ctx context.Context, req storage.ReadRequest) (storage.ReadResponse, error) {
-	for index := range req.Operations {
-		req.Operations[index].Address.Namespace = ""
-	}
-	return s.backend.Read(ctx, req)
-}
-
-func (s *namespaceAgnosticStorage) Write(ctx context.Context, req storage.WriteRequest) (storage.WriteResponse, error) {
-	for index := range req.Operations {
-		req.Operations[index].Address.Namespace = ""
-	}
-	return s.backend.Write(ctx, req)
-}
-
-func (s *namespaceAgnosticStorage) Delete(ctx context.Context, req storage.DeleteRequest) (storage.DeleteResponse, error) {
-	for index := range req.Operations {
-		req.Operations[index].Address.Namespace = ""
-	}
-	return s.backend.Delete(ctx, req)
-}
-
-func TestProcessorUsesBackendPhysicalIdentityForOrdering(t *testing.T) {
-	store := &namespaceAgnosticStorage{backend: memory.New()}
+func TestProcessorUsesCanonicalURIForOrdering(t *testing.T) {
+	store := memory.New()
 	luaOptions := merge.LuaOptions{}
 	engine, err := merge.NewLuaEngine(luaOptions)
 	if err != nil {
@@ -179,7 +148,6 @@ func TestProcessorUsesBackendPhysicalIdentityForOrdering(t *testing.T) {
 	}
 	first := processorAddressFor("same-record")
 	second := processorAddressFor("same-record")
-	second.Namespace = "another-logical-namespace"
 	mutations := []queue.Mutation{
 		{Write: processorPut(first, "first")},
 		{Write: processorPut(first, "second")},
@@ -207,13 +175,8 @@ func processorAddress() *sink.RecordAddress {
 }
 
 func processorAddressFor(value string) *sink.RecordAddress {
-	key := &sink.RecordKey{Kind: &sink.RecordKey_StringValue{StringValue: value}}
-	address := &sink.RecordAddress{
-		Store:     "primary",
-		Namespace: "logical",
-		Dataset:   "records",
-		Key:       key,
-	}
+	key := uri.StringKey(value)
+	address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{"logical", "records"}, key)}
 	return address
 }
 
@@ -222,12 +185,7 @@ func processorStorageAddress() storage.Address {
 }
 
 func processorStorageAddressFor(value string) storage.Address {
-	address := storage.Address{
-		Store:     "primary",
-		Namespace: "logical",
-		Dataset:   "records",
-		Key:       storage.Key{Type: "string", Data: []byte(value)},
-	}
+	address := testuri.Address("primary", []string{"logical", "records"}, storage.Key{Type: "string", Data: []byte(value)})
 	return address
 }
 

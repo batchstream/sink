@@ -13,7 +13,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/liran/sink-go/uri"
 	"github.com/liran/sink/internal/storage"
+	"github.com/liran/sink/internal/testuri"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -137,16 +139,11 @@ func TestDocumentIDPreservesLegacyStringsAndSeparatesTypedKeys(t *testing.T) {
 	}
 }
 
-func TestIdentityKeyUsesPhysicalSearchAddress(t *testing.T) {
+func TestSearchRejectsExtraURIPathSegments(t *testing.T) {
 	store, handler := newScriptedStore(t, nil)
-	first := testAddress("record-1")
-	second := first
-	second.Namespace = "another-logical-namespace"
-	if first.RoutingKey() == second.RoutingKey() {
-		t.Fatal("logical identities unexpectedly match")
-	}
-	if store.IdentityKey(first) != store.IdentityKey(second) {
-		t.Fatal("physical search identities differ by namespace")
+	address := testuri.Address("primary", []string{"ignored-namespace", "products"}, uri.StringKey("one"))
+	if _, err := store.resolve(address); err == nil {
+		t.Fatal("search accepted ambiguous namespace prefix")
 	}
 	handler.verify()
 }
@@ -472,12 +469,7 @@ func newScriptedStore(t *testing.T, requests []expectedRequest) (*Store, *script
 }
 
 func testAddress(id string) storage.Address {
-	address := storage.Address{
-		Store:     "primary",
-		Namespace: "logical",
-		Dataset:   "legacy-records",
-		Key:       storage.Key{Type: "string", Data: []byte(id)},
-	}
+	address := testuri.Address("primary", []string{"legacy-records"}, storage.Key{Type: "string", Data: []byte(id)})
 	return address
 }
 

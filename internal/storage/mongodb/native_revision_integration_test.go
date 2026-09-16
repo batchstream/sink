@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/service"
@@ -135,9 +138,9 @@ func TestNativeMongoWriteInvalidatesConcurrentMergeSnapshot(t *testing.T) {
 				program := &sink.LuaProgram{Source: []byte(`return function(current, incoming) current.count = current.count + incoming.count; return current end`)}
 				mutation := &sink.MergeOperation{IncomingDocument: document, LuaProgram: program}
 				action := &sink.WriteOperation_Merge{Merge: mutation}
-				kind := &sink.RecordKey_StringValue{StringValue: "quota"}
-				key := &sink.RecordKey{Kind: kind}
-				address := &sink.RecordAddress{Store: "primary", Namespace: fixture.database, Dataset: "documents", Key: key}
+				kind := uri.StringKey("quota")
+				key := kind
+				address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{fixture.database, "documents"}, key)}
 				operation := &sink.WriteOperation{Address: address, Action: action, ReturnDocument: true}
 				request := &sink.WriteRequest{CompletionMode: sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, Operations: []*sink.WriteOperation{operation}}
 				type outcome struct {

@@ -125,38 +125,12 @@ Use the [quickstart](../examples/quickstart/README.md) to run all three componen
 
 ## Address routing
 
-Sink does not use a separate bindings configuration. The client-provided record
-address selects both the configured storage instance and the location inside
-that instance:
-
-| Address field | MongoDB | Elasticsearch and OpenSearch |
-| --- | --- | --- |
-| `store` | Exact `storage.name` to use | Exact `storage.name` to use |
-| `namespace` | Database name | Logical business namespace; not used to construct the index name |
-| `dataset` | Collection name | Complete existing index or alias name |
-| `key` | MongoDB `_id` | Document `_id` |
-
-For example, this address selects the `mongo-main` configuration and stores the
-document in MongoDB database `catalog`, collection `products`:
-
-```text
-store = mongo-main
-namespace = catalog
-dataset = products
-key = product-123
-```
-
-With a search driver, set `dataset` to the full name already used by the service.
-For example, `namespace = catalog` and `dataset = legacy-products-v2` access the
-index or alias `legacy-products-v2`; Sink does not prepend the namespace. Sink
-can route operations in one batch to different storage instances and returns
-results in the original operation order. An address whose `store` is not
-configured receives a per-operation failure.
-
-For search drivers, namespace is not part of the physical or ordering identity:
-two addresses with the same store, dataset and typed key reach the same document
-even when their namespaces differ. Do not configure multiple index aliases that
-can address the same document under different dataset names when ordering matters.
+Record addresses use `sink://<store>/<store-defined-path>`. Gateway selects the
+Store and hashes the full canonical URI to choose an Engine. MongoDB interprets
+`database/collection/typed-key`; Elasticsearch and OpenSearch interpret
+`index/typed-key`. Shared execution and queue code use the full URI as identity.
+See [record URIs and Engine affinity](record-addresses.md) for canonical spelling,
+SDK examples, connection discovery, replica changes and deployment boundaries.
 
 ## Synchronous request batching
 

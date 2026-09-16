@@ -1,6 +1,8 @@
 package config
 
 import (
+	"github.com/liran/sink-go/uri"
+
 	"fmt"
 	"strings"
 )
@@ -8,8 +10,8 @@ import (
 func resolveStorage(prefix string, file storageFile) (Storage, error) {
 	var loaded Storage
 	loaded.Name = strings.TrimSpace(file.Name)
-	if loaded.Name == "" {
-		return loaded, fmt.Errorf("%s.name is required", prefix)
+	if !uri.ValidStore(loaded.Name) {
+		return loaded, fmt.Errorf("%s.name must be a canonical lowercase Store name", prefix)
 	}
 	v := validator{}
 	loaded.Driver = Driver(strings.TrimSpace(string(file.Driver)))

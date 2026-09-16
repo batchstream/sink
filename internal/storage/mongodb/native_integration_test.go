@@ -11,6 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/service"
@@ -148,9 +151,9 @@ func TestMongoReturningMergeCommitsIndependentCounterValues(t *testing.T) {
 	program := &sink.LuaProgram{Source: []byte(`return function(current, incoming) current = current or {count = 0}; current.count = current.count + incoming.count; return current end`)}
 	action := &sink.MergeOperation{IncomingDocument: document, LuaProgram: program}
 	wrapper := &sink.WriteOperation_Merge{Merge: action}
-	keyKind := &sink.RecordKey_StringValue{StringValue: "quota"}
-	key := &sink.RecordKey{Kind: keyKind}
-	address := &sink.RecordAddress{Store: "primary", Namespace: fixture.database, Dataset: "documents", Key: key}
+	keyKind := uri.StringKey("quota")
+	key := keyKind
+	address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{fixture.database, "documents"}, key)}
 	first := &sink.WriteOperation{Address: address, Action: wrapper, ReturnDocument: true}
 	second := &sink.WriteOperation{Address: address, Action: wrapper, ReturnDocument: true}
 	request := &sink.WriteRequest{CompletionMode: sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, Operations: []*sink.WriteOperation{first, second}}

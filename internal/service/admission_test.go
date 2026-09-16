@@ -7,6 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
@@ -83,9 +86,9 @@ func TestCoreAdmissionBoundsRequestsAndReleasesCancellation(t *testing.T) {
 }
 
 func admissionRead(store string) *sink.ReadRequest {
-	kind := &sink.RecordKey_StringValue{StringValue: "key"}
-	key := &sink.RecordKey{Kind: kind}
-	address := &sink.RecordAddress{Store: store, Namespace: "n", Dataset: "d", Key: key}
+	kind := uri.StringKey("key")
+	key := kind
+	address := &sink.RecordAddress{Uri: testuri.Record(store, []string{"n", "d"}, key)}
 	op := &sink.ReadOperation{Address: address}
 	req := &sink.ReadRequest{Operations: []*sink.ReadOperation{op}}
 	return req
@@ -136,4 +139,8 @@ func TestFoldedConditionalPutsReserveSnapshotCapacity(t *testing.T) {
 			t.Fatalf("folded puts read before reserving snapshot bytes: %v", err)
 		}
 	}
+}
+
+func (b *blockedReadStorage) BatchKey(address storage.Address) (string, error) {
+	return testuri.BatchKey(address)
 }

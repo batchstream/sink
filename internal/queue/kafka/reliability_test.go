@@ -6,6 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/queue"
@@ -36,9 +39,9 @@ func reliabilityProcessor(t *testing.T, backend storage.Storage) *worker.Process
 }
 
 func reliabilityAddress() *sink.RecordAddress {
-	kind := &sink.RecordKey_StringValue{StringValue: "reliability-record"}
-	key := &sink.RecordKey{Kind: kind}
-	address := &sink.RecordAddress{Store: "primary", Namespace: "reliability", Dataset: "records", Key: key}
+	kind := uri.StringKey("reliability-record")
+	key := kind
+	address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{"reliability", "records"}, key)}
 	return address
 }
 

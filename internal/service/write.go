@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/liran/sink/internal/protocol"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/forwarding"
 	"github.com/liran/sink/internal/merge"
@@ -68,14 +70,17 @@ func (s *Server) parseWrite(ctx context.Context, index int, operation *sink.Writ
 	if operation == nil {
 		return parsed, errors.New("write operation is required")
 	}
-	address, err := convertAddress(operation.GetAddress())
+	address, err := protocol.ParseAddress(operation.GetAddress())
 	if err != nil {
+		return parsed, err
+	}
+	if _, err := s.storage.BatchKey(address); err != nil {
 		return parsed, err
 	}
 	parsed.index = index
 	parsed.address = address
 	parsed.original = operation
-	parsed.identity = s.identityOf(address)
+	parsed.identity = identityOf(address)
 
 	switch action := operation.GetAction().(type) {
 	case *sink.WriteOperation_Put:
@@ -250,7 +255,7 @@ func (s *Server) executeWriteWave(
 	puts := make([]writeGroup, 0, len(groups))
 	conditional := make([]writeGroup, 0, len(groups))
 	for _, group := range groups {
-		s.metrics.ObserveMergeFold(group.operations[0].address.Store, group.merges)
+		s.metrics.ObserveMergeFold(group.operations[0].address.Store(), group.merges)
 		if group.directPut() {
 			puts = append(puts, group)
 		} else {
@@ -336,14 +341,14 @@ func (s *Server) executeConditionalWrites(
 		}
 		for _, group := range next {
 			if group.merges > 0 {
-				s.metrics.ObserveMergeConflict(group.operations[0].address.Store, 1)
+				s.metrics.ObserveMergeConflict(group.operations[0].address.Store(), 1)
 			}
 		}
 		pending = next
 	}
 
 	for _, group := range pending {
-		s.metrics.ObserveMergeExhausted(group.operations[0].address.Store, group.merges)
+		s.metrics.ObserveMergeExhausted(group.operations[0].address.Store(), group.merges)
 		for _, operation := range group.operations {
 			result := results[operation.index]
 			result.Status = sink.WriteStatus_WRITE_STATUS_PRECONDITION_FAILED

@@ -7,6 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/service"
@@ -26,9 +29,9 @@ func TestMongoDBFoldedPutAndMergePreserveConditionsAndBSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := fixture.address("folded-put")
-	kind := &sink.RecordKey_StringValue{StringValue: "folded-put"}
-	key := &sink.RecordKey{Kind: kind}
-	address := &sink.RecordAddress{Store: base.Store, Namespace: base.Namespace, Dataset: base.Dataset, Key: key}
+	kind := uri.StringKey("folded-put")
+	key := kind
+	address := &sink.RecordAddress{Uri: testuri.Record(base.Store(), base.Segments()[:2], key)}
 	created := time.Date(2026, time.September, 7, 0, 0, 0, 0, time.UTC)
 	request := &sink.WriteRequest{CompletionMode: sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE}
 	modes := []sink.WriteMode{sink.WriteMode_WRITE_MODE_CREATE, sink.WriteMode_WRITE_MODE_REPLACE, sink.WriteMode_WRITE_MODE_CREATE, sink.WriteMode_WRITE_MODE_UPSERT}

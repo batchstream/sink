@@ -6,6 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/liran/sink/internal/protocol"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/storage"
 	"github.com/liran/sink/internal/storage/memory"
@@ -69,7 +72,7 @@ func TestSynchronousMergeStreamsLargeSnapshotsAndOutputs(t *testing.T) {
 				if scenario != "outputs" {
 					padding = strings.Repeat("x", 700)
 				}
-				address, err := convertAddress(completionAddress(key))
+				address, err := protocol.ParseAddress(completionAddress(key))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -115,7 +118,7 @@ func TestSynchronousChunksKeepCallerQuotaAndSharedRecordIsolation(t *testing.T) 
 	server := completionServer(t, backend)
 	server.server.maxReadBytes = 400
 	for _, key := range []string{"a", "b"} {
-		address, err := convertAddress(completionAddress(key))
+		address, err := protocol.ParseAddress(completionAddress(key))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -138,7 +141,7 @@ func TestSynchronousChunksKeepCallerQuotaAndSharedRecordIsolation(t *testing.T) 
 	if healthy.response.Results[0].Status != sink.WriteStatus_WRITE_STATUS_APPLIED {
 		t.Fatal(healthy.response)
 	}
-	address, err := convertAddress(completionAddress("b"))
+	address, err := protocol.ParseAddress(completionAddress("b"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +164,7 @@ func (s *chunkConflictStorage) Write(ctx context.Context, request storage.WriteR
 	response := storage.WriteResponse{Results: make([]storage.WriteResult, len(request.Operations))}
 	bytes := 0
 	for index, operation := range request.Operations {
-		key := string(operation.Address.Key.Data)
+		key := string(testuri.Key(operation.Address).Data)
 		s.attempts[key]++
 		bytes += len(operation.Document.Payload) + 128
 		if key == s.conflict && s.attempts[key] == 1 {

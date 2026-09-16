@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+
 	"github.com/liran/sink/internal/storage"
 )
 
@@ -126,31 +128,35 @@ type resolvedDocument struct {
 	id    string
 }
 
-// IdentityKey matches the physical search identity. Namespace remains required
-// business metadata, but Elasticsearch and OpenSearch address documents by the
-// complete dataset/index name and document ID.
-func (s *Store) IdentityKey(address storage.Address) string {
-	address.Namespace = ""
-	return address.RoutingKey()
-}
-
 func (s *Store) resolve(address storage.Address) (resolvedDocument, error) {
 	var resolved resolvedDocument
-	if address.Store != s.logicalStore {
-		err := fmt.Errorf("logical store %q is not configured", address.Store)
+	if address.Store() != s.logicalStore {
+		err := fmt.Errorf("logical store %q is not configured", address.Store())
 		return resolved, storage.InvalidArgumentError(err)
 	}
-	if address.Namespace == "" || address.Dataset == "" {
-		err := errors.New("logical namespace and dataset are required")
-		return resolved, storage.InvalidArgumentError(err)
+	segments := address.Segments()
+	if len(segments) != 2 {
+		return resolved, storage.InvalidArgumentError(errors.New("search record URI requires index/typed-key"))
 	}
-
-	index := address.Dataset
-	id, err := documentID(address.Key)
+	key, err := uri.ParseKey(segments[1])
 	if err != nil {
 		return resolved, storage.InvalidArgumentError(err)
 	}
+	index := segments[0]
+	id, err := documentID(key)
+	if err != nil {
+		return resolved, storage.InvalidArgumentError(err)
+	}
+
 	resolved.index = index
 	resolved.id = id
 	return resolved, nil
+}
+
+func (s *Store) BatchKey(address storage.Address) (string, error) {
+	resolved, err := s.resolve(address)
+	if err != nil {
+		return "", err
+	}
+	return resolved.index, nil
 }

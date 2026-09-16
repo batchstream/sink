@@ -9,6 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
@@ -179,7 +182,7 @@ func TestKafkaPublisherWorkerAppliesAsyncMutations(t *testing.T) {
 	waitForDeadLetterValue(t, dlqClient, malformed.Value)
 
 	crossStoreAddress := kafkaAddress("wrong-store")
-	crossStoreAddress.Store = "archive"
+	crossStoreAddress.Uri = testuri.WithStore(crossStoreAddress.GetUri(), "archive")
 	crossStoreDocument := kafkaJSONDocument(`{"value":3}`)
 	crossStorePut := &sink.PutOperation{Document: crossStoreDocument, Mode: sink.WriteMode_WRITE_MODE_UPSERT}
 	crossStoreOperation := &sink.WriteOperation{
@@ -484,22 +487,12 @@ func waitForReadStatus(t *testing.T, store *memory.Store, want storage.ReadStatu
 }
 
 func kafkaAddress(key string) *sink.RecordAddress {
-	recordKey := &sink.RecordKey{Kind: &sink.RecordKey_StringValue{StringValue: key}}
-	address := &sink.RecordAddress{
-		Store:     "primary",
-		Namespace: "logical",
-		Dataset:   "records",
-		Key:       recordKey,
-	}
+	recordKey := uri.StringKey(key)
+	address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{"logical", "records"}, recordKey)}
 	return address
 }
 
 func kafkaStorageAddress(key string) storage.Address {
-	address := storage.Address{
-		Store:     "primary",
-		Namespace: "logical",
-		Dataset:   "records",
-		Key:       storage.Key{Type: "string", Data: []byte(key)},
-	}
+	address := testuri.Address("primary", []string{"logical", "records"}, storage.Key{Type: "string", Data: []byte(key)})
 	return address
 }

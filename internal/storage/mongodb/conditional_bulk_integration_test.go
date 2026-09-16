@@ -12,6 +12,7 @@ import (
 
 	"github.com/liran/sink/internal/storage"
 	"github.com/liran/sink/internal/storage/mongodb"
+	"github.com/liran/sink/internal/testuri"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -28,7 +29,7 @@ func TestMongoDBConditionalBulkKeepsPerRecordOutcomes(t *testing.T) {
 	for index := range 6 {
 		address := fixture.address(fmt.Sprintf("bulk-%d", index))
 		if index == 5 {
-			address.Dataset = "alternate"
+			address = testuri.Address(address.Store(), []string{address.Segments()[0], "alternate"}, testuri.Key(address))
 		}
 		operation := storage.WriteOperation{Address: address, Document: initial}
 		seed.Operations = append(seed.Operations, operation)

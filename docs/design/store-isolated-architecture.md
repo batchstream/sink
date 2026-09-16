@@ -1,5 +1,7 @@
 # Sink Store-Isolated Architecture Design
 
+Historical design record. The current address and deployment contract is defined in [Record URIs and Engine affinity](../record-addresses.md).
+
 Status: **Implemented and locally validated; not released or deployed to production**
 
 Version: D4, 2026-09-16

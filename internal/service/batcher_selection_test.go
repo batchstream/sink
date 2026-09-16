@@ -6,8 +6,8 @@ import (
 )
 
 func TestBatchSelectionRetainsBlockedQueueAndIndependentProgress(t *testing.T) {
-	hot := recordIdentity{keyData: "hot"}
-	cold := recordIdentity{keyData: "cold"}
+	hot := recordIdentity("hot")
+	cold := recordIdentity("cold")
 	active := map[recordIdentity]bool{hot: true}
 	batcher := &requestBatcher[int, int]{maxOperations: 1000, maxBytes: 16 << 20}
 	pending := make([]*batchCall[int, int], 10000)
@@ -48,7 +48,7 @@ func TestBatchSelectionRetainsBlockedQueueAndIndependentProgress(t *testing.T) {
 func BenchmarkBlockedQueueSelection(b *testing.B) {
 	for _, count := range []int{100, 1000, 10000} {
 		b.Run(fmt.Sprint(count), func(b *testing.B) {
-			key := recordIdentity{keyData: "hot-record"}
+			key := recordIdentity("hot-record")
 			active := map[recordIdentity]bool{key: true}
 			pending := make([]*batchCall[int, int], count)
 			for index := range pending {
@@ -69,10 +69,10 @@ func BenchmarkBlockedQueueSelection(b *testing.B) {
 }
 
 func TestBatchSelectionPreservesTransitiveDependencies(t *testing.T) {
-	hot := recordIdentity{keyData: "hot"}
-	linked := recordIdentity{keyData: "linked"}
-	last := recordIdentity{keyData: "last"}
-	cold := recordIdentity{keyData: "cold"}
+	hot := recordIdentity("hot")
+	linked := recordIdentity("linked")
+	last := recordIdentity("last")
+	cold := recordIdentity("cold")
 	active := map[recordIdentity]bool{hot: true}
 	batcher := &requestBatcher[int, int]{maxOperations: 100, maxBytes: 1000}
 	first := &batchCall[int, int]{records: []recordIdentity{hot, linked}, operationCount: 2}

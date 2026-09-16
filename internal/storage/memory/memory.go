@@ -6,8 +6,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"sync"
+
+	"github.com/liran/sink-go/uri"
 
 	"github.com/liran/sink/internal/storage"
 )
@@ -171,4 +174,16 @@ func cloneRevision(revision storage.Revision) storage.Revision {
 		Data: bytes.Clone(revision.Data),
 	}
 	return cloned
+}
+
+func (s *Store) BatchKey(address storage.Address) (string, error) {
+	parts := address.Segments()
+	if len(parts) < 2 {
+		return "", errors.New("memory record URI requires resource/key")
+	}
+	resource, err := uri.New(address.Store(), parts[:len(parts)-1])
+	if err != nil {
+		return "", err
+	}
+	return resource.String(), nil
 }

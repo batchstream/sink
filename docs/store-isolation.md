@@ -157,25 +157,9 @@ Gateway remains a shared ingress: exhausting its CPU, memory or global admission
 capacity can affect multiple Stores. Per-Store forwarding limits contain individual
 backend pressure; Gateway still needs its own capacity planning and scaling.
 
-## Migration
+## New-cluster deployment
 
-1. Assign a globally unique name to each Store and ensure unique database ownership.
-2. Split `storages` into one Engine and Worker configuration per Store. Engine does
-   not require a Kafka consumer group; Worker does. Keep topic, DLQ and consumer
-   group identity consistent with existing accepted messages.
-3. Start Engines, verify each capability independently, then load their Gateway
-   routes. Keep client addresses stable through the existing load balancer or DNS.
-4. Drain old consumers before moving their ownership to the per-Store Workers.
-   Test with retained messages; scaling or restarting consumers remains at-least-once.
-5. Drain the old public endpoint. Do not route Gateway to legacy `server`/`all`
-   processes: they do not implement the private forwarding contract.
-
-Only `gateway`, `engine`, and `worker` modes are supported, and `mode` is required.
-Engine and Worker require singular `storage` with a globally unique `name`.
-The old `server`/`all` modes and plural `storages` are rejected. Execution,
-publishing, admission queues and Scan use process limits; old per-Store sublimits
-and `storage.limits.max_execution_bytes` are rejected. Gateway retains its own
-per-Store forwarding limit because it routes many Stores.
-
-Use the [configuration migration guide](configuration-migration.md) before
-starting this binary with configuration from an older release.
+Deploy matching Gateway, Engine, Worker and SDK builds into a new cluster with
+new Kafka topics and consumer groups. Validate URI routing and asynchronous
+processing before the blue/green client cutover. See the [deployment guide](configuration-migration.md)
+and [record address contract](record-addresses.md).

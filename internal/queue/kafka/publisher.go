@@ -23,7 +23,6 @@ type PublisherOptions struct {
 	Metrics          *sinkmetrics.Metrics
 	MaxRecordBytes   int
 	MaxBufferedBytes int
-	MutationKey      queue.MutationKeyFunc
 }
 
 type Publisher struct {
@@ -33,7 +32,6 @@ type Publisher struct {
 	topic          string
 	metrics        *sinkmetrics.Metrics
 	maxRecordBytes int
-	mutationKey    queue.MutationKeyFunc
 }
 
 func NewPublisher(opts PublisherOptions) (*Publisher, error) {
@@ -55,9 +53,6 @@ func NewPublisher(opts PublisherOptions) (*Publisher, error) {
 	if opts.MaxRecordBytes > opts.MaxBufferedBytes || opts.MaxRecordBytes > 64<<20 {
 		return nil, errors.New("create Kafka publisher: record limit must fit the buffer and cannot exceed 64 MiB")
 	}
-	if opts.MutationKey == nil {
-		opts.MutationKey = queue.MutationKey
-	}
 	clientOptions := append([]kgo.Opt(nil), opts.ClientOptions...)
 	requiredOptions := []kgo.Opt{
 		kgo.SeedBrokers(opts.Brokers...),
@@ -72,7 +67,7 @@ func NewPublisher(opts PublisherOptions) (*Publisher, error) {
 		return nil, err
 	}
 	publisher := &Publisher{store: opts.Store, topics: opts.Topics, client: client, topic: opts.Topic, metrics: opts.Metrics,
-		maxRecordBytes: opts.MaxRecordBytes, mutationKey: opts.MutationKey}
+		maxRecordBytes: opts.MaxRecordBytes}
 	return publisher, nil
 }
 
@@ -92,7 +87,7 @@ func (p *Publisher) Publish(ctx context.Context, req queue.PublishRequest) (queu
 	records := make([]*kgo.Record, 0, len(req.Mutations))
 	indexes := make(map[*kgo.Record]int, len(req.Mutations))
 	for index, mutation := range req.Mutations {
-		key, err := p.mutationKey(mutation)
+		key, err := queue.MutationKey(mutation)
 		if err != nil {
 			response.Results[index] = queue.PublishResult{Status: queue.PublishStatusFailed, Err: storage.InvalidArgumentError(err)}
 			continue

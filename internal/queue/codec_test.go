@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/queue"
 	"google.golang.org/protobuf/proto"
@@ -49,21 +52,16 @@ func TestMutationKeyIsStablePerAddress(t *testing.T) {
 	if !bytes.Equal(writeKey, deleteKey) {
 		t.Fatalf("write key %x differs from delete key %x", writeKey, deleteKey)
 	}
-	marshalOptions := proto.MarshalOptions{Deterministic: true}
-	standardKey, err := marshalOptions.Marshal(address)
-	if err != nil {
-		t.Fatalf("proto.Marshal(address) error = %v", err)
+	if string(writeKey) != address.GetUri() {
+		t.Fatal("queue key must equal the complete canonical URI")
 	}
-	if !bytes.Equal(writeKey, standardKey) {
-		t.Fatalf("VT key %x differs from deterministic protobuf key %x", writeKey, standardKey)
-	}
+
 }
 
 func TestMutationKeyIgnoresUnknownAddressFields(t *testing.T) {
 	plain := testQueueAddress("record-1")
 	withUnknown := proto.Clone(plain).(*sink.RecordAddress)
 	withUnknown.ProtoReflect().SetUnknown([]byte{0xa0, 0x06, 0x01})
-	withUnknown.GetKey().ProtoReflect().SetUnknown([]byte{0xa0, 0x06, 0x02})
 	plainKey, err := queue.MutationKey(queue.Mutation{Write: &sink.WriteOperation{Address: plain}})
 	if err != nil {
 		t.Fatal(err)
@@ -77,20 +75,20 @@ func TestMutationKeyIgnoresUnknownAddressFields(t *testing.T) {
 	}
 }
 
-func TestMutationKeyWithoutNamespaceMatchesSearchIdentity(t *testing.T) {
+func TestMutationKeyRetainsEveryURIPathSegment(t *testing.T) {
 	first := testQueueAddress("record-1")
 	second := proto.Clone(first).(*sink.RecordAddress)
-	second.Namespace = "another-logical-namespace"
-	firstKey, err := queue.MutationKeyWithoutNamespace(queue.Mutation{Write: &sink.WriteOperation{Address: first}})
+	second.Uri = testuri.WithSegment(second.GetUri(), 0, "another")
+	firstKey, err := queue.MutationKey(queue.Mutation{Write: &sink.WriteOperation{Address: first}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondKey, err := queue.MutationKeyWithoutNamespace(queue.Mutation{Write: &sink.WriteOperation{Address: second}})
+	secondKey, err := queue.MutationKey(queue.Mutation{Write: &sink.WriteOperation{Address: second}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(firstKey, secondKey) {
-		t.Fatalf("search identity keys differ: %x != %x", firstKey, secondKey)
+	if bytes.Equal(firstKey, secondKey) {
+		t.Fatalf("distinct URI identities collided: %x != %x", firstKey, secondKey)
 	}
 }
 
@@ -159,12 +157,7 @@ func BenchmarkMutationPayloadUnmarshal(b *testing.B) {
 }
 
 func testQueueAddress(key string) *sink.RecordAddress {
-	recordKey := &sink.RecordKey{Kind: &sink.RecordKey_StringValue{StringValue: key}}
-	address := &sink.RecordAddress{
-		Store:     "primary",
-		Namespace: "logical",
-		Dataset:   "records",
-		Key:       recordKey,
-	}
+	recordKey := uri.StringKey(key)
+	address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{"logical", "records"}, recordKey)}
 	return address
 }

@@ -15,7 +15,7 @@ func TestForwardedRPCUsesPublicMethodMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	address := &sink.RecordAddress{Store: "a"}
+	address := &sink.RecordAddress{Uri: "sink://a/fixture/s:key"}
 	operation := &sink.WriteOperation{Address: address}
 	write := &sink.WriteRequest{Operations: []*sink.WriteOperation{operation}}
 	body := &forward.ForwardRequest_Write{Write: write}

@@ -5,6 +5,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/queue"
 )
@@ -60,8 +63,8 @@ func assertFailureBarrier(t *testing.T, failure *sink.Failure, retain bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key := &sink.RecordKey{Kind: &sink.RecordKey_StringValue{StringValue: "same-record"}}
-	address := &sink.RecordAddress{Store: "primary", Namespace: "catalog", Dataset: "records", Key: key}
+	key := uri.StringKey("same-record")
+	address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{"catalog", "records"}, key)}
 	document := &sink.Document{Encoding: sink.DocumentEncoding_DOCUMENT_ENCODING_JSON, Payload: []byte(`{}`)}
 	put := &sink.PutOperation{Document: document, Mode: sink.WriteMode_WRITE_MODE_UPSERT}
 	write := &sink.WriteOperation{Address: address, Action: &sink.WriteOperation_Put{Put: put}}

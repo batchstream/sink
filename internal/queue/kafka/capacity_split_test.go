@@ -2,18 +2,21 @@ package kafka
 
 import (
 	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/liran/sink-go/uri"
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/queue"
 	"github.com/liran/sink/internal/service"
 	"github.com/liran/sink/internal/storage/memory"
+	"github.com/liran/sink/internal/testuri"
 	"github.com/liran/sink/internal/worker"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"strings"
-	"testing"
-	"time"
 )
 
 type capacitySplitHandler struct {
@@ -62,9 +65,9 @@ func TestWorkerSplitsCapacityRejectedPollAndCommits(t *testing.T) {
 	var records []*kgo.Record
 	for _, id := range []string{"a", "b"} {
 		mutation := reliabilityPut(sink.WriteMode_WRITE_MODE_UPSERT, `{"value":"`+strings.Repeat("x", 600)+`"}`)
-		kind := &sink.RecordKey_StringValue{StringValue: id}
-		key := &sink.RecordKey{Kind: kind}
-		mutation.Write.Address.Key = key
+		kind := uri.StringKey(id)
+		key := kind
+		mutation.Write.Address.Uri = testuri.WithKey(mutation.Write.Address.GetUri(), key)
 		payload, err := queue.MarshalMutation(mutation)
 		if err != nil {
 			t.Fatal(err)

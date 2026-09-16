@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   soak:
-    uses: liran/sink-production-suite/.github/workflows/reliability.yml@0dbb01b8f4d7af17fffc63837575ce2a1317acc3
+    uses: liran/sink-production-suite/.github/workflows/reliability.yml@508807d252976b16b3610ca7cbc7a371e39ac219
     with:
-      suite_ref: 0dbb01b8f4d7af17fffc63837575ce2a1317acc3
+      suite_ref: 508807d252976b16b3610ca7cbc7a371e39ac219
       sink_ref: ${{ github.sha }}

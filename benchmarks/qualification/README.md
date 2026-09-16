@@ -48,10 +48,16 @@ revisions separately: `revision.txt` identifies the runner checkout. Use multipl
 runs; allocator improvements do not establish end-to-end capacity gains, and
 closed-loop saturation does not guarantee an open-loop SLO.
 
-Set `SINK_PERF_ENGINE_CONFIG` to an absolute path to compare Engine configuration
+Set `SINK_PERF_ENGINE_CONFIG` or `SINK_PERF_GATEWAY_CONFIG` to absolute paths to compare configuration
 choices with the same images and container limits. Retain that configuration
 with the results; a shorter batching wait can reduce latency while increasing
 backend calls, so measure both small RPCs and explicit batches before tuning.
+
+The `read-budgets` profile repeats mixed traffic, batched reads and large returned
+documents. Gateway reserves the configured response allowance for each active
+request. Reducing `service.request.max_read_bytes` in both roles can admit more
+small-document requests under the same memory budget, but also lowers the largest
+per-RPC response they can serve. Validate real response sizes before changing it.
 
 Run separate [DNS/drain qualification](../../docs/rolling-upgrades.md) and the
 public production suite's Kafka/Worker faults. Performance runs inject no faults.

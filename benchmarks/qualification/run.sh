@@ -59,6 +59,11 @@ gateway_metrics="$("${compose[@]}" port gateway 9090)"
 ) &
 sampler="$!"
 case "${SINK_PERF_PROFILE:-matrix}" in
+  read-budgets)
+    cases='mixed-32 mixed 32 1 1024 false 0
+read-32 read 32 16 1024 false 0
+returned-large merge 8 1 65536 true 0'
+    ;;
   compare)
     cases='upsert-32 upsert 32 1 1024 false 0
 upsert-batch upsert 16 16 1024 false 0
@@ -81,7 +86,7 @@ count-32 count 32 1 1024 false 0
 returned-large merge 8 1 65536 true 0
 fixed-500 upsert 32 1 1024 false 500'
     ;;
-  *) echo 'SINK_PERF_PROFILE must be compare or matrix' >&2; exit 1 ;;
+  *) echo 'SINK_PERF_PROFILE must be compare, matrix or read-budgets' >&2; exit 1 ;;
 esac
 printf '%s\n' "${cases}" > "${artifacts}/cases.txt"
 failed=0

@@ -42,7 +42,7 @@ services:
       GOMAXPROCS: "2"
     depends_on: [engine]
     volumes:
-      - ./gateway.yaml:/etc/sink/gateway.yaml:ro
+      - ${SINK_PERF_GATEWAY_CONFIG:-./gateway.yaml}:/etc/sink/gateway.yaml:ro
     ports:
       - "127.0.0.1::8080"
       - "127.0.0.1::9090"

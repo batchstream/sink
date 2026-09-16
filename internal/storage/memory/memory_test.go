@@ -6,6 +6,7 @@ import (
 
 	"github.com/liran/sink/internal/storage"
 	"github.com/liran/sink/internal/storage/memory"
+	"github.com/liran/sink/internal/testuri"
 )
 
 func TestStoreRevisionPrecondition(t *testing.T) {
@@ -91,15 +92,10 @@ func TestStoreUpgradesLegacyRecordWithAbsentRevision(t *testing.T) {
 }
 
 func testAddress() storage.Address {
-	address := storage.Address{
-		Store:     "primary",
-		Namespace: "catalog",
-		Dataset:   "products",
-		Key: storage.Key{
-			Type: "string",
-			Data: []byte("record-1"),
-		},
-	}
+	address := testuri.Address("primary", []string{"catalog", "products"}, storage.Key{
+		Type: "string",
+		Data: []byte("record-1"),
+	})
 	return address
 }
 

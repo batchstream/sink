@@ -69,9 +69,11 @@ func NewBatchingServer(server *Server, opts BatchingOptions) (*BatchingServer, e
 	writeOptions := requestBatcherOptions[*sink.WriteRequest, *sink.WriteResponse]{
 		MaxConcurrent: server.maxInFlightRequests,
 		Records: func(request *sink.WriteRequest) []recordIdentity {
-			return mutationRequestRecords(request, server.identityOf)
+			return mutationRequestRecords(request)
 		},
-		Partition:           mutationRequestPartition[*sink.WriteOperation, *sink.WriteRequest],
+		Partition: func(request *sink.WriteRequest) batchPartition {
+			return mutationRequestPartition[*sink.WriteOperation](request, server.storage)
+		},
 		Method:              "Write",
 		MaxWait:             normalized.MaxWait,
 		MaxOperations:       normalized.MaxOperations,
@@ -88,9 +90,11 @@ func NewBatchingServer(server *Server, opts BatchingOptions) (*BatchingServer, e
 	deleteOptions := requestBatcherOptions[*sink.DeleteRequest, *sink.DeleteResponse]{
 		MaxConcurrent: server.maxInFlightRequests,
 		Records: func(request *sink.DeleteRequest) []recordIdentity {
-			return mutationRequestRecords(request, server.identityOf)
+			return mutationRequestRecords(request)
 		},
-		Partition:           mutationRequestPartition[*sink.DeleteOperation, *sink.DeleteRequest],
+		Partition: func(request *sink.DeleteRequest) batchPartition {
+			return mutationRequestPartition[*sink.DeleteOperation](request, server.storage)
+		},
 		Method:              "Delete",
 		MaxWait:             normalized.MaxWait,
 		MaxOperations:       normalized.MaxOperations,
@@ -351,7 +355,7 @@ func (s *BatchingServer) executeWrites(
 	ctx context.Context,
 	calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse],
 ) {
-	for _, wave := range planMutationWaves[*sink.WriteOperation](calls, s.server.identityOf) {
+	for _, wave := range planMutationWaves[*sink.WriteOperation](calls) {
 		parallel := len(wave.applied) > 0 && len(wave.visible) > 0 &&
 			s.server.maxInFlightRequests > 1
 		if parallel {
@@ -412,7 +416,7 @@ func (s *BatchingServer) executeWriteBatch(
 			budgets.addContext(call.ctx, len(call.request.GetOperations()))
 		}
 		execution, executionCancel := batchExecutionContext(ctx, group, s.server.requestTimeout)
-		completion := newWriteCompletion(group, s.server.identityOf, s.server.maxReadBytes)
+		completion := newWriteCompletion(group, s.server.maxReadBytes)
 		response, err := s.server.write(execution, request, budgets, completion)
 		executionCancel()
 		completion.finish(response, err)
@@ -454,7 +458,7 @@ func (s *BatchingServer) executeDeletes(
 	ctx context.Context,
 	calls []*batchCall[*sink.DeleteRequest, *sink.DeleteResponse],
 ) {
-	for _, wave := range planMutationWaves[*sink.DeleteOperation](calls, s.server.identityOf) {
+	for _, wave := range planMutationWaves[*sink.DeleteOperation](calls) {
 		parallel := len(wave.applied) > 0 && len(wave.visible) > 0 &&
 			s.server.maxInFlightRequests > 1
 		if parallel {

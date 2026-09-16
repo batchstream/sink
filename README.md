@@ -102,20 +102,13 @@ for the exact scope and boundaries.
 
 ## How it works
 
-Every record has a logical address:
-
-```text
-store = primary
-namespace = catalog
-dataset = products
-key = product-42
-```
-
-`store` selects a configured backend. For MongoDB, `namespace` and `dataset`
-are the database and collection. For Elasticsearch and OpenSearch, `dataset`
-is the complete existing index or alias name. The application never sends a
-database connection string. Native access uses `Execute`, `Query`, `Count`, and
-`Scan` with a common `Command`; the record API remains storage-independent.
+Every record has a canonical URI, for example
+`sink://primary/catalog/products/s:product-42`. The first component selects a
+configured Store; only that adapter interprets the path. MongoDB uses
+`database/collection/typed-key`; search uses `index/typed-key`. Gateway hashes the
+complete URI to select an Engine, consistently across Gateway replicas with the
+same DNS membership. See [record addresses and affinity](docs/record-addresses.md).
+Native access uses `Execute`, `Query`, `Count`, and `Scan` with a common `Command`.
 
 Every document declares its encoding. MongoDB stores require BSON, so clients
 apply `bson` struct tags and retain native BSON values such as datetimes.

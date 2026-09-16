@@ -4,12 +4,13 @@ package mongodb_test
 
 import (
 	"context"
+	"os"
+	"testing"
+
 	"github.com/liran/sink/internal/storage/mongodb"
 	"go.mongodb.org/mongo-driver/v2/event"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
-	"os"
-	"testing"
 
 	"github.com/liran/sink/internal/storage"
 	"go.mongodb.org/mongo-driver/v2/bson"

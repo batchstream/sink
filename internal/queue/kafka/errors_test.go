@@ -1,10 +1,11 @@
 package kafka
 
 import (
+	"testing"
+
 	"github.com/liran/sink/internal/storage"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"testing"
 )
 
 func TestPublisherClassifiesPayloadCapacityAndOperatorFailures(t *testing.T) {

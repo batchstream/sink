@@ -5,9 +5,11 @@ package service
 import (
 	"encoding/json"
 	"fmt"
-	"go.mongodb.org/mongo-driver/v2/bson"
 	"strings"
 	"testing"
+
+	"github.com/liran/sink/internal/protocol"
+	"go.mongodb.org/mongo-driver/v2/bson"
 
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/storage"
@@ -26,8 +28,8 @@ func TestReadMicrobatchStorageWorkingSet(t *testing.T) {
 				key := fmt.Sprintf("record-%d", index)
 				call := readCapacityCall(t.Context(), key)
 				address := call.request.Operations[0].Address
-				address.Namespace, address.Dataset = fixture.namespace, fixture.dataset
-				converted, err := convertAddress(address)
+				address.Uri = fixture.recordURI(address)
+				converted, err := protocol.ParseAddress(address)
 				if err != nil {
 					t.Fatal(err)
 				}

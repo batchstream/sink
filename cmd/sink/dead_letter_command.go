@@ -67,9 +67,7 @@ func runDeadLetterCommand(args []string, stdout io.Writer, stderr io.Writer) err
 		}
 		opts := queuekafka.PublisherOptions{Brokers: selected.Kafka.Brokers, Topic: selected.Kafka.Topic.Name,
 			MaxRecordBytes: selected.Kafka.Topic.MaxRecordBytes, MaxBufferedBytes: selected.Kafka.Producer.MaxBufferedBytes}
-		if selected.Driver == config.DriverElasticsearch || selected.Driver == config.DriverOpenSearch {
-			opts.MutationKey = queue.MutationKeyWithoutNamespace
-		}
+
 		publisher, err := queuekafka.NewPublisher(opts)
 		if err != nil {
 			return err

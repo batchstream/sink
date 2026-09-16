@@ -9,6 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/protocol"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/storage"
@@ -48,7 +52,7 @@ func (s *completionStorage) observe(ctx context.Context, event completionEvent) 
 func (s *completionStorage) Write(ctx context.Context, req storage.WriteRequest) (storage.WriteResponse, error) {
 	event := completionEvent{method: "Write", visible: req.WaitUntilVisible}
 	for _, op := range req.Operations {
-		event.keys = append(event.keys, string(op.Address.Key.Data))
+		event.keys = append(event.keys, string(testuri.Key(op.Address).Data))
 	}
 	if err := s.observe(ctx, event); err != nil {
 		var response storage.WriteResponse
@@ -59,7 +63,7 @@ func (s *completionStorage) Write(ctx context.Context, req storage.WriteRequest)
 func (s *completionStorage) Delete(ctx context.Context, req storage.DeleteRequest) (storage.DeleteResponse, error) {
 	event := completionEvent{method: "Delete", visible: req.WaitUntilVisible}
 	for _, op := range req.Operations {
-		event.keys = append(event.keys, string(op.Address.Key.Data))
+		event.keys = append(event.keys, string(testuri.Key(op.Address).Data))
 	}
 	if err := s.observe(ctx, event); err != nil {
 		var response storage.DeleteResponse
@@ -88,9 +92,9 @@ func completionServer(t *testing.T, backend storage.Storage) *BatchingServer {
 	return server
 }
 func completionAddress(key string) *sink.RecordAddress {
-	value := &sink.RecordKey_StringValue{StringValue: key}
-	recordKey := &sink.RecordKey{Kind: value}
-	address := &sink.RecordAddress{Store: "primary", Namespace: "catalog", Dataset: "products", Key: recordKey}
+	value := uri.StringKey(key)
+	recordKey := value
+	address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{"catalog", "products"}, recordKey)}
 	return address
 }
 func completionPut(key string, value int) *sink.WriteOperation {
@@ -217,7 +221,7 @@ func TestCompletionWavesPreserveSameRecordPutMergeOrderAndFolding(t *testing.T) 
 	}
 	server.executeWrites(t.Context(), calls)
 	assertCompletionWrites(t, calls)
-	address, err := convertAddress(completionAddress("hot"))
+	address, err := protocol.ParseAddress(completionAddress("hot"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +262,7 @@ func TestCompletionWavesTrackEveryRecordInMultiOperationRPC(t *testing.T) {
 		completionWriteCall(t.Context(), applied, completionPut("b", 3)),
 		completionWriteCall(t.Context(), visible, completionPut("a", 4)),
 	}
-	waves := planMutationWaves[*sink.WriteOperation](calls, identityOf)
+	waves := planMutationWaves[*sink.WriteOperation](calls)
 	if len(waves) != 3 || !reflect.DeepEqual(waves[0].applied, calls[:1]) || !reflect.DeepEqual(waves[1].visible, []*batchCall[*sink.WriteRequest, *sink.WriteResponse]{calls[1], calls[3]}) || !reflect.DeepEqual(waves[2].applied, calls[2:3]) {
 		t.Fatalf("wrong dependency waves: %+v", waves)
 	}
@@ -317,12 +321,12 @@ func TestCompletionWavesKeepFullRecordAddressesSeparate(t *testing.T) {
 			operation := completionPut("same", 2)
 			switch difference {
 			case "namespace":
-				operation.Address.Namespace = "another"
+				operation.Address.Uri = testuri.WithSegment(operation.Address.GetUri(), 0, "another")
 			case "dataset":
-				operation.Address.Dataset = "another"
+				operation.Address.Uri = testuri.WithSegment(operation.Address.GetUri(), -2, "another")
 			case "key_type":
-				kind := &sink.RecordKey_BytesValue{BytesValue: []byte("same")}
-				operation.Address.Key.Kind = kind
+				kind := uri.BytesKey([]byte("same"))
+				operation.Address.Uri = testuri.WithKey(operation.Address.GetUri(), kind)
 			}
 			second := completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE, operation)
 			calls := []*batchCall[*sink.WriteRequest, *sink.WriteResponse]{first, second}
@@ -330,7 +334,7 @@ func TestCompletionWavesKeepFullRecordAddressesSeparate(t *testing.T) {
 			if difference == "same" {
 				want = 2
 			}
-			if waves := planMutationWaves[*sink.WriteOperation](calls, identityOf); len(waves) != want {
+			if waves := planMutationWaves[*sink.WriteOperation](calls); len(waves) != want {
 				t.Fatalf("%s: %d waves, want %d", difference, len(waves), want)
 			}
 		})

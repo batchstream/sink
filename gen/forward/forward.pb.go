@@ -507,7 +507,7 @@ const file_forward_forward_proto_rawDesc = "" +
 	"\tsnapshots\x18\x01 \x01(\x04R\tsnapshots\x12\x16\n" +
 	"\x06inputs\x18\x02 \x01(\x04R\x06inputs\x12\x18\n" +
 	"\aoutputs\x18\x03 \x01(\x04R\aoutputs\x12\x18\n" +
-	"\areturns\x18\x04 \x01(\x04R\areturns\"\xd9\x03\n" +
+	"\areturns\x18\x04 \x01(\x04R\areturns\"\xc6\x03\n" +
 	"\x0eForwardRequest\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x14\n" +
 	"\x05store\x18\x02 \x01(\tR\x05store\x12-\n" +
@@ -520,7 +520,7 @@ const file_forward_forward_proto_rawDesc = "" +
 	"\x05query\x18\x0e \x01(\v2\x15.sink.v1.QueryRequestH\x00R\x05query\x12-\n" +
 	"\x05count\x18\x0f \x01(\v2\x15.sink.v1.CountRequestH\x00R\x05count\x12*\n" +
 	"\x04scan\x18\x10 \x01(\v2\x14.sink.v1.ScanRequestH\x00R\x04scanB\t\n" +
-	"\arequestJ\x04\b\x03\x10\x04R\vdatabase_id\"\xec\x04\n" +
+	"\arequest\"\xd9\x04\n" +
 	"\x0fForwardResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x14\n" +
 	"\x05store\x18\x02 \x01(\tR\x05store\x12+\n" +
@@ -539,7 +539,7 @@ const file_forward_forward_proto_rawDesc = "" +
 	"\x05count\x18\x0f \x01(\v2\x16.sink.v1.CountResponseH\x00R\x05count\x12+\n" +
 	"\x04scan\x18\x10 \x01(\v2\x15.sink.v1.ScanResponseH\x00R\x04scanB\n" +
 	"\n" +
-	"\bresponseJ\x04\b\x03\x10\x04R\vdatabase_id2V\n" +
+	"\bresponse2V\n" +
 	"\x06Engine\x12L\n" +
 	"\aForward\x12\x1f.sink.forward.v1.ForwardRequest\x1a .sink.forward.v1.ForwardResponseB+Z)github.com/liran/sink/gen/forward;forwardb\x06proto3"
 

@@ -19,16 +19,17 @@ import (
 
 type Server struct {
 	sink.UnimplementedSinkServer
-	config       config.Gateway
-	request      config.Request
-	current      atomic.Pointer[snapshot]
-	pool         connections
-	mu           sync.Mutex
-	inFlight     int
-	bytes        int
-	metrics      *metrics
-	reloadMu     sync.Mutex
-	activeStores map[string]int
+	config         config.Gateway
+	request        config.Request
+	current        atomic.Pointer[snapshot]
+	pool           connections
+	mu             sync.Mutex
+	inFlight       int
+	bytes          int
+	metrics        *metrics
+	reloadMu       sync.Mutex
+	activeStores   map[string]int
+	nativeSequence atomic.Uint64
 }
 type Options struct {
 	Gateway         config.Gateway
@@ -131,6 +132,14 @@ func (s *Server) begin(ctx context.Context, req *forward.ForwardRequest) (contex
 	return ctx, release, nil
 }
 func (s *Server) forward(ctx context.Context, route Route, req *forward.ForwardRequest) (*forward.ForwardResponse, error) {
+	if route.endpoint == "" {
+		targets, release, err := s.pool.destinations(ctx, route)
+		if err != nil {
+			return localRejection(route, status.Code(err), status.Convert(err).Message()), nil
+		}
+		defer release()
+		route = targets[(s.nativeSequence.Add(1)-1)%uint64(len(targets))]
+	}
 	s.mu.Lock()
 	if s.activeStores[route.Store] >= s.config.MaxRequestsPerStore {
 		s.mu.Unlock()

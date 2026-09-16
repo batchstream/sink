@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/liran/sink/internal/storage"
+	"github.com/liran/sink/internal/testuri"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/event"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -74,7 +75,7 @@ func TestClientBulkDiscoveryCannotUndoCommandRejection(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, key := range []string{"first", "second"} {
-		address := storage.Address{Store: "primary", Namespace: "test", Dataset: "documents", Key: storage.Key{Type: "string", Data: []byte(key)}}
+		address := testuri.Address("primary", []string{"test", "documents"}, storage.Key{Type: "string", Data: []byte(key)})
 		document := storage.Document{Encoding: storage.DocumentEncodingBSON, Payload: payload}
 		precondition := storage.Precondition{Kind: storage.PreconditionRecordExists}
 		operation := storage.WriteOperation{Address: address, Document: document, Precondition: precondition}

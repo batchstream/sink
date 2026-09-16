@@ -2,8 +2,6 @@ package storage
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/json"
 	"testing"
 )
 
@@ -66,20 +64,20 @@ func TestScanCursorBoundsUntrustedInput(t *testing.T) {
 	}
 }
 
-func TestScanProjectionBindsCursorAndPreservesLegacyCheckpoints(t *testing.T) {
+func TestScanProjectionBindsCursor(t *testing.T) {
 	command := NativeRequest{Store: "primary", Payload: []byte(`{"sort":["uid"]}`)}
-	encoded, err := json.Marshal(command)
+	request := ScanRequest{Request: command, BatchSize: 1}
+	initial, err := request.Resume()
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := ScanCursor{query: sha256.Sum256(encoded)}
-	page, err := legacy.Page(nil, []byte(`[1]`))
+	page, err := initial.Page(nil, []byte(`[1]`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := ScanRequest{Request: command, BatchSize: 1, Cursor: page.NextCursor}
+	request.Cursor = page.NextCursor
 	if _, err := request.Resume(); err != nil {
-		t.Fatalf("legacy cursor rejected: %v", err)
+		t.Fatal(err)
 	}
 	request.Projection = &Projection{Fields: []string{"name"}}
 	if _, err := request.Resume(); err == nil {

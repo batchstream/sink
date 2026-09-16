@@ -1,6 +1,8 @@
 package service_test
 
 import (
+	"github.com/liran/sink/internal/testuri"
+
 	"context"
 	"fmt"
 	"slices"
@@ -168,4 +170,8 @@ func BenchmarkMergeFoldingContention(b *testing.B) {
 	b.ReportMetric(float64(backend.writes.Load())/float64(b.N), "writes/batch")
 	b.ReportMetric(float64(backend.conflicts.Load())/float64(b.N), "conflicts/batch")
 	b.ReportMetric(float64(backend.conflicts.Load())/float64(backend.writes.Load()), "conflicts/write-attempt")
+}
+
+func (s *foldingBenchmarkStorage) BatchKey(address storage.Address) (string, error) {
+	return testuri.BatchKey(address)
 }

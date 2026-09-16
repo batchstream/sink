@@ -13,6 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	forward "github.com/liran/sink/gen/forward"
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/config"
@@ -99,9 +102,9 @@ func testGateway(t testing.TB, maximum int, engines ...fixtureEngine) *Server {
 	return server
 }
 func address(store, key string) *sink.RecordAddress {
-	kind := &sink.RecordKey_StringValue{StringValue: key}
-	recordKey := &sink.RecordKey{Kind: kind}
-	result := &sink.RecordAddress{Store: store, Namespace: "db", Dataset: "items", Key: recordKey}
+	kind := uri.StringKey(key)
+	recordKey := kind
+	result := &sink.RecordAddress{Uri: testuri.Record(store, []string{"db", "items"}, recordKey)}
 	return result
 }
 func put(store, key string, returnDocument bool) *sink.WriteOperation {

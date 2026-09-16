@@ -5,30 +5,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/liran/sink-go/uri"
 )
 
 // Storage applies batch-native operations. Atomicity is guaranteed per record,
 // not for an entire request.
 type Storage interface {
+	// BatchKey identifies operations that may share a physical batch. It must never redefine record identity.
+	BatchKey(Address) (string, error)
 	Ping(ctx context.Context) error
 	Read(ctx context.Context, req ReadRequest) (ReadResponse, error)
 	Write(ctx context.Context, req WriteRequest) (WriteResponse, error)
 	Delete(ctx context.Context, req DeleteRequest) (DeleteResponse, error)
-}
-
-// IdentityKeyer exposes the physical identity used by a backend when it differs
-// from the complete logical address. Schedulers use it to serialize operations
-// that can reach the same stored record.
-type IdentityKeyer interface {
-	IdentityKey(Address) string
-}
-
-// IdentityKey returns the backend's physical record identity when available.
-func IdentityKey(backend Storage, address Address) string {
-	if keyer, ok := backend.(IdentityKeyer); ok {
-		return keyer.IdentityKey(address)
-	}
-	return address.RoutingKey()
 }
 
 type ErrorCode uint8
@@ -119,44 +108,8 @@ func (e ErrorCode) String() string {
 	}
 }
 
-type Key struct {
-	Type string
-	Data []byte
-}
-
-type Address struct {
-	Store     string
-	Namespace string
-	Dataset   string
-	Key       Key
-}
-
-// RoutingKey returns a deterministic binary-safe identity for an address.
-func (a Address) RoutingKey() string {
-	encoded := make([]byte, 0, 64+len(a.Key.Data))
-	encoded = appendPart(encoded, []byte(a.Store))
-	encoded = appendPart(encoded, []byte(a.Namespace))
-	encoded = appendPart(encoded, []byte(a.Dataset))
-	encoded = appendPart(encoded, []byte(a.Key.Type))
-	encoded = appendPart(encoded, a.Key.Data)
-	return string(encoded)
-}
-
-func appendPart(destination []byte, part []byte) []byte {
-	partLength := uint64(len(part))
-	destination = append(destination,
-		byte(partLength>>56),
-		byte(partLength>>48),
-		byte(partLength>>40),
-		byte(partLength>>32),
-		byte(partLength>>24),
-		byte(partLength>>16),
-		byte(partLength>>8),
-		byte(partLength),
-	)
-	destination = append(destination, part...)
-	return destination
-}
+type Key = uri.Key
+type Address = uri.Address
 
 type DocumentEncoding uint8
 

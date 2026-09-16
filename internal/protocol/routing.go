@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 
+	"github.com/liran/sink-go/uri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -19,15 +21,15 @@ func CheckStore(request any, store string) error {
 	switch req := request.(type) {
 	case *sink.ReadRequest:
 		for _, op := range req.GetOperations() {
-			stores = append(stores, op.GetAddress().GetStore())
+			stores = append(stores, RecordStore(op.GetAddress()))
 		}
 	case *sink.WriteRequest:
 		for _, op := range req.GetOperations() {
-			stores = append(stores, op.GetAddress().GetStore())
+			stores = append(stores, RecordStore(op.GetAddress()))
 		}
 	case *sink.DeleteRequest:
 		for _, op := range req.GetOperations() {
-			stores = append(stores, op.GetAddress().GetStore())
+			stores = append(stores, RecordStore(op.GetAddress()))
 		}
 	case *sink.ExecuteRequest:
 		stores = append(stores, req.GetCommand().GetStore())
@@ -63,4 +65,17 @@ func ValidateLuaDeclarations(programs []*sink.LuaProgram) error {
 		seen[digest] = program.GetSource()
 	}
 	return nil
+}
+
+// ParseAddress validates the canonical URI without interpreting Store path rules.
+func ParseAddress(address *sink.RecordAddress) (uri.Address, error) {
+	return uri.Parse(address.GetUri())
+}
+
+func RecordStore(address *sink.RecordAddress) string {
+	parsed, err := ParseAddress(address)
+	if err != nil {
+		return ""
+	}
+	return parsed.Store()
 }

@@ -186,7 +186,10 @@ func (s *Server) delete(ctx context.Context, req *sink.DeleteRequest, budgets *r
 		result := &sink.DeleteResult{OperationIndex: uint32(index)}
 		response.Results[index] = result
 
-		address, err := convertAddress(operation.GetAddress())
+		address, err := protocol.ParseAddress(operation.GetAddress())
+		if err == nil {
+			_, err = s.storage.BatchKey(address)
+		}
 		if err != nil {
 			setDeleteFailure(result, sink.FailureCode_FAILURE_CODE_INVALID_ARGUMENT, err, false)
 			continue
@@ -202,7 +205,7 @@ func (s *Server) delete(ctx context.Context, req *sink.DeleteRequest, budgets *r
 			queueMutations = append(queueMutations, mutation)
 			continue
 		}
-		key := s.identityOf(address)
+		key := identityOf(address)
 		position, found := positions[key]
 		if !found {
 			position = len(storageOperations)

@@ -11,6 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/config"
 	"github.com/twmb/franz-go/pkg/kfake"
@@ -110,9 +113,9 @@ service:
 			var callers sync.WaitGroup
 			for index := range 2 {
 				callers.Go(func() {
-					keyValue := &sink.RecordKey_StringValue{StringValue: fmt.Sprintf("key-%d", index)}
-					key := &sink.RecordKey{Kind: keyValue}
-					address := &sink.RecordAddress{Store: "primary", Namespace: "app", Dataset: "items", Key: key}
+					keyValue := uri.StringKey(fmt.Sprintf("key-%d", index))
+					key := keyValue
+					address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{"items"}, key)}
 					operation := &sink.ReadOperation{Address: address}
 					request := &sink.ReadRequest{Operations: []*sink.ReadOperation{operation}}
 					response, err := client.Read(ctx, request)

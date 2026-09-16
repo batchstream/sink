@@ -5,13 +5,15 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/liran/sink/internal/protocol"
+
 	sink "github.com/liran/sink/gen/sink"
 )
 
 var envelopeMagic = [4]byte{'S', 'N', 'K', 'Q'}
 
 const (
-	envelopeVersion byte = 1
+	envelopeVersion byte = 2
 	mutationWrite   byte = 1
 	mutationDelete  byte = 2
 )
@@ -20,8 +22,6 @@ type marshalVTMessage interface {
 	MarshalVT() ([]byte, error)
 	SizeVT() int
 }
-
-type MutationKeyFunc func(Mutation) ([]byte, error)
 
 // MutationSize includes the queue envelope without allocating its payload.
 func MutationSize(mutation Mutation) int {
@@ -82,53 +82,11 @@ func UnmarshalMutation(envelope []byte) (Mutation, error) {
 }
 
 func MutationKey(mutation Mutation) ([]byte, error) {
-	return mutationKey(mutation, true)
-}
-
-// MutationKeyWithoutNamespace is used by search backends, where namespace is
-// logical metadata and dataset already contains the complete index or alias.
-func MutationKeyWithoutNamespace(mutation Mutation) ([]byte, error) {
-	return mutationKey(mutation, false)
-}
-
-func mutationKey(mutation Mutation, includeNamespace bool) ([]byte, error) {
 	address, err := mutationAddress(mutation)
 	if err != nil {
 		return nil, err
 	}
-	canonical := &sink.RecordAddress{
-		Store:   address.GetStore(),
-		Dataset: address.GetDataset(),
-		Key:     canonicalRecordKey(address.GetKey()),
-	}
-	if includeNamespace {
-		canonical.Namespace = address.GetNamespace()
-	}
-	encoded, err := canonical.MarshalVT()
-	if err != nil {
-		return nil, fmt.Errorf("marshal queue mutation address: %w", err)
-	}
-	return encoded, nil
-}
-
-func canonicalRecordKey(key *sink.RecordKey) *sink.RecordKey {
-	canonical := &sink.RecordKey{}
-	switch kind := key.GetKind().(type) {
-	case *sink.RecordKey_StringValue:
-		canonical.Kind = &sink.RecordKey_StringValue{StringValue: kind.StringValue}
-	case *sink.RecordKey_Int64Value:
-		canonical.Kind = &sink.RecordKey_Int64Value{Int64Value: kind.Int64Value}
-	case *sink.RecordKey_BytesValue:
-		canonical.Kind = &sink.RecordKey_BytesValue{BytesValue: bytes.Clone(kind.BytesValue)}
-	case *sink.RecordKey_OpaqueValue:
-		opaque := &sink.OpaqueValue{}
-		if kind.OpaqueValue != nil {
-			opaque.Type = kind.OpaqueValue.GetType()
-			opaque.Data = bytes.Clone(kind.OpaqueValue.GetData())
-		}
-		canonical.Kind = &sink.RecordKey_OpaqueValue{OpaqueValue: opaque}
-	}
-	return canonical
+	return []byte(address.GetUri()), nil
 }
 
 func MutationStore(mutation Mutation) (string, error) {
@@ -136,7 +94,7 @@ func MutationStore(mutation Mutation) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return address.GetStore(), nil
+	return protocol.RecordStore(address), nil
 }
 
 func mutationAddress(mutation Mutation) (*sink.RecordAddress, error) {
@@ -151,9 +109,8 @@ func mutationAddress(mutation Mutation) (*sink.RecordAddress, error) {
 	case *sink.DeleteOperation:
 		address = operation.GetAddress()
 	}
-	if address == nil || address.GetStore() == "" || address.GetNamespace() == "" || address.GetDataset() == "" ||
-		address.GetKey() == nil || address.GetKey().GetKind() == nil {
-		return nil, errors.New("queue mutation record address is required")
+	if _, err := protocol.ParseAddress(address); err != nil {
+		return nil, err
 	}
 	return address, nil
 }

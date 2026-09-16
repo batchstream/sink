@@ -60,12 +60,15 @@ func (s *Server) read(ctx context.Context, req *sink.ReadRequest, budgets *reque
 		result := &sink.ReadResult{OperationIndex: uint32(index)}
 		response.Results[index] = result
 
-		address, err := convertAddress(operation.GetAddress())
+		address, err := protocol.ParseAddress(operation.GetAddress())
+		if err == nil {
+			_, err = s.storage.BatchKey(address)
+		}
 		if err != nil {
 			setReadFailure(result, sink.FailureCode_FAILURE_CODE_INVALID_ARGUMENT, err, false)
 			continue
 		}
-		key := s.identityOf(address)
+		key := identityOf(address)
 		position, found := positions[key]
 		if !found {
 			position = len(storageOperations)

@@ -51,10 +51,7 @@ wants to write product `product-42`. Think of the request as:
 
 ```text
 Address:
-  store     = primary
-  namespace = catalog
-  dataset   = products
-  key       = the string product-42
+  uri = sink://primary/catalog/products/s:product-42
 
 Document: { "name": "Example product", "price": 99 }, encoded as BSON
 Write action: Upsert (replace the whole document, or create it if absent)
@@ -63,7 +60,7 @@ Completion mode: WAIT_UNTIL_APPLIED
 
 **Step 1: The application calls the SDK.**
 
-A `Dataset` binds `Store`, `Namespace`, `Dataset`, and `Encoding`. Each
+A `Dataset` binds a resource `URI` and `Encoding`. Each
 `Record` supplies a `Key` and `Value`. The application passes the completion
 mode when calling `Dataset.Upsert`. Creating this SDK object only binds
 parameters; it does not create a database, collection, or search index.
@@ -79,7 +76,7 @@ back to the original input order.
 The service checks that the request is nonempty and that its operation count
 and completion mode are valid. When the request targets one configured store,
 this synchronous request always enters that store's in-memory Write queue. It
-may execute together with other RPCs sharing namespace, dataset, and completion
+may execute together with other RPCs sharing adapter resource and completion
 mode. Explicit multi-dataset RPCs execute alone. The default collection window
 is 2 ms; operation-count and byte limits can trigger earlier dispatch. **The 2 ms window is a collection
 window, not an end-to-end latency limit.** Queueing and backend execution
@@ -108,9 +105,9 @@ The address maps as follows:
 
 | Request field | Meaning in this example |
 | --- | --- |
-| `store = primary` | Select the Gateway route for `primary`; its Engine is bound to `storage.name = primary` |
-| `namespace = catalog` | MongoDB database `catalog` |
-| `dataset = products` | MongoDB collection `products` |
+| URI Store `primary` | Select the Gateway route for `primary`; its Engine is bound to `storage.name = primary` |
+| URI segment `catalog` | MongoDB database `catalog` |
+| URI segment `products` | MongoDB collection `products` |
 | `key = product-42` | MongoDB `_id`, using the string `product-42` |
 
 The adapter validates the BSON document and uses the address key as `_id`.
@@ -181,7 +178,7 @@ force a refresh on every call or change the index's refresh interval.
 Sink's key-based `Read` uses `_mget` on search backends. Successfully reading
 a document by key does not establish that `_search` can already find it.
 
-Search stores require **JSON**, with `dataset` naming the complete existing
+Search stores require **JSON**, with the first path segment naming the complete existing
 index or alias. MongoDB stores require **BSON**. Sink does not automatically
 convert between these encodings or create search indexes and mappings.
 The SDK applies Go `bson` tags for BSON encoding and `json` tags for JSON
@@ -323,7 +320,7 @@ Deletes issue one backend delete and return its outcome to all callers.
 | Layer | Organizer | What it combines | Effect on the call |
 | --- | --- | --- | --- |
 | Explicit SDK batching | Application / sink-go | Multiple operations in one call, split into RPCs if necessary | Fewer RPCs, with individual results preserved |
-| Automatic Engine batching | `BatchingServer` | One store in one process; mutations also share namespace, dataset, and mode | Bounded collection and execution; each Write RPC returns when its own results are final |
+| Automatic Engine batching | `BatchingServer` | One store in one process; mutations also share adapter resource and mode | Bounded collection and execution; each Write RPC returns when its own results are final |
 | Record operation folding | Service core | Puts/Merges or repeated Reads/Deletes for one full address | One final write, read, or delete with individual results preserved |
 | Backend bulk operations | Storage adapter | Database operations that can be sent together | Fewer backend requests; partial success remains possible |
 | Kafka publication / consumption batching | Publisher / worker | Independent messages | Batched transport, execution, and offset commits |

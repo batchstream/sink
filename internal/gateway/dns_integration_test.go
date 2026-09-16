@@ -5,6 +5,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -56,6 +57,7 @@ func TestGatewayDiscoversDNSScaleChanges(t *testing.T) {
 	write := func() {
 		t.Helper()
 		attempts++
+		request.Operations[0] = put("a", fmt.Sprintf("key-%d", attempts), false)
 		response, err := gateway.Write(ctx, request)
 		if err != nil || response.Results[0].Status != sink.WriteStatus_WRITE_STATUS_APPLIED {
 			t.Fatalf("write: %v %v", response, err)
@@ -75,11 +77,11 @@ func TestGatewayDiscoversDNSScaleChanges(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	first, second := backends[0].calls.Load(), backends[1].calls.Load()
-	for range 40 {
+	for range 100 {
 		write()
 	}
-	if backends[0].calls.Load()-first < 15 || backends[1].calls.Load()-second < 15 {
-		t.Fatal("Engine replicas are not round-robin balanced")
+	if backends[0].calls.Load()-first < 25 || backends[1].calls.Load()-second < 25 {
+		t.Fatal("record hashes did not distribute across Engine replicas")
 	}
 	state.stage.Store(3)
 	deadline = time.Now().Add(10 * time.Second)

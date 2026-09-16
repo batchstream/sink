@@ -16,6 +16,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/service"
@@ -398,24 +401,14 @@ func (f *integrationFixture) address(key string) storage.Address {
 
 func (f *integrationFixture) datasetAddress(index string, key string) storage.Address {
 	recordKey := storage.Key{Type: "string", Data: []byte(key)}
-	address := storage.Address{
-		Store:     "primary",
-		Namespace: "catalog",
-		Dataset:   index,
-		Key:       recordKey,
-	}
+	address := testuri.Address("primary", []string{index}, recordKey)
 	return address
 }
 
 func (f *integrationFixture) sinkAddress(key string) *sink.RecordAddress {
-	keyValue := &sink.RecordKey_StringValue{StringValue: key}
-	recordKey := &sink.RecordKey{Kind: keyValue}
-	address := &sink.RecordAddress{
-		Store:     "primary",
-		Namespace: "catalog",
-		Dataset:   f.index,
-		Key:       recordKey,
-	}
+	keyValue := uri.StringKey(key)
+	recordKey := keyValue
+	address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{f.index}, recordKey)}
 	return address
 }
 

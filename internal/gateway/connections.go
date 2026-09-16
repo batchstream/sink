@@ -2,17 +2,16 @@ package gateway
 
 import (
 	"crypto/tls"
+	"net"
 	"sync"
 	"time"
 
 	forward "github.com/liran/sink/gen/forward"
 	"github.com/liran/sink/internal/protocol"
 	"google.golang.org/grpc"
-	_ "google.golang.org/grpc/balancer/roundrobin"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/status"
 )
 
@@ -25,6 +24,7 @@ type connection struct {
 type connections struct {
 	mu           sync.Mutex
 	entries      map[Route]*connection
+	discoveries  map[Route]*discovery
 	maximum      int
 	messageBytes int
 	idleTimeout  time.Duration
@@ -57,14 +57,28 @@ func (p *connections) acquire(route Route) (*connection, error) {
 		_ = oldest.conn.Close()
 		delete(p.entries, oldestRoute)
 	}
-	tlsOptions := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: route.TLS.ServerName}
+	serverName := route.TLS.ServerName
+	if serverName == "" && !route.TLS.Insecure {
+		target, err := resolveTarget(route.Target)
+		if err != nil {
+			return nil, status.Error(codes.Unavailable, "invalid Engine target")
+		}
+		serverName, _, err = net.SplitHostPort(target.Endpoint())
+		if err != nil {
+			serverName = target.Endpoint()
+		}
+	}
+	tlsOptions := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: serverName}
 	transport := credentials.NewTLS(tlsOptions)
 	if route.TLS.Insecure {
 		transport = insecure.NewCredentials()
 	}
 	codec := protocol.NewVTProtoCodec()
-	dns := &refreshingDNSBuilder{Builder: resolver.Get("dns"), interval: p.dnsRefresh}
-	conn, err := grpc.NewClient(route.Target, grpc.WithResolvers(dns), grpc.WithTransportCredentials(transport), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithDefaultServiceConfig(`{"loadBalancingConfig":[{"round_robin":{}}]}`), grpc.WithDefaultCallOptions(grpc.ForceCodecV2(codec), grpc.MaxCallRecvMsgSize(p.messageBytes), grpc.MaxCallSendMsgSize(p.messageBytes)))
+	target := route.Target
+	if route.endpoint != "" {
+		target = "passthrough:///" + route.endpoint
+	}
+	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(transport), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithDefaultCallOptions(grpc.ForceCodecV2(codec), grpc.MaxCallRecvMsgSize(p.messageBytes), grpc.MaxCallSendMsgSize(p.messageBytes)))
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, "cannot create Engine connection")
 	}
@@ -80,20 +94,35 @@ func (p *connections) release(entry *connection) {
 }
 func (p *connections) expire() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	var expired []*discovery
 	for route, entry := range p.entries {
 		if entry.users == 0 && time.Since(entry.idleSince) >= p.idleTimeout {
 			_ = entry.conn.Close()
 			delete(p.entries, route)
 		}
 	}
+	for route, d := range p.discoveries {
+		if d.users == 0 && time.Since(d.idleSince) >= p.idleTimeout {
+			expired = append(expired, d)
+			delete(p.discoveries, route)
+		}
+	}
+	p.mu.Unlock()
+	for _, d := range expired {
+		d.close()
+	}
 }
 func (p *connections) close() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.closed = true
 	for route, entry := range p.entries {
 		_ = entry.conn.Close()
 		delete(p.entries, route)
+	}
+	discoveries := p.discoveries
+	p.discoveries = nil
+	p.mu.Unlock()
+	for _, d := range discoveries {
+		d.close()
 	}
 }

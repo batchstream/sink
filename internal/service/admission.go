@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/liran/sink/internal/protocol"
+
 	sink "github.com/liran/sink/gen/sink"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -309,7 +311,7 @@ func (s *admissionPool) wakeAdmissionWaiter() {
 func operationStores[T interface{ GetAddress() *sink.RecordAddress }](operations []T) []string {
 	seen := make(map[string]struct{})
 	for _, operation := range operations {
-		seen[operation.GetAddress().GetStore()] = struct{}{}
+		seen[protocol.RecordStore(operation.GetAddress())] = struct{}{}
 	}
 	stores := make([]string, 0, len(seen))
 	for name := range seen {
@@ -354,9 +356,9 @@ func (s *Server) estimateWriteExecution(req *sink.WriteRequest, callers int, ret
 			bytes += max(largestSource, len(operation.GetMerge().GetLuaProgram().GetSource()))
 		}
 		if hasConditionalPut && !hasSnapshot && operation.GetPut() != nil {
-			address, err := convertAddress(operation.GetAddress())
+			address, err := protocol.ParseAddress(operation.GetAddress())
 			if err == nil {
-				key := s.identityOf(address)
+				key := identityOf(address)
 				run := puts[key]
 				run.count++
 				run.conditional = run.conditional || operation.GetPut().GetMode() != sink.WriteMode_WRITE_MODE_UPSERT
@@ -373,9 +375,9 @@ func (s *Server) estimateWriteExecution(req *sink.WriteRequest, callers int, ret
 		if callers > 1 {
 			records := make(map[recordIdentity]bool)
 			for _, operation := range req.GetOperations() {
-				address, err := convertAddress(operation.GetAddress())
+				address, err := protocol.ParseAddress(operation.GetAddress())
 				if err == nil {
-					records[s.identityOf(address)] = true
+					records[identityOf(address)] = true
 				}
 			}
 			retained = min(callers, max(1, len(records)))

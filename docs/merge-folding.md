@@ -7,15 +7,13 @@ acknowledges a mutation before its final backend result.
 
 ## Scope and ordering
 
-Identity follows the backend's physical record identity. MongoDB includes
-store, namespace, dataset, and typed record key. Search uses store, dataset,
-and typed key because namespace does not select the index. Folding applies to
-explicit core requests and the micro-batcher's combined requests. Mutation
-completion modes remain separate, and a mode change for the same address
-remains an ordering barrier. Folding does not span running batches, replicas,
-or RPC methods.
-Automatic mutation batches also stay within one namespace and dataset; explicit
-multi-dataset RPCs keep their own boundary and are not combined with other RPCs.
+Identity is the complete canonical record URI, identical for every adapter.
+Folding applies to explicit core requests and the micro-batcher's combined
+requests. Completion modes remain separate, and a mode change for the same URI
+remains an ordering barrier. Folding does not span running batches, replicas or
+RPC methods. Automatic mutation batches share an adapter-provided physical
+resource (`BatchKey`) and completion mode; explicit multi-resource RPCs keep their
+own boundary. See [record addresses](record-addresses.md).
 
 | Operations for one address | Backend work without conflicts |
 | --- | --- |

@@ -19,6 +19,7 @@
 | [Native access](native-access.md) | Execute backend commands, query, count, scan, and return atomic update results |
 | [Lua merge developer guide](lua-merge-guide.md) | Write merge programs using the `sink.v1` tools |
 | [Testing Lua merge programs](lua-testing.md) | Test JSON and BSON fixtures with Sink's production Lua runtime |
+| [Record addresses](record-addresses.md) | Canonical URIs, Store paths and Engine affinity |
 | [Merge folding](merge-folding.md) | Understand how compatible operations share one storage write |
 | [Protocol definition](../proto/sink/sink.proto) | Inspect the authoritative gRPC messages and services |
 

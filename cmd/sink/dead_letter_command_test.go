@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/config"
 	"github.com/liran/sink/internal/queue"
@@ -34,9 +37,9 @@ func TestDeadLetterReplayPreservesPublisherRouting(t *testing.T) {
 				t.Cleanup(client.Close)
 				ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 				defer cancel()
-				keyValue := &sink.RecordKey_StringValue{StringValue: "same-record"}
-				key := &sink.RecordKey{Kind: keyValue}
-				address := &sink.RecordAddress{Store: "primary", Namespace: "tenant", Dataset: "documents", Key: key}
+				keyValue := uri.StringKey("same-record")
+				key := keyValue
+				address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{"tenant", "documents"}, key)}
 				mutation := queue.Mutation{}
 				if kind == "write" {
 					document := &sink.Document{Encoding: sink.DocumentEncoding_DOCUMENT_ENCODING_JSON, Payload: []byte(`{}`)}
@@ -51,9 +54,6 @@ func TestDeadLetterReplayPreservesPublisherRouting(t *testing.T) {
 					mutation.Delete = &sink.DeleteOperation{Address: address}
 				}
 				partitionKey, err := queue.MutationKey(mutation)
-				if driver != config.DriverMongoDB {
-					partitionKey, err = queue.MutationKeyWithoutNamespace(mutation)
-				}
 				if err != nil {
 					t.Fatal(err)
 				}

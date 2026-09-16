@@ -2,6 +2,8 @@
 package gateway
 
 import (
+	"github.com/liran/sink-go/uri"
+
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,7 +12,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -22,10 +23,11 @@ type TLS struct {
 	ServerName string `yaml:"server_name"`
 }
 type Route struct {
-	Store  string `yaml:"store"`
-	Target string `yaml:"target"`
-	State  string `yaml:"state"`
-	TLS    TLS    `yaml:"tls"`
+	Store    string `yaml:"store"`
+	Target   string `yaml:"target"`
+	State    string `yaml:"state"`
+	TLS      TLS    `yaml:"tls"`
+	endpoint string
 }
 type routeFile struct {
 	Routes []Route `yaml:"routes"`
@@ -69,6 +71,9 @@ func readRoutes(path string) (*snapshot, error) {
 		if _, exists := routes[route.Store]; exists {
 			return nil, fmt.Errorf("duplicate Store %q", route.Store)
 		}
+		if _, err := resolveTarget(route.Target); err != nil {
+			return nil, fmt.Errorf("store %q: %w", route.Store, err)
+		}
 		switch route.State {
 		case "":
 			route.State = "active"
@@ -85,9 +90,7 @@ func readRoutes(path string) (*snapshot, error) {
 	loaded := &snapshot{routes: routes, hash: hex.EncodeToString(digest[:])}
 	return loaded, nil
 }
-func validIdentity(value string) bool {
-	return value != "" && len(value) <= 256 && utf8.ValidString(value) && strings.TrimSpace(value) == value && !strings.ContainsAny(value, "\x00\r\n\t")
-}
+func validIdentity(value string) bool { return uri.ValidStore(value) }
 
 // ValidateRoutes checks a route file offline for the configuration CLI.
 func ValidateRoutes(path string) error { _, err := readRoutes(path); return err }

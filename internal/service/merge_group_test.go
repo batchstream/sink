@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/service"
@@ -89,7 +91,7 @@ func TestMergeFoldingFullAddressIsolation(t *testing.T) {
 	for _, dataset := range []string{"products", "offers"} {
 		for range 2 {
 			operation := foldingMerge("same-key", incrementLua, `{"value":1}`)
-			operation.Address.Dataset = dataset
+			operation.Address.Uri = testuri.WithSegment(operation.Address.GetUri(), -2, dataset)
 			operations = append(operations, operation)
 		}
 	}
@@ -487,4 +489,8 @@ func TestMergeFoldingWaitsForVisibilityWhileOneCallerCancels(t *testing.T) {
 	if foldingValue(t, backend, "counter") != 2 {
 		t.Fatal("lost a dispatched merge intent")
 	}
+}
+
+func (s *foldingFaultStorage) BatchKey(address storage.Address) (string, error) {
+	return testuri.BatchKey(address)
 }

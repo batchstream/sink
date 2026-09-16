@@ -2,7 +2,7 @@ package service
 
 import (
 	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/storage"
+	"github.com/liran/sink/internal/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -29,7 +29,6 @@ type writeCompletion struct {
 
 func newWriteCompletion(
 	calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse],
-	identity func(storage.Address) recordIdentity,
 	maximum int,
 ) *writeCompletion {
 	completion := &writeCompletion{calls: calls, maximum: maximum}
@@ -41,10 +40,10 @@ func newWriteCompletion(
 		records := make(map[recordIdentity]int)
 		for index, operation := range operations {
 			owner := writeResultOwner{caller: caller, index: index}
-			address, err := convertAddress(operation.GetAddress())
+			address, err := protocol.ParseAddress(operation.GetAddress())
 			if err == nil {
 				owner.valid = true
-				owner.key = identity(address)
+				owner.key = identityOf(address)
 				records[owner.key]++
 			}
 			completion.owners = append(completion.owners, owner)

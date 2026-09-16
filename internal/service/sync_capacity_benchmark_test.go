@@ -1,6 +1,8 @@
 package service
 
 import (
+	"github.com/liran/sink/internal/testuri"
+
 	"context"
 	"fmt"
 	"sync/atomic"
@@ -123,4 +125,8 @@ func BenchmarkReadMicrobatch(b *testing.B) {
 			b.ReportMetric(float64(callers*b.N)/b.Elapsed().Seconds(), "ops/s")
 		})
 	}
+}
+
+func (s *syncCapacityStorage) BatchKey(address storage.Address) (string, error) {
+	return testuri.BatchKey(address)
 }

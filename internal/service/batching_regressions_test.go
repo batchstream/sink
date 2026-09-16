@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink/internal/protocol"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/storage"
 	"github.com/liran/sink/internal/storage/memory"
@@ -84,7 +86,7 @@ func TestRegressionMicrobatchReadBudgetIsolation(t *testing.T) {
 	server.server.maxReadBytes = 256
 	var calls []*batchCall[*sink.ReadRequest, *sink.ReadResponse]
 	for _, key := range []string{"a", "b"} {
-		address, err := convertAddress(completionAddress(key))
+		address, err := protocol.ParseAddress(completionAddress(key))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -119,7 +121,7 @@ func TestMicrobatchReadKeepsOversizedCallerIsolatedForSharedKey(t *testing.T) {
 	server.server.maxReadBytes = 256
 	var operations []*sink.ReadOperation
 	for _, key := range []string{"a", "b"} {
-		address, err := convertAddress(completionAddress(key))
+		address, err := protocol.ParseAddress(completionAddress(key))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -156,7 +158,7 @@ func TestMicrobatchMergeBudgetFailureDoesNotLeakIntoNextCaller(t *testing.T) {
 			server.server.maxReadBytes = 150
 			if present {
 				for _, key := range []string{"a", "b"} {
-					address, err := convertAddress(completionAddress(key))
+					address, err := protocol.ParseAddress(completionAddress(key))
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -180,7 +182,7 @@ func TestMicrobatchMergeBudgetFailureDoesNotLeakIntoNextCaller(t *testing.T) {
 			if healthy.response.Results[0].Status != sink.WriteStatus_WRITE_STATUS_APPLIED {
 				t.Fatal(healthy.response)
 			}
-			address, err := convertAddress(completionAddress("b"))
+			address, err := protocol.ParseAddress(completionAddress("b"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -371,7 +373,7 @@ func TestMicrobatchConditionalWritesKeepEachCallersInputAndOutputBudget(t *testi
 			server.server.maxReadBytes = 256
 			var calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]
 			for _, key := range []string{"a", "b"} {
-				address, err := convertAddress(completionAddress(key))
+				address, err := protocol.ParseAddress(completionAddress(key))
 				if err != nil {
 					t.Fatal(err)
 				}

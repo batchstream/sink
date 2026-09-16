@@ -1,11 +1,15 @@
 package service
 
 import (
+	"github.com/liran/sink/internal/storage/memory"
+
 	"context"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/liran/sink/internal/testuri"
 
 	sink "github.com/liran/sink/gen/sink"
 )
@@ -17,8 +21,8 @@ func TestBatcherOldBatchCannotReleaseNewOwnerOfCompletedDocument(t *testing.T) {
 	firstHeld := make(chan struct{})
 	secondHeld := make(chan struct{})
 	firstDone := make(chan struct{})
-	key := recordIdentity{dataset: "products", keyType: "string", keyData: "hot"}
-	other := recordIdentity{dataset: "products", keyType: "string", keyData: "other"}
+	key := recordIdentity("hot")
+	other := recordIdentity("other")
 	records := func(request int) []recordIdentity {
 		if request == 2 {
 			return []recordIdentity{other}
@@ -85,7 +89,7 @@ func TestBatcherOldBatchCannotReleaseNewOwnerOfCompletedDocument(t *testing.T) {
 func TestBatcherShutdownUnblocksDocumentCompletionNotifications(t *testing.T) {
 	started := make(chan struct{})
 	records := func(request int) []recordIdentity {
-		key := recordIdentity{keyType: "string", keyData: strconv.Itoa(request)}
+		key := recordIdentity(strconv.Itoa(request))
 		return []recordIdentity{key}
 	}
 	execute := func(ctx context.Context, calls []*batchCall[int, int]) {
@@ -118,7 +122,7 @@ func TestBatcherCancellationDoesNotReleaseRunningMutation(t *testing.T) {
 	gate := make(chan struct{})
 	entered := make(chan struct{})
 	var release sync.Once
-	key := recordIdentity{dataset: "products", keyType: "string", keyData: "hot"}
+	key := recordIdentity("hot")
 	records := func(int) []recordIdentity { return []recordIdentity{key} }
 	execute := func(_ context.Context, calls []*batchCall[int, int]) {
 		for _, call := range calls {
@@ -162,11 +166,11 @@ func TestMutationPartitionsPreserveBlockedPredecessors(t *testing.T) {
 	second := completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE, completionPut("hot", 1))
 	third := completionWriteCall(t.Context(), mode, completionPut("hot", 2))
 	other := completionWriteCall(t.Context(), mode, completionPut("independent", 1))
-	other.request.Operations[0].Address.Dataset = "another-index"
+	other.request.Operations[0].Address.Uri = testuri.WithSegment(other.request.Operations[0].Address.GetUri(), -2, "another-index")
 	calls := []*batchCall[*sink.WriteRequest, *sink.WriteResponse]{first, second, third, other}
 	for _, call := range calls {
-		call.records = mutationRequestRecords(call.request, identityOf)
-		call.partition = mutationRequestPartition[*sink.WriteOperation](call.request)
+		call.records = mutationRequestRecords(call.request)
+		call.partition = mutationRequestPartition[*sink.WriteOperation](call.request, memory.New())
 		call.encodedBytes = 1
 	}
 	batcher := &requestBatcher[*sink.WriteRequest, *sink.WriteResponse]{maxOperations: 100, maxBytes: 1000}
@@ -185,7 +189,7 @@ func TestBatcherWaitsForEveryCallerOwningSharedDocument(t *testing.T) {
 	gate := make(chan struct{})
 	held := make(chan struct{})
 	var release sync.Once
-	key := recordIdentity{dataset: "products", keyType: "string", keyData: "hot"}
+	key := recordIdentity("hot")
 	records := func(int) []recordIdentity { return []recordIdentity{key} }
 	execute := func(_ context.Context, calls []*batchCall[int, int]) {
 		for _, call := range calls {

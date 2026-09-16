@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"google.golang.org/grpc"
@@ -302,14 +304,12 @@ func readRequest(records []exampleRecord) *sink.ReadRequest {
 }
 
 func recordAddress(key string) *sink.RecordAddress {
-	keyKind := &sink.RecordKey_StringValue{StringValue: key}
-	recordKey := &sink.RecordKey{Kind: keyKind}
-	address := &sink.RecordAddress{
-		Store:     "primary",
-		Namespace: "quickstart",
-		Dataset:   "records",
-		Key:       recordKey,
-	}
+	parsed, err := uri.AppendKey("sink://primary/quickstart/records", uri.StringKey(key))
+	if err != nil {
+		panic(err)
+	} // All example keys are fixed local fixtures.
+	address := &sink.RecordAddress{Uri: parsed.String()}
+
 	return address
 }
 

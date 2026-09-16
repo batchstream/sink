@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"github.com/liran/sink-go/uri"
+
 	"context"
 	"strings"
 	"sync"
@@ -21,7 +23,7 @@ type storeGroup struct {
 }
 
 func (s *Server) records(ctx context.Context, req *forward.ForwardRequest) (*forward.ForwardResponse, error) {
-	stores, err := s.validateBatch(req)
+	addresses, err := s.validateBatch(req)
 	if err != nil {
 		return nil, err
 	}
@@ -31,19 +33,50 @@ func (s *Server) records(ctx context.Context, req *forward.ForwardRequest) (*for
 	}
 	defer release()
 	view := s.current.Load()
-	response := emptyResponse(req, len(stores))
+	response := emptyResponse(req, len(addresses))
 	groups := make([]storeGroup, 0)
-	positions := make(map[string]int)
-	for index, store := range stores {
+	positions := make(map[Route]int)
+	resolved := make(map[string][]Route)
+	resolutionErrors := make(map[string]error)
+	owners := make(map[string]Route)
+	for index, raw := range addresses {
+		address, parseErr := uri.Parse(raw)
+		if parseErr != nil {
+			failRecords(response, []int{index}, status.Error(codes.InvalidArgument, parseErr.Error()), true)
+			continue
+		}
+		store := address.Store()
 		route, routeErr := routeFor(view, store)
 		if routeErr != nil {
 			failRecords(response, []int{index}, routeErr, true)
 			continue
 		}
-		position, exists := positions[store]
+		targets, found := resolved[store]
+		resolutionErr, failed := resolutionErrors[store]
+		if !found && !failed {
+			var release func()
+			targets, release, resolutionErr = s.pool.destinations(ctx, route)
+			if resolutionErr != nil {
+				resolutionErrors[store] = resolutionErr
+			} else {
+				resolved[store] = targets
+				defer release()
+			}
+		}
+		if resolutionErr != nil {
+			failRecords(response, []int{index}, resolutionErr, true)
+			continue
+		}
+		owner, found := owners[raw]
+		if !found {
+			owner = affinityRoute(raw, targets)
+			owners[raw] = owner
+		}
+		route = owner
+		position, exists := positions[route]
 		if !exists {
 			position = len(groups)
-			positions[store] = position
+			positions[route] = position
 			group := storeGroup{route: route}
 			groups = append(groups, group)
 		}
@@ -96,16 +129,16 @@ func (s *Server) records(ctx context.Context, req *forward.ForwardRequest) (*for
 			consume(remaining, used)
 		}
 	}
-	boundFailures(response, s.request.MaxReadBytes, len(stores))
+	boundFailures(response, s.request.MaxReadBytes, len(addresses))
 	return response, nil
 }
 
 func (s *Server) validateBatch(req *forward.ForwardRequest) ([]string, error) {
-	var stores []string
+	var addresses []string
 	switch body := req.GetRequest().(type) {
 	case *forward.ForwardRequest_Read:
 		for _, op := range body.Read.GetOperations() {
-			stores = append(stores, op.GetAddress().GetStore())
+			addresses = append(addresses, op.GetAddress().GetUri())
 		}
 	case *forward.ForwardRequest_Write:
 		mode := body.Write.GetCompletionMode()
@@ -119,23 +152,23 @@ func (s *Server) validateBatch(req *forward.ForwardRequest) ([]string, error) {
 			if op.GetReturnDocument() && mode == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED {
 				return nil, status.Error(codes.InvalidArgument, "returned write documents require synchronous completion")
 			}
-			stores = append(stores, op.GetAddress().GetStore())
+			addresses = append(addresses, op.GetAddress().GetUri())
 		}
 	case *forward.ForwardRequest_Delete:
 		if !validCompletion(body.Delete.GetCompletionMode()) {
 			return nil, status.Error(codes.InvalidArgument, "invalid completion mode")
 		}
 		for _, op := range body.Delete.GetOperations() {
-			stores = append(stores, op.GetAddress().GetStore())
+			addresses = append(addresses, op.GetAddress().GetUri())
 		}
 	}
-	if len(stores) == 0 {
+	if len(addresses) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "request must contain operations")
 	}
-	if len(stores) > s.request.MaxOperations {
+	if len(addresses) > s.request.MaxOperations {
 		return nil, status.Error(codes.ResourceExhausted, "request exceeds operation limit")
 	}
-	return stores, nil
+	return addresses, nil
 }
 func validCompletion(mode sink.CompletionMode) bool {
 	return mode >= sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED && mode <= sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE

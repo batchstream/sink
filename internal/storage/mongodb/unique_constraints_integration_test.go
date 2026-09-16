@@ -9,6 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/queue"
@@ -61,9 +64,9 @@ func constraintOperation(t *testing.T, opts constraintOperationOptions) *sink.Wr
 		t.Fatal(err)
 	}
 	document := &sink.Document{Encoding: sink.DocumentEncoding_DOCUMENT_ENCODING_BSON, Payload: payload}
-	kind := &sink.RecordKey_StringValue{StringValue: opts.id}
-	key := &sink.RecordKey{Kind: kind}
-	address := &sink.RecordAddress{Store: "primary", Namespace: opts.database, Dataset: "documents", Key: key}
+	kind := uri.StringKey(opts.id)
+	key := kind
+	address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{opts.database, "documents"}, key)}
 	operation := &sink.WriteOperation{Address: address}
 	if opts.action == "merge" {
 		program := &sink.LuaProgram{Source: []byte(`return function(current, incoming) return incoming end`)}

@@ -16,7 +16,7 @@ The first queued request starts `service.batching.max_wait`.
 Collection stops when that timer expires or adding another request would cross
 the operation or encoded-byte target. A single valid RPC larger than a batch
 target still runs alone. Automatic mutation batches combine only RPCs sharing
-namespace, dataset, and completion mode. An explicit RPC spanning datasets
+adapter resource and completion mode. An explicit RPC spanning datasets
 executes alone and keeps its original result boundary. This prevents an index's
 refresh wait from entering an unrelated index's storage bulk through automatic
 batching. `WAIT_UNTIL_APPLIED` is never promoted to `WAIT_UNTIL_VISIBLE`. A change of

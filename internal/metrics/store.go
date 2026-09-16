@@ -1,6 +1,9 @@
 package metrics
 
-import sink "github.com/liran/sink/gen/sink"
+import (
+	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/protocol"
+)
 
 const (
 	multipleStores    = "_multiple"
@@ -58,9 +61,9 @@ func requestOperationStore[T interface{ GetAddress() *sink.RecordAddress }](m *M
 	if len(operations) == 0 {
 		return unconfiguredStore
 	}
-	store := operations[0].GetAddress().GetStore()
+	store := protocol.RecordStore(operations[0].GetAddress())
 	for _, operation := range operations[1:] {
-		if operation.GetAddress().GetStore() != store {
+		if protocol.RecordStore(operation.GetAddress()) != store {
 			return multipleStores
 		}
 	}
@@ -71,5 +74,5 @@ func operationStore[T interface{ GetAddress() *sink.RecordAddress }](m *Metrics,
 	if index >= len(operations) {
 		return unconfiguredStore
 	}
-	return m.configuredStore(operations[index].GetAddress().GetStore())
+	return m.configuredStore(protocol.RecordStore(operations[index].GetAddress()))
 }

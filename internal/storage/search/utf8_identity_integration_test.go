@@ -3,7 +3,15 @@
 package search_test
 
 import (
+	"strings"
 	"testing"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/liran/sink/internal/testuri"
+
+	"github.com/liran/sink-go/uri"
 
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
@@ -25,10 +33,11 @@ func TestSearchInvalidUTF8CannotOverwriteUnicodeKey(t *testing.T) {
 	}
 	codec := protocol.NewVTProtoCodec()
 	valid := fixture.sinkAddress("\uFFFD")
-	invalid := fixture.sinkAddress(string([]byte{0xff}))
+	invalid := fixture.sinkAddress("invalid")
+	invalid.Uri = strings.Replace(invalid.Uri, "s:invalid", "s:%FF", 1)
 	binary := fixture.sinkAddress("")
-	kind := &sink.RecordKey_BytesValue{BytesValue: []byte{0xff}}
-	binary.Key.Kind = kind
+	kind := uri.BytesKey([]byte{0xff})
+	binary.Uri = testuri.WithKey(binary.GetUri(), kind)
 	for i, address := range []*sink.RecordAddress{valid, invalid, binary} {
 		value := `{"value":"original"}`
 		if i > 0 {
@@ -49,22 +58,21 @@ func TestSearchInvalidUTF8CannotOverwriteUnicodeKey(t *testing.T) {
 			t.Fatal(err)
 		}
 		response, err := server.Write(t.Context(), &decoded)
-		if err != nil {
-			t.Fatal(err)
-		}
-		result := response.Results[0]
 		if i == 1 {
-			if result.GetStatus() != sink.WriteStatus_WRITE_STATUS_FAILED || result.GetFailure().GetCode() != sink.FailureCode_FAILURE_CODE_INVALID_ARGUMENT {
-				t.Fatalf("invalid string key accepted: %v", result)
+			if status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("invalid URI accepted: %v %v", response, err)
 			}
-		} else if result.GetStatus() != sink.WriteStatus_WRITE_STATUS_APPLIED {
-			t.Fatalf("valid key rejected: %v", result)
+			continue
 		}
+		if err != nil || response.Results[0].GetStatus() != sink.WriteStatus_WRITE_STATUS_APPLIED {
+			t.Fatalf("valid key rejected: %v %v", response, err)
+		}
+
 	}
 	remove := &sink.DeleteOperation{Address: invalid}
 	deleteRequest := &sink.DeleteRequest{CompletionMode: sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, Operations: []*sink.DeleteOperation{remove}}
 	deleted, err := server.Delete(t.Context(), deleteRequest)
-	if err != nil || deleted.Results[0].GetFailure().GetCode() != sink.FailureCode_FAILURE_CODE_INVALID_ARGUMENT {
+	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("invalid delete accepted: response=%v error=%v", deleted, err)
 	}
 	for i, address := range []*sink.RecordAddress{valid, binary} {

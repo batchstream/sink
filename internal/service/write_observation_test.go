@@ -113,7 +113,7 @@ func TestWriteObservationsDoNotLabelArbitraryStores(t *testing.T) {
 	core.metrics = observed
 	for index := range 10 {
 		op := completionPut("key", index)
-		op.Address.Store = fmt.Sprintf("untrusted-client-store-%d", index)
+		op.Address.Uri = fmt.Sprintf("sink://untrusted-client-store-%d/catalog/products/s:key", index)
 		call := completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, op)
 		observation := core.newWriteObservation(call.request)
 		// Exercise the real request-to-store classification without a long sleep.
@@ -155,7 +155,7 @@ func TestBatchedWritesKeepQueueAndPhaseMetricsSeparateByStore(t *testing.T) {
 	}
 	for _, store := range []string{"alpha", "beta", "alpha"} {
 		operation := completionPut("key", 1)
-		operation.Address.Store = store
+		operation.Address.Uri = "sink://" + store + "/catalog/products/s:key"
 		request := &sink.WriteRequest{CompletionMode: sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, Operations: []*sink.WriteOperation{operation}}
 		response, err := batchers[store].Write(t.Context(), request)
 		if err != nil || len(response.GetResults()) != 1 || response.Results[0].GetStatus() != sink.WriteStatus_WRITE_STATUS_APPLIED {

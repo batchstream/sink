@@ -21,22 +21,13 @@ type Applier interface {
 
 type Processor struct {
 	applier Applier
-	key     queue.MutationKeyFunc
-}
-
-type mutationKeyer interface {
-	MutationKey(queue.Mutation) ([]byte, error)
 }
 
 func NewProcessor(applier Applier) (*Processor, error) {
 	if applier == nil {
 		return nil, errors.New("create mutation processor: applier is required")
 	}
-	key := queue.MutationKey
-	if keyer, ok := applier.(mutationKeyer); ok {
-		key = keyer.MutationKey
-	}
-	processor := &Processor{applier: applier, key: key}
+	processor := &Processor{applier: applier}
 	return processor, nil
 }
 
@@ -56,7 +47,7 @@ func (p *Processor) HandleBatch(ctx context.Context, mutations []queue.Mutation)
 	results := make([]error, len(mutations))
 	prepared := make([]mutationWork, 0, len(mutations))
 	for index, mutation := range mutations {
-		key, err := p.key(mutation)
+		key, err := queue.MutationKey(mutation)
 		if err != nil {
 			results[index] = NewApplyError("apply queued mutation", false, err)
 			continue

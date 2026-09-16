@@ -2,6 +2,7 @@ package service
 
 import (
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/protocol"
 	"github.com/liran/sink/internal/storage"
 )
 
@@ -23,24 +24,27 @@ type mutationPosition struct {
 // Requests spanning datasets retain their RPC boundary but execute alone.
 // Partitioning never permits a later same-record request to pass a predecessor.
 type batchPartition struct {
-	namespace string
-	dataset   string
-	mode      sink.CompletionMode
-	isolated  bool
+	resource string
+	mode     sink.CompletionMode
+	isolated bool
 }
 
-func mutationRequestPartition[Operation addressedOperation, Request mutationRequest[Operation]](request Request) batchPartition {
+func mutationRequestPartition[Operation addressedOperation, Request mutationRequest[Operation]](request Request, backend storage.Storage) batchPartition {
 	partition := batchPartition{mode: request.GetCompletionMode()}
 	for index, operation := range request.GetOperations() {
-		address := operation.GetAddress()
-		if address.GetNamespace() == "" || address.GetDataset() == "" {
+		address, err := protocol.ParseAddress(operation.GetAddress())
+		if err != nil {
+			partition.isolated = true
+			break
+		}
+		resource, err := backend.BatchKey(address)
+		if err != nil {
 			partition.isolated = true
 			break
 		}
 		if index == 0 {
-			partition.namespace = address.GetNamespace()
-			partition.dataset = address.GetDataset()
-		} else if partition.namespace != address.GetNamespace() || partition.dataset != address.GetDataset() {
+			partition.resource = resource
+		} else if partition.resource != resource {
 			partition.isolated = true
 			break
 		}
@@ -54,7 +58,6 @@ func mutationRequestPartition[Operation addressedOperation, Request mutationRequ
 // the RPC intact also preserves its result and admission boundaries.
 func planMutationWaves[Operation addressedOperation, Request mutationRequest[Operation], Response any](
 	calls []*batchCall[Request, Response],
-	identity func(storage.Address) recordIdentity,
 ) []mutationWave[Request, Response] {
 	waves := make([]mutationWave[Request, Response], 0)
 	last := make(map[recordIdentity]mutationPosition)
@@ -63,12 +66,12 @@ func planMutationWaves[Operation addressedOperation, Request mutationRequest[Ope
 		wave := 0
 		keys := make([]recordIdentity, 0, call.operationCount)
 		for _, operation := range call.request.GetOperations() {
-			address, err := convertAddress(operation.GetAddress())
+			address, err := protocol.ParseAddress(operation.GetAddress())
 			if err != nil {
-				// The core returns invalid addresses as per-operation failures.
+				// Invalid URIs are rejected at Store admission.
 				continue
 			}
-			key := identity(address)
+			key := identityOf(address)
 			keys = append(keys, key)
 			if previous, exists := last[key]; exists {
 				required := previous.wave
@@ -109,13 +112,12 @@ func liveMutationCalls[Request any, Response any](calls []*batchCall[Request, Re
 
 func mutationRequestRecords[Operation addressedOperation, Request mutationRequest[Operation]](
 	request Request,
-	identity func(storage.Address) recordIdentity,
 ) []recordIdentity {
 	records := make([]recordIdentity, 0, len(request.GetOperations()))
 	for _, operation := range request.GetOperations() {
-		address, err := convertAddress(operation.GetAddress())
+		address, err := protocol.ParseAddress(operation.GetAddress())
 		if err == nil {
-			records = append(records, identity(address))
+			records = append(records, identityOf(address))
 		}
 	}
 	return records

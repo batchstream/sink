@@ -39,7 +39,7 @@ func (s *Store) Read(ctx context.Context, req storage.ReadRequest) (storage.Read
 			setReadError(&response.Results[index], err)
 			continue
 		}
-		id, err := mongoID(operation.Address.Key)
+		id, err := mongoID(collection.recordKey)
 		if err != nil {
 			setReadError(&response.Results[index], err)
 			continue

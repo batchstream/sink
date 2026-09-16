@@ -7,6 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/testuri"
+
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/service"
@@ -26,9 +29,9 @@ func TestMongoDBFoldedMergesPreserveBSONAndFinalRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := fixture.address("folded")
-	keyValue := &sink.RecordKey_StringValue{StringValue: "folded"}
-	key := &sink.RecordKey{Kind: keyValue}
-	address := &sink.RecordAddress{Store: base.Store, Namespace: base.Namespace, Dataset: base.Dataset, Key: key}
+	keyValue := uri.StringKey("folded")
+	key := keyValue
+	address := &sink.RecordAddress{Uri: testuri.Record(base.Store(), base.Segments()[:2], key)}
 	created := time.Date(2026, time.September, 6, 0, 0, 0, 0, time.UTC)
 	value := bson.M{"_id": "folded", "counter": 1, "created_at": created}
 	payload, err := bson.Marshal(value)
@@ -88,9 +91,9 @@ func TestMongoDBMergePreservesBSONTypesAndReplacesDateWithString(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := fixture.address("typed-merge")
-	keyValue := &sink.RecordKey_StringValue{StringValue: "typed-merge"}
-	key := &sink.RecordKey{Kind: keyValue}
-	address := &sink.RecordAddress{Store: base.Store, Namespace: base.Namespace, Dataset: base.Dataset, Key: key}
+	keyValue := uri.StringKey("typed-merge")
+	key := keyValue
+	address := &sink.RecordAddress{Uri: testuri.Record(base.Store(), base.Segments()[:2], key)}
 	timestamp := time.Date(2026, time.September, 13, 1, 2, 3, 0, time.UTC)
 	filter := bson.D{{Key: "_id", Value: "typed-merge"}}
 	for _, dateValue := range []any{timestamp, timestamp.Format(time.RFC3339Nano)} {

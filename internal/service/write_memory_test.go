@@ -1,6 +1,8 @@
 package service
 
 import (
+	"github.com/liran/sink/internal/testuri"
+
 	"context"
 	"testing"
 
@@ -173,4 +175,8 @@ func TestWriteCannotRegrowWithoutCapacityAndPreservesEarlierSuccess(t *testing.T
 	if len(backend.readReservations) != 1 || backend.writes != 2 || core.inFlightBytes != pressure.encodedBytes {
 		t.Fatal("restoring capacity allocated, replayed successful work or leaked its reservation")
 	}
+}
+
+func (s *phaseMemoryStorage) BatchKey(address storage.Address) (string, error) {
+	return testuri.BatchKey(address)
 }

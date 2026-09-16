@@ -1,5 +1,7 @@
 # Store-isolated implementation and validation
 
+Historical design record. The current address and deployment contract is defined in [Record URIs and Engine affinity](../record-addresses.md).
+
 Date: 2026-09-16. Development branch: `randy/store-isolated-architecture`.
 Changes span Sink and sink-production-suite. The public sink-go protocol and
 implementation are unchanged. No release or production rollout is included.

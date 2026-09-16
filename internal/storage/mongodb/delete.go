@@ -33,7 +33,7 @@ func (s *Store) Delete(ctx context.Context, req storage.DeleteRequest) (storage.
 			setDeleteError(&response.Results[index], err)
 			continue
 		}
-		id, err := mongoID(operation.Address.Key)
+		id, err := mongoID(collection.recordKey)
 		if err != nil {
 			setDeleteError(&response.Results[index], err)
 			continue

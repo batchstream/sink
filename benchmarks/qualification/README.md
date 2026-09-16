@@ -48,5 +48,10 @@ revisions separately: `revision.txt` identifies the runner checkout. Use multipl
 runs; allocator improvements do not establish end-to-end capacity gains, and
 closed-loop saturation does not guarantee an open-loop SLO.
 
+Set `SINK_PERF_ENGINE_CONFIG` to an absolute path to compare Engine configuration
+choices with the same images and container limits. Retain that configuration
+with the results; a shorter batching wait can reduce latency while increasing
+backend calls, so measure both small RPCs and explicit batches before tuning.
+
 Run separate [DNS/drain qualification](../../docs/rolling-upgrades.md) and the
 public production suite's Kafka/Worker faults. Performance runs inject no faults.

@@ -28,7 +28,7 @@ services:
     depends_on:
       mongo-init: {condition: service_completed_successfully}
     volumes:
-      - ./engine.yaml:/etc/sink/engine.yaml:ro
+      - ${SINK_PERF_ENGINE_CONFIG:-./engine.yaml}:/etc/sink/engine.yaml:ro
     ports:
       - "127.0.0.1::8081"
       - "127.0.0.1::9090"

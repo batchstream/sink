@@ -52,12 +52,25 @@ Set `SINK_PERF_ENGINE_CONFIG` or `SINK_PERF_GATEWAY_CONFIG` to absolute paths to
 compare configuration choices with the same images and container limits. Retain that configuration
 with the results; a shorter batching wait can reduce latency while increasing
 backend calls, so measure both small RPCs and explicit batches before tuning.
+The provided `engine-low-latency.yaml` changes only the batching wait to 500µs:
+
+```sh
+SINK_PERF_ENGINE_CONFIG="$PWD/benchmarks/qualification/engine-low-latency.yaml" \
+SINK_PERF_PROFILE=compare bash benchmarks/qualification/run.sh
+```
 
 The `read-budgets` profile repeats mixed traffic, batched reads and large returned
 documents. Gateway reserves the configured response allowance for each active
 request. Reducing `service.request.max_read_bytes` in both roles can admit more
 small-document requests under the same memory budget, but also lowers the largest
 per-RPC response they can serve. Validate real response sizes before changing it.
+For example, the supplied pair changes only that limit from 4 MiB to 1 MiB:
+
+```sh
+SINK_PERF_ENGINE_CONFIG="$PWD/benchmarks/qualification/engine-small-responses.yaml" \
+SINK_PERF_GATEWAY_CONFIG="$PWD/benchmarks/qualification/gateway-small-responses.yaml" \
+SINK_PERF_PROFILE=read-budgets bash benchmarks/qualification/run.sh
+```
 
 Run separate [DNS/drain qualification](../../docs/rolling-upgrades.md) and the
 public production suite's Kafka/Worker faults. Performance runs inject no faults.
@@ -67,3 +80,10 @@ quickstart and storage integration runner. This disables the affected TCMalloc
 per-CPU path on kernels with the rseq compatibility problem. Keep this setting
 identical for baseline and candidate runs; allocator configuration affects
 performance. See the [backend environment requirements](../../docs/backend-environment.md).
+
+The `offered` profile schedules 500, 5,000 and 20,000 RPC/s with 32 callers. Use
+longer cells (for example, `SINK_PERF_DURATION=60s`) to expose periodic backend
+flush and scheduling stalls. Latency includes delay from the intended schedule;
+`execution_p99_ms` excludes that scheduling delay, and `scheduled_not_issued`
+records offered work that the bounded load generator could not issue. A high
+closed-loop rate does not establish a latency SLO at a fixed offered rate.

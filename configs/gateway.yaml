@@ -3,8 +3,8 @@
 # Capacities are per process, not cluster-wide or hard RSS limits.
 # Byte sizes accept KiB/MiB/GiB or integer bytes; durations accept ms/s/m/h.
 # Positive limits cannot be disabled with 0. Unknown fields are rejected.
-# Validate offline: sink config check --config config.gateway.example.yaml
-# Keep routes.example.yaml alongside this file, or change gateway.routes_file.
+# Validate offline: sink config check --config configs/gateway.yaml
+# Keep routes.yaml alongside this file, or change gateway.routes_file.
 mode: gateway # Required process role.
 
 # Public RPC and gRPC health listener.
@@ -15,7 +15,8 @@ grpc:
 
 # Optional HTTP metrics and health listener.
 prometheus:
-  address: ":9090" # Example; default empty disables /metrics, /livez, /readyz.
+  enabled: false # Opt in to the HTTP /metrics, /livez, and /readyz endpoints; default false.
+  address: ":9090" # HTTP listen address, used only when enabled; default :9090.
 
 # Per-public-request limits, retained across all forwarded Store groups.
 service:
@@ -26,7 +27,7 @@ service:
     max_operations: 1000 # Maximum operations in one Read, Write, or Delete request.
 
 gateway: # Stateless routing, bounded forwarding, and lazy downstream connections.
-  routes_file: routes.example.yaml # Required; relative to this config file's directory.
+  routes_file: routes.yaml # Required; relative to this config file's directory.
   reload_interval: 5s # Poll interval for atomic route-file replacements.
   dns_refresh_interval: 30s # Refresh DNS-backed Engine replica addresses.
   idle_timeout: 5m # Evict unused downstream channels after this idle duration.

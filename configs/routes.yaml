@@ -1,4 +1,4 @@
-# Gateway routing table, referenced by config.gateway.example.yaml.
+# Gateway routing table, referenced by gateway.yaml.
 # Replace this complete file atomically; duplicate Store names are rejected.
 routes: # Complete snapshot, at most 10000 routes and 4MiB; invalid reloads keep old data.
   - store: primary # Must match the Engine/Worker storage.name and public request Store.

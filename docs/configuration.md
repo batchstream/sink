@@ -77,6 +77,7 @@ mode: engine
 grpc:
   address: ":8080"
 prometheus:
+  enabled: false
   address: ":9090"
 storage:
   name: catalog
@@ -112,10 +113,10 @@ It does not load database or Kafka settings.
 
 Use the annotated example for the role you are configuring:
 
-- [Gateway](../config.gateway.example.yaml): public request limits, forwarding, and connection discovery.
-- [Engine](../config.engine.example.yaml): one Store's backend, execution, batching, Lua, and optional Kafka publication.
-- [Worker](../config.worker.example.yaml): one Store's backend, consumption, execution, and Lua; no RPC listener or RPC batching.
-- [Gateway routes](../routes.example.yaml): a separate routing table referenced by the Gateway configuration.
+- [Gateway](../configs/gateway.yaml): public request limits, forwarding, and connection discovery.
+- [Engine](../configs/engine.yaml): one Store's backend, execution, batching, Lua, and optional Kafka publication.
+- [Worker](../configs/worker.yaml): one Store's backend, consumption, execution, and Lua; no RPC listener or RPC batching.
+- [Gateway routes](../configs/routes.yaml): a separate routing table referenced by the Gateway configuration.
 
 Each component file loads directly without uncommenting another role's settings.
 Engine and Worker include a small commented search-driver alternative to MongoDB.
@@ -165,9 +166,11 @@ for queue admission, ordering, execution budgets, and completion boundaries.
 
 ## Prometheus metrics
 
-`prometheus.address` enables `/metrics`, `/livez`, and `/readyz` in every process
-mode. See [metrics and health](observability.md) for the metric catalog, label
-budgets, queries, and dependency readiness semantics.
+`prometheus.enabled: true` starts `/metrics`, `/livez`, and `/readyz` in every
+process mode. The listener is disabled by default, even when an address is set.
+`prometheus.address` defaults to `:9090` and is used only when enabled. See
+[metrics and health](observability.md) for the metric catalog, label budgets,
+queries, and dependency readiness semantics.
 
 ## Configuration reference
 
@@ -181,7 +184,8 @@ use the lowercase spelling shown below. Storage names are also case-sensitive.
 | `grpc.address` | string | No | `:8080` | Any valid TCP listen address | TCP listen address for the gRPC and gRPC health services. Used in `gateway` and `engine` modes. |
 | `grpc.max_receive_message_bytes` | byte size | No | `64MiB` | Size greater than `0B` | Maximum encoded gRPC request size accepted by the server. |
 | `grpc.max_send_message_bytes` | byte size | No | `64MiB` | Size greater than `0B` | Maximum encoded gRPC response size sent by the server. |
-| `prometheus.address` | string | No | empty (disabled) | Empty or any valid TCP listen address | HTTP listen address for Prometheus `/metrics`. Available in every runtime mode. |
+| `prometheus.enabled` | boolean | No | `false` | `true`, `false` | Start the HTTP `/metrics`, `/livez`, and `/readyz` listener in any role. An address alone does not enable it. |
+| `prometheus.address` | string | No | `:9090` | Any valid TCP listen address; empty uses the default | HTTP listen address used only when `prometheus.enabled` is true. |
 | `storage` | object | Engine/Worker | none | Exactly one storage object | The process-bound Store; forbidden in Gateway. |
 | `storage.name` | string | Yes | none | Nonempty UTF-8 identity, at most 256 bytes | Globally unique Store name selected by `address.store`; all replicas of that Store use the same name. |
 | `storage.driver` | enum string | Yes | none | `mongodb`, `elasticsearch`, `opensearch` | Adapter used by this storage instance. See [Storage driver values](#storage-driver-values). |

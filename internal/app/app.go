@@ -68,7 +68,7 @@ func New(ctx context.Context, opts Options) (*Application, error) {
 		}
 	}()
 	var observed *sinkmetrics.Metrics
-	if loaded.Prometheus.Address != "" {
+	if loaded.Prometheus.Enabled {
 		observed, err = sinkmetrics.New(opts.Version, loaded.Storage.Name)
 		if err != nil {
 			return nil, err

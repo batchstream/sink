@@ -4,12 +4,16 @@ Gateway has its own forwarding metrics and process readiness. Engine keeps the
 existing execution metrics; Worker keeps its Kafka metrics. See the
 [role-specific scaling and health contract](store-isolation.md#readiness-metrics-and-scaling).
 
-Set `prometheus.address` to open a separate HTTP listener. Prometheus metrics
-are served at the fixed `/metrics` path in `gateway`, `engine`, and `worker` modes.
-Omit the address or set it to an empty string to disable the listener.
+Set `prometheus.enabled: true` to open the separate HTTP metrics and health
+listener in `gateway`, `engine`, and `worker` modes. It is disabled by default;
+setting `prometheus.address` alone does not enable it. The address defaults to
+`:9090` when omitted or empty. Set `enabled: false` to disable the listener.
+The switch controls `/metrics`, `/livez`, and `/readyz` together; gRPC health is
+independent. Deployments using HTTP probes must explicitly enable this listener.
 
 ```yaml
 prometheus:
+  enabled: true
   address: ":9090"
 ```
 

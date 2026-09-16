@@ -63,4 +63,4 @@ lint-workflows:
 	go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION) -shellcheck=''
 
 lint-docs:
-	$(LYCHEE) --offline --include-fragments --no-progress '*.md' 'docs/**/*.md' 'examples/**/*.md' 'benchmarks/**/*.md' '.github/*.md'
+	$(LYCHEE) --offline --include-fragments --no-progress '*.md' 'configs/*.md' 'docs/**/*.md' 'examples/**/*.md' 'benchmarks/**/*.md' '.github/*.md'

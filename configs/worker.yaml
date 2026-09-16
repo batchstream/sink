@@ -3,13 +3,14 @@
 # Capacities are per process, not cluster-wide or hard RSS limits.
 # Byte sizes accept KiB/MiB/GiB or integer bytes; durations accept ms/s/m/h.
 # Positive limits cannot be disabled with 0. Unknown fields are rejected.
-# Validate offline: sink config check --config config.worker.example.yaml
+# Validate offline: sink config check --config configs/worker.yaml
 # Engine must enable Kafka to publish mutations for this Worker.
 mode: worker # Required process role.
 
 # Optional HTTP metrics and health listener.
 prometheus:
-  address: ":9090" # Example; default empty disables /metrics, /livez, /readyz.
+  enabled: false # Opt in to the HTTP /metrics, /livez, and /readyz endpoints; default false.
+  address: ":9090" # HTTP listen address, used only when enabled; default :9090.
 
 # Bind this process to one Store. Its replicas must use the same Store name.
 storage:

@@ -29,6 +29,7 @@ func TestApplicationModesKeepTheirOwnResources(t *testing.T) {
 grpc:
   address: "127.0.0.1:0"
 prometheus:
+  enabled: true
   address: "127.0.0.1:0"
 storage:
   name: primary
@@ -111,6 +112,7 @@ func TestAssemblyFailureReleasesPreviouslyOpenedListener(t *testing.T) {
 grpc:
   address: %q
 prometheus:
+  enabled: true
   address: %q
 storage:
   name: primary

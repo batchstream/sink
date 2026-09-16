@@ -37,6 +37,7 @@ type GRPC struct {
 }
 
 type Prometheus struct {
+	Enabled bool
 	Address string
 }
 

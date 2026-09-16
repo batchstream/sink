@@ -115,9 +115,14 @@ or mismatched envelope/operation Stores before writes. The public protobuf is
 unchanged. Real MongoDB/Kafka quickstart tests pass through Gateway for public
 record operations, native methods, and asynchronous Worker completion.
 
-The annotated [Gateway](../../config.gateway.example.yaml),
-[Engine](../../config.engine.example.yaml), and [Worker](../../config.worker.example.yaml)
-examples collectively cover all 66 supported main-configuration leaf fields. Each
-file contains only settings used by that component. [Routes](../../routes.example.yaml)
+The annotated [Gateway](../../configs/gateway.yaml),
+[Engine](../../configs/engine.yaml), and [Worker](../../configs/worker.yaml)
+examples collectively cover all 67 supported main-configuration leaf fields. Each
+file contains only settings used by that component. [Routes](../../configs/routes.yaml)
 are a separate file. Each component configuration and the Engine/Worker search-driver
 alternatives were checked with the offline config command.
+
+Prometheus HTTP serving is opt-in through `prometheus.enabled` (default `false`).
+Configuration and application tests cover all three roles, address-only and
+explicit-disabled settings, occupied ports, and enabled metrics/health endpoints.
+Runnable quickstart and qualification fixtures explicitly enable their probes.

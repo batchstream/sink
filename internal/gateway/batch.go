@@ -1,8 +1,6 @@
 package gateway
 
 import (
-	"github.com/liran/sink-go/uri"
-
 	"context"
 	"strings"
 	"sync"
@@ -40,7 +38,7 @@ func (s *Server) records(ctx context.Context, req *forward.ForwardRequest) (*for
 	resolutionErrors := make(map[string]error)
 	owners := make(map[string]Route)
 	for index, raw := range addresses {
-		address, parseErr := uri.Parse(raw)
+		address, parseErr := protocol.ParseAddress(raw)
 		if parseErr != nil {
 			failRecords(response, []int{index}, status.Error(codes.InvalidArgument, parseErr.Error()), true)
 			continue
@@ -67,10 +65,11 @@ func (s *Server) records(ctx context.Context, req *forward.ForwardRequest) (*for
 			failRecords(response, []int{index}, resolutionErr, true)
 			continue
 		}
-		owner, found := owners[raw]
+		recordURI := raw.GetUri()
+		owner, found := owners[recordURI]
 		if !found {
-			owner = affinityRoute(raw, targets)
-			owners[raw] = owner
+			owner = affinityRoute(recordURI, targets)
+			owners[recordURI] = owner
 		}
 		route = owner
 		position, exists := positions[route]
@@ -133,12 +132,12 @@ func (s *Server) records(ctx context.Context, req *forward.ForwardRequest) (*for
 	return response, nil
 }
 
-func (s *Server) validateBatch(req *forward.ForwardRequest) ([]string, error) {
-	var addresses []string
+func (s *Server) validateBatch(req *forward.ForwardRequest) ([]*sink.RecordAddress, error) {
+	var addresses []*sink.RecordAddress
 	switch body := req.GetRequest().(type) {
 	case *forward.ForwardRequest_Read:
 		for _, op := range body.Read.GetOperations() {
-			addresses = append(addresses, op.GetAddress().GetUri())
+			addresses = append(addresses, op.GetAddress())
 		}
 	case *forward.ForwardRequest_Write:
 		mode := body.Write.GetCompletionMode()
@@ -152,14 +151,14 @@ func (s *Server) validateBatch(req *forward.ForwardRequest) ([]string, error) {
 			if op.GetReturnDocument() && mode == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED {
 				return nil, status.Error(codes.InvalidArgument, "returned write documents require synchronous completion")
 			}
-			addresses = append(addresses, op.GetAddress().GetUri())
+			addresses = append(addresses, op.GetAddress())
 		}
 	case *forward.ForwardRequest_Delete:
 		if !validCompletion(body.Delete.GetCompletionMode()) {
 			return nil, status.Error(codes.InvalidArgument, "invalid completion mode")
 		}
 		for _, op := range body.Delete.GetOperations() {
-			addresses = append(addresses, op.GetAddress().GetUri())
+			addresses = append(addresses, op.GetAddress())
 		}
 	}
 	if len(addresses) == 0 {

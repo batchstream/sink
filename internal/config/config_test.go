@@ -608,7 +608,9 @@ storage:
 
 func TestExampleConfigurationFilesLoad(t *testing.T) {
 	paths := []string{
-		"../../config.example.yaml",
+		"../../config.gateway.example.yaml",
+		"../../config.engine.example.yaml",
+		"../../config.worker.example.yaml",
 		"../../examples/quickstart/engine.yaml", "../../examples/quickstart/worker.yaml", "../../examples/quickstart/gateway.yaml",
 		"../../examples/kubernetes/sink.yaml",
 	}

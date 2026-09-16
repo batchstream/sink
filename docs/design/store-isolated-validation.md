@@ -115,6 +115,9 @@ or mismatched envelope/operation Stores before writes. The public protobuf is
 unchanged. Real MongoDB/Kafka quickstart tests pass through Gateway for public
 record operations, native methods, and asynchronous Worker completion.
 
-The annotated `config.example.yaml` covers all 66 supported main-configuration leaf
-fields and the separate route-file fields. Its Engine, Worker, OpenSearch,
-Elasticsearch, and Gateway variants were checked with the offline config command.
+The annotated [Gateway](../../config.gateway.example.yaml),
+[Engine](../../config.engine.example.yaml), and [Worker](../../config.worker.example.yaml)
+examples collectively cover all 66 supported main-configuration leaf fields. Each
+file contains only settings used by that component. [Routes](../../routes.example.yaml)
+are a separate file. Each component configuration and the Engine/Worker search-driver
+alternatives were checked with the offline config command.

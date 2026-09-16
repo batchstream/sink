@@ -5,7 +5,17 @@ the [main README](../README.md) for the problem Sink solves and a local
 quickstart. Deployment settings and their validation rules live in the
 [configuration reference](configuration.md).
 
-![Sink routes each record operation through a synchronous or Kafka-backed path to one matching store](assets/sink-overview.svg)
+
+## Store isolation
+
+New deployments use Gateway for routing, one Engine process per Store, and one
+Worker role per Store. Engine and Worker replicas scale independently and share
+the execution core; Worker directly accesses its database. Gateway does not open
+database or Kafka connections. The seven public RPCs remain unchanged.
+
+See [isolated topology, budgets and migration](store-isolation.md) for the private
+forwarding contract and cross-Store request behavior. Execution details below
+apply inside a single-Store Engine or Worker.
 
 ## Code ownership
 
@@ -13,8 +23,10 @@ quickstart. Deployment settings and their validation rules live in the
 flowchart TD
     CLI[cmd/sink: command dispatch and signals] --> Config[internal/config: YAML, defaults, validation]
     CLI --> App[internal/app: resources and lifecycle]
+    App --> Gateway[internal/gateway: routing and request aggregation]
+    App --> Forward[internal/engine: private forwarding contract]
     App --> Service[internal/service: RPC execution and admission]
-    App --> Storage[internal/storage: backend adapters and routing]
+    App --> Storage[internal/storage: backend adapters]
     App --> Kafka[internal/queue/kafka: durable delivery]
     App --> Merge[internal/merge: Lua execution]
     App --> Metrics[internal/metrics: instrumentation]
@@ -23,8 +35,8 @@ flowchart TD
 Configuration decoding opens no dependencies. `config.Decode` returns a fully
 resolved value or an error; its private file types retain omission only while
 resolving defaults. Service, storage and Kafka sections validate their own
-settings. Cross-store Kafka resource identity is checked after all stores are
-resolved.
+settings. Each Engine/Worker configuration binds one Store and database identity;
+the deployment inventory owns uniqueness across processes.
 
 `internal/app` owns dependency construction and cleanup. Its service, Kafka,
 storage, transport, health and lifecycle files assemble the concrete components;
@@ -95,13 +107,12 @@ still be sized deliberately. Batching also stays within one Sink process and one
 store; callers that already have several records should send an explicit batch
 when possible.
 
-![Direct crawler writes multiply database connections and fragmented requests; routing through Sink consolidates backend connections and converts concurrent small RPCs into bounded bulk operations](assets/sink-database-protection.svg)
 
 ## Address routing
 
 A record address contains `store`, `namespace`, `dataset`, and `key`. Sink does
 not use a separate binding layer: the client-provided `store` must exactly match
-a case-sensitive `storages[].name` in the server configuration.
+a Gateway route and the case-sensitive `storage.name` of its Engine.
 
 | Address field | MongoDB | Elasticsearch and OpenSearch |
 | --- | --- | --- |
@@ -121,9 +132,9 @@ This is checked before reads, writes, deletes, or Kafka publication, including
 when the optimized protobuf codec accepts invalid strings. Use bytes keys for
 arbitrary binary identities; their data is not subject to UTF-8 validation.
 
-One request may target several stores. Sink routes their operations
-independently, executes unrelated store groups concurrently, and restores the
-original result order. An unknown store produces a failure for only the
+One public request may target several Stores. Gateway splits it into Store
+groups, forwards them, and restores the original result order. Groups that share
+document budgets run sequentially; other eligible groups use bounded parallelism. An unknown store produces a failure for only the
 affected operation.
 
 ## Documents and storage adapters
@@ -180,8 +191,8 @@ and following operations. Its successful result contains that operation's logica
 output and own revision, without a later read. Other operations in the same-address
 chain may still share a folded commit and revision.
 
-In `server` and `all` modes, Sink automatically coalesces concurrent
-one-operation RPCs into bounded, process-local batches for each store.
+Engine automatically coalesces concurrent one-operation RPCs for its bound
+Store into bounded, process-local batches.
 Single-store reads always use this path. Synchronous writes and deletes use it
 as well; Kafka-backed mutations bypass it because the publisher already
 batches asynchronous work. Synchronous mutation RPCs only combine with the same
@@ -286,7 +297,7 @@ and each Kafka store retries its Topic setup independently. Healthy stores can
 serve while another dependency is recovering. Only Kafka clients for a store
 whose policy has been established can accept or consume asynchronous work.
 
-At runtime in `server` and `all` modes, the standard gRPC health service reports
+In Gateway and Engine, the standard gRPC health service reports
 process readiness. Each storage and configured Kafka publisher also has its own
 health service name. A failed dependency becomes `NOT_SERVING` without marking
 unrelated stores unavailable.

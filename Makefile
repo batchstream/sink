@@ -1,4 +1,4 @@
-.PHONY: proto build test test-unit test-integration test-search-integration fmt check-format lint lint-workflows lint-docs quickstart quickstart-down
+.PHONY: proto build test test-unit test-integration test-search-integration fmt check-format lint lint-workflows lint-docs quickstart quickstart-down test-isolated-quickstart
 
 PROTO_DIR := proto
 GEN_DIR := gen
@@ -16,8 +16,9 @@ proto:
 		--go_out=$(GEN_DIR) --go_opt=paths=source_relative \
 		--go-grpc_out=$(GEN_DIR) --go-grpc_opt=paths=source_relative \
 		--go-vtproto_out=$(GEN_DIR) --go-vtproto_opt=paths=source_relative,features=marshal+unmarshal+size+pool \
-		$(PROTO_DIR)/sink/sink.proto
+		$(PROTO_DIR)/sink/sink.proto $(PROTO_DIR)/forward/forward.proto
 	@printf '%s\n%s\n' '// Package sink contains generated protobuf definitions for the Sink gRPC service.' 'package sink' > $(GEN_DIR)/sink/doc.go
+	@printf '%s\n%s\n' '// Package forward contains the private Gateway-to-Engine protobuf contract.' 'package forward' > $(GEN_DIR)/forward/doc.go
 
 test:
 	go test ./... -v -count=1
@@ -33,6 +34,9 @@ test-integration:
 test-search-integration:
 	bash scripts/test-search-integration.sh elasticsearch
 	bash scripts/test-search-integration.sh opensearch
+
+test-isolated-quickstart:
+	bash scripts/test-isolated-quickstart.sh
 
 quickstart:
 	bash examples/quickstart/run.sh

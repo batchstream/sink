@@ -3,6 +3,14 @@
 Sink requires Go 1.27 or newer. Docker with Compose is required for the
 quickstart and external storage integration suites.
 
+## Next architecture design
+
+Before working on the Gateway and single-store Engine/Worker redesign, read the
+[design agreement and review decisions](design/store-isolated-architecture.md).
+The user has authorized implementation and testing. Preserve the confirmed
+constraints and record implementation decisions and validation in that document.
+This authorization does not include a release or a production deployment.
+
 ## Validation
 
 Build and run the normal checks from the repository root:
@@ -30,6 +38,12 @@ OpenSearch containers, runs storage lifecycle and concurrent read-modify-write
 tests, and then stops the containers. `make test-search-integration` runs only
 the Elasticsearch and OpenSearch suites. The Kafka path uses franz-go's
 in-process broker in the normal test suite.
+
+Use `make test-isolated-quickstart` to run the existing sibling sink-go SDK
+against independent Gateway, Engine and Worker containers. Set `SINK_GO_DIR` if
+the SDK checkout is elsewhere. The script uses disposable ports and cleans up
+its containers and volumes. CI requires this scenario and the loopback DNS
+Gateway scaling test.
 
 Use `make quickstart` for the end-to-end public API scenario and
 `make quickstart-down` when finished.
@@ -76,7 +90,6 @@ the Go client, using a matching client branch when available and `main` otherwis
 
 ## Synchronous capacity measurements
 
-The [synchronous performance guide](synchronous-performance.md) records the
 workload, resource limits, measurements, and commands for comparing revisions.
 `BenchmarkSynchronousMergeMicrobatch` isolates batching and adapter round trips
 without external services. The opt-in `BenchmarkSynchronousStorage` exercises

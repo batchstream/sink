@@ -8,6 +8,7 @@
 | --- | --- |
 | [Docker Compose quickstart](../examples/quickstart/README.md) | Start Sink, MongoDB, and Kafka and verify the public API |
 | [Go client](https://github.com/liran/sink-go#quick-start) | Connect an application and read or write typed documents |
+| [Store isolation](store-isolation.md) | Gateway, per-Store Engine/Worker, migration and scaling. |
 | [Architecture and behavior](architecture.md) | Understand addresses, encoding, batching, ordering, and completion modes |
 | [Document write flow](document-write-flow.md) | Follow one document from an RPC through storage or a Kafka worker |
 
@@ -30,15 +31,13 @@
 | [Metrics and health](observability.md) | Inspect metrics, label budgets, and dependency health |
 | [Batching behavior](batching.md) | Understand collection queues, ordering, and capacity |
 | [Reliability and recovery](reliability.md) | Plan idempotence, monitor dependencies, handle failures, and replay dead letters |
-| [Production sizing](production-sizing.md) | Use measured workload limits to size a replicated deployment |
-| [Synchronous performance](synchronous-performance.md) | Reproduce benchmarks and interpret their scope |
-| [Small-server admission performance](synchronous-admission-performance.md) | Compare bounded admission and returning Put throughput under a 1 CPU / 256 MiB limit |
-| [Kubernetes capacity harness](../benchmarks/kubernetes/README.md) | Measure disposable test deployments with explicit safeguards |
+| [Production sizing](production-sizing.md) | Size Gateway, Engine and Worker against workload and backend capacity |
 
 ## Contribute and qualify changes
 
 | Guide | What you will learn |
 | --- | --- |
+| [Store-isolated architecture design](design/store-isolated-architecture.md) | Confirmed agreements and implementation decisions for Gateway, single-Store Engine, and Worker |
 | [Contributing](../CONTRIBUTING.md) | Report an issue and prepare a focused pull request |
 | [Development](development.md) | Build, lint, generate protobuf code, run tests, and package releases |
 | [Lua benchmarks](../benchmarks/lua/README.md) | Compare Lua runtime workloads |

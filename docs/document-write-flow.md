@@ -107,7 +107,7 @@ The address maps as follows:
 
 | Request field | Meaning in this example |
 | --- | --- |
-| `store = primary` | Select the backend and connection configured with `storages[].name = primary` |
+| `store = primary` | Select the Gateway route for `primary`; its Engine is bound to `storage.name = primary` |
 | `namespace = catalog` | MongoDB database `catalog` |
 | `dataset = products` | MongoDB collection `products` |
 | `key = product-42` | MongoDB `_id`, using the string `product-42` |
@@ -231,9 +231,9 @@ Deployment modes determine where the components run:
 
 | Top-level configuration `mode` | What the process does |
 | --- | --- |
-| `server` | Serve gRPC, execute synchronous operations, and publish asynchronous operations for stores with Kafka enabled |
-| `worker` | Consume Kafka and execute database writes locally; expose no business gRPC service |
-| `all` | Run both sets of components in one process |
+| `gateway` | Route public RPCs to the owning Engine, splitting and reassembling cross-Store batches |
+| `engine` | Execute synchronous operations and publish asynchronous operations for one Store |
+| `worker` | Consume Kafka and execute database writes locally for one Store; expose no business gRPC service |
 
 ## 5. Merge: how the existing document becomes the new document
 

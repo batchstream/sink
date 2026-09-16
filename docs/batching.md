@@ -1,7 +1,7 @@
 # Synchronous request batching
 
-In `server` and `all` modes, Sink coalesces concurrent one-operation RPCs into
-bounded, process-local batches for each configured store. This batching layer
+Each Engine coalesces concurrent one-operation RPCs into bounded, process-local
+batches for its single configured Store. This batching layer
 is always active; every single-store `Read` uses this path. `Write` and
 `Delete` use it for `WAIT_UNTIL_APPLIED` and `WAIT_UNTIL_VISIBLE`;
 `RETURN_AFTER_ACCEPTED` bypasses it because Kafka already batches asynchronous
@@ -27,7 +27,7 @@ full address. Executions use their live callers' deadlines and cancellation sign
 
 Write/Delete dispatchers can collect and execute later batches while an earlier
 batch waits for refresh. Each store/method has at most
-`min(service.execution.max_requests, service.execution.max_requests_per_store)` active batches. Record
+`service.execution.max_requests` active batches. Record
 dependencies cover both active and queued RPCs: an RPC touching several records
 waits for every predecessor, while unrelated RPCs may pass it. Ordering does not
 extend across methods, bypass requests, or server replicas. Queue budgets and
@@ -48,27 +48,25 @@ together; Sink cannot acknowledge an item whose backend result is not yet known.
 Execution slots and byte reservations remain held until the owning execution
 ends, so early completion cannot bypass admission or memory limits.
 
-An explicit request containing operations for multiple stores bypasses the
-micro-batch queues and goes directly to the storage router, which already
-executes store groups concurrently. This avoids splitting one RPC into partial
-queue admissions with ambiguous failure semantics.
+Gateway splits cross-Store requests before forwarding them. Engine accepts only its
+bound Store and never bypasses that check through the batching layer. Budget-sensitive
+Store groups follow the scheduling policy in the [runtime guide](store-isolation.md).
 
-Queue operation and byte limits apply separately to every configured store and
-bound memory during a storage slowdown. One store cannot consume another
-store's queue allowance; the process-wide maximum is the per-store limit
-multiplied by the fixed number of configured stores and the three methods. A
+Read, Write and Delete each have one bounded queue in an Engine process. Queue
+operation and byte limits apply per method; the process has three such queues.
+Other Stores run in separate Engine processes. A
 new single-store request that would cross its queue's limit fails with gRPC
 `RESOURCE_EXHAUSTED` and is not applied. Requests canceled before dispatch are
 omitted. Once a batch is dispatched, other live callers in that batch continue
 even if one caller cancels. Once all callers cancel, execution is cancelled too.
 Execution is capped by the server request timeout even without caller deadlines.
 Dispatched micro-batches wait for shared execution capacity within their
-existing deadlines; bypass requests retain immediate admission rejection.
+existing deadlines; direct requests use their bounded admission queue.
 Asynchronous Write and Delete use an independent publishing pool with
 `service.publish.max_requests` and `service.publish.max_bytes`. Synchronous snapshot reservations,
 store saturation, and fair byte waiters cannot block Kafka publishing. A full
 publishing pool rejects before enqueueing, and acceptance still requires the
-publisher's durable acknowledgement. Each pool has its own `max_requests_per_store` limit. The total execution reservation bound is the sum of both byte limits;
+publisher's durable acknowledgement. The total execution reservation bound is the sum of both byte limits;
 producer buffers, batching queues, and VM/driver overhead remain additional.
 Each coalesced RPC has its own read, conditional snapshot, and output budgets.
 A shared snapshot is fetched if any interested RPC has room, and every response
@@ -92,7 +90,7 @@ Read reservations scale with original RPC count. Returned-write response space
 is reserved only for the original RPCs requesting documents, even in mixed
 batches. Direct calls keep their existing snapshot/output reservation and quotas.
 Core admission limits also cover requests that bypass batching. Graceful shutdown first drains active gRPC calls,
-then stops every store's batch dispatchers.
+then stops its batch dispatchers.
 
 Batching happens only among requests for the same store reaching the same Sink
 process. More pods increase aggregate queue and storage concurrency, but they

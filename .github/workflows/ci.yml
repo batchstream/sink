@@ -17,7 +17,7 @@ jobs:
   reliability-gate:
     name: Sink reliability gate
     if: always()
-    needs: [repository, public-conformance, client-contract, test, mongodb, search, image, release-assets, quickstart]
+    needs: [repository, public-conformance, client-contract, test, mongodb, search, image, release-assets, quickstart, isolated-quickstart]
     runs-on: ubuntu-latest
     steps:
       - name: Require every qualification job to pass
@@ -71,7 +71,7 @@ jobs:
         with:
           repository: liran/sink-production-suite
           path: qualification
-          ref: 6c5fe898759a9dc5f16863d365f8ba94d3b33c98
+          ref: 2edd280d142e47d2a56792bebe317be3703d62cd
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -140,8 +140,8 @@ jobs:
       - name: Run race tests
         run: go test -race ./... -count=1
 
-      - name: Check disposable benchmark safeguards
-        run: python3 -m unittest discover -s benchmarks/kubernetes
+      - name: Verify Gateway DNS scale-out and scale-in
+        run: go test -race -tags=integration ./internal/gateway -run '^TestGatewayDiscoversDNSScaleChanges$' -count=1 -timeout=1m
 
       - name: Fuzz mutation envelopes
         run: go test ./internal/queue -run='^$' -fuzz=FuzzMutationEnvelope -fuzztime=20s -parallel=2
@@ -255,3 +255,34 @@ jobs:
       - name: Stop example services
         if: always()
         run: docker compose --file examples/quickstart/compose.yaml down --volumes --remove-orphans
+
+  isolated-quickstart:
+    name: Isolated Gateway / Engine / Worker compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out Sink candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out existing public SDK
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: liran/sink-go
+          path: sink-go
+          ref: main
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify existing SDK against isolated roles
+        env:
+          SINK_GO_DIR: ${{ github.workspace }}/sink-go
+          TMPDIR: ${{ runner.temp }}
+        run: bash scripts/test-isolated-quickstart.sh
+      - name: Upload isolated role evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: isolated-role-compatibility
+          path: ${{ runner.temp }}/sink-isolated-smoke.*
+          retention-days: 14

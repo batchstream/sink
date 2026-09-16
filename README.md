@@ -15,6 +15,21 @@ Kafka-backed asynchronous delivery. Native queries use the same connections.
 [Go client](https://github.com/liran/sink-go) ·
 [Releases](https://github.com/liran/sink/releases) · [Contributing](CONTRIBUTING.md)
 
+For independent Store scaling, see [Gateway, Engine and Worker](docs/store-isolation.md)
+and the [Compose quickstart](examples/quickstart/README.md).
+
+```mermaid
+flowchart LR
+  Client --> Gateway
+  Gateway --> EngineA[Engine · Store A]
+  Gateway --> EngineB[Engine · Store B]
+  EngineA --> DatabaseA[(Database A)]
+  EngineB --> DatabaseB[(Database B)]
+  EngineA --> KafkaA[(Kafka · Store A)]
+  KafkaA --> WorkerA[Worker · Store A]
+  WorkerA --> DatabaseA
+```
+
 ## Quickstart
 
 With Docker Compose and Make installed:
@@ -41,7 +56,6 @@ binaries and checksums, or [run the container](#run-the-container).
 
 ## Why Sink?
 
-![Sink routes each record operation through a synchronous or Kafka-backed path to one matching store](docs/assets/sink-overview.svg)
 
 Applications that write to several databases often repeat the same
 non-business work: storage drivers, batching, backpressure, retry rules,
@@ -79,7 +93,6 @@ short, bounded per-store queues coalesce concurrent small RPCs into bulk
 operations, while concurrency limits and backpressure keep bursts from reaching
 the database without control.
 
-![Without Sink, every crawler process opens database connections and sends fragmented writes; with Sink, crawler processes converge on controlled database connections and micro-batches before storage](docs/assets/sink-database-protection.svg)
 
 Database connection demand now follows the deliberately sized Sink tier rather
 than the crawler process count, and storage receives fewer, fuller requests.

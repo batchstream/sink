@@ -82,7 +82,11 @@ func (s *Server) Reload() (reloadErr error) {
 	if next.hash == previous.hash {
 		return nil
 	}
+	identityCount := len(s.identities)
 	for store, route := range next.routes {
+		if _, exists := s.identities[store]; !exists {
+			identityCount++
+		}
 		if owner, exists := s.databases[route.DatabaseID]; exists && owner != store {
 			return errors.New("database_id cannot move between Stores during route reload")
 		}
@@ -90,7 +94,7 @@ func (s *Server) Reload() (reloadErr error) {
 			return errors.New("database_id cannot change during route reload")
 		}
 	}
-	if len(s.identities)+len(next.routes) > 20000 {
+	if identityCount > 20000 {
 		return errors.New("route identity history limit reached; restart to load a new inventory")
 	}
 	for store, route := range next.routes {

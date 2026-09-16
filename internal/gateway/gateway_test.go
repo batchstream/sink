@@ -587,3 +587,36 @@ func TestInvalidEngineResultsCannotOverwriteKnownSuccess(t *testing.T) {
 		}
 	}
 }
+
+func TestReloadAtIdentityCapacityAllowsExistingRoutes(t *testing.T) {
+	initial := fixtureEngine{store: "current", target: "127.0.0.1:1"}
+	gateway := testGateway(t, 4096, initial)
+	// Simulate identities retained after older routes were removed.
+	for i := range 19999 {
+		name := fmt.Sprintf("retired-%d", i)
+		gateway.identities[name] = "db-" + name
+		gateway.databases["db-"+name] = name
+	}
+	updated := initial
+	updated.target = "127.0.0.1:2"
+	if err := os.WriteFile(gateway.config.RoutesFile, []byte(routeText(updated)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Reload(); err != nil {
+		t.Fatalf("existing identity update rejected at capacity: %v", err)
+	}
+	if gateway.current.Load().routes[initial.store].Target != updated.target {
+		t.Fatal("existing route target was not updated")
+	}
+	last := gateway.current.Load()
+	addition := fixtureEngine{store: "new", target: "127.0.0.1:3"}
+	if err := os.WriteFile(gateway.config.RoutesFile, []byte(routeText(updated, addition)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Reload(); err == nil || gateway.current.Load() != last {
+		t.Fatal("identity overflow replaced the valid route snapshot")
+	}
+	if len(gateway.identities) != 20000 || len(gateway.databases) != 20000 {
+		t.Fatal("rejected reload consumed identity capacity")
+	}
+}

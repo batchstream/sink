@@ -9,7 +9,7 @@ starting the binary:
 sink --config /etc/sink/config.yaml
 ```
 
-The `--config` option is required for every server and worker runtime mode.
+The `--config` option is required for every Gateway, Engine, and Worker runtime.
 `sink version` does not load a configuration file. `sink lua test` does not
 require one, but accepts `--config` to apply the same `service.merge.lua` resource
 limits without opening any configured backend. Environment variables such as

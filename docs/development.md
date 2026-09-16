@@ -112,7 +112,7 @@ backends, then verifies every writer's persisted counter.
   path.
 - `internal/storage/memory` is the deterministic test and local-development
   adapter.
-- `cmd/sink` loads configuration and assembles the server or worker process.
+- `cmd/sink` loads configuration and assembles a Gateway, Engine, or Worker process.
 
 ## Release artifacts
 

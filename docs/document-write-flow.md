@@ -1,7 +1,6 @@
 # One document from submission to storage: the Sink write flow
 
-This guide describes the **local source as of 2026-09-07**: Sink `48a3ebc`
-and the Go SDK `a658b05`. It explains code behavior; configuration defaults
+This guide describes the Store-isolated architecture. It explains code behavior; configuration defaults
 are not a statement about the settings currently deployed in production.
 
 The main path is straightforward: **the client gives Sink a write operation.
@@ -15,10 +14,11 @@ is an execution optimization along the way.
 ```mermaid
 flowchart TD
     A[Application: address, document, write action, completion mode] --> B[sink-go encodes and sends a Write RPC]
-    B --> C{Requested completion_mode}
-    C -->|WAIT_UNTIL_APPLIED / WAIT_UNTIL_VISIBLE| D[Server in-memory batching for single-store RPCs]
+    B --> Q[Gateway routes each Store group to its Engine]
+    Q --> C{Requested completion_mode}
+    C -->|WAIT_UNTIL_APPLIED / WAIT_UNTIL_VISIBLE| D[Engine in-memory batching]
     D --> E[Write core: validation, admission control, execution]
-    E --> F[Route by store to the storage adapter]
+    E --> F[Bound Store storage adapter]
     F --> G[MongoDB or Elasticsearch / OpenSearch]
     G --> H[Backend acknowledges; VISIBLE also waits for search visibility]
     H --> I[Client receives APPLIED]
@@ -35,7 +35,7 @@ The diagram shows successful execution. Section 7 covers failures.
 
 There are two different kinds of queue:
 
-- **Server in-memory batching queue:** briefly collects requests to reduce
+- **Engine in-memory batching queue:** briefly collects requests to reduce
   backend calls. The client continues waiting for the execution result.
 - **Kafka queue:** durably accepts write intent. The client can return before
   a worker completes the database write.
@@ -46,7 +46,7 @@ submit separate operations targeting the two stores.
 
 ## 2. Follow one ordinary synchronous Upsert
 
-Assume the server has a MongoDB store named `primary`, and the application
+Assume an Engine is bound to a MongoDB Store named `primary`, and the application
 wants to write product `product-42`. Think of the request as:
 
 ```text
@@ -74,7 +74,7 @@ One document becomes one entry in `operations`, using the same batch-native
 according to the SDK's operation-count limit, with result indexes mapped
 back to the original input order.
 
-**Step 2: The request reaches the Sink server.**
+**Step 2: Gateway forwards the request to its Store Engine.**
 
 The service checks that the request is nonempty and that its operation count
 and completion mode are valid. When the request targets one configured store,
@@ -85,15 +85,16 @@ is 2 ms; operation-count and byte limits can trigger earlier dispatch. **The 2 m
 window, not an end-to-end latency limit.** Queueing and backend execution
 also take time.
 
-RPCs that span multiple stores enter the core directly, where the storage
-router dispatches their operations to the appropriate backends.
+Gateway splits RPCs that span multiple Stores into single-Store groups and
+reassembles their results. Each Engine executes only its own Store group.
 
 **Step 3: The write core parses operations and checks execution capacity.**
 
 The core validates addresses, document encodings and payloads, and write
-actions. It also limits in-flight requests, execution bytes, and concurrent
-requests per store. Direct requests with insufficient capacity receive
-`RESOURCE_EXHAUSTED`; dispatched micro-batches wait within their deadlines.
+actions. It limits in-flight requests and execution bytes for this Engine. Direct
+synchronous requests wait in a bounded admission queue; full queues and requests
+that cannot fit receive `RESOURCE_EXHAUSTED`. Dispatched micro-batches also wait
+within their deadlines.
 Coalesced RPCs retain separate read/output budgets, and execution groups split
 at RPC boundaries when their combined reservations exceed the byte limit.
 
@@ -101,7 +102,7 @@ In this example, Upsert means "write this complete document without requiring
 that the record already exist or be absent." It does not execute Lua or
 perform the read-and-compute sequence used by Merge.
 
-**Step 4: The storage router selects the MongoDB adapter.**
+**Step 4: The Engine calls its bound MongoDB adapter.**
 
 The address maps as follows:
 
@@ -191,9 +192,9 @@ encoding.
 Changing the example's completion mode to `RETURN_AFTER_ACCEPTED` changes
 the path to:
 
-1. The server bypasses synchronous in-memory batching, parses and validates
+1. The Engine bypasses synchronous in-memory batching, parses and validates
    the operation, and enters the publication path.
-2. The publisher uses `store` to select a Kafka topic and encodes the
+2. The Engine publisher uses its configured Kafka topic and encodes the
    **original operation** as a message. A Put message carries the complete
    document. A Merge message carries the incoming document and full Lua source.
 3. The publisher waits for Kafka acknowledgement. The current implementation
@@ -203,12 +204,12 @@ the path to:
    belong to its store, and organizes them into execution batches.
 5. The worker calls **`Server.Write` in its own process**, using
    `WAIT_UNTIL_APPLIED`. This is an internal Go call; it does not connect
-   back to the server's gRPC endpoint, republish to Kafka, or enter the
-   server's synchronous in-memory batching queue.
+   back to an Engine gRPC endpoint, republish to Kafka, or enter the
+   Engine's synchronous in-memory batching queue.
 6. The write core applies Put/Merge through the storage adapter. Only after
    backend acknowledgement does the worker commit eligible consumer offsets.
 
-For an asynchronous Merge, the server validates and compiles Lua during
+For an asynchronous Merge, the Engine validates and compiles Lua during
 acceptance, but **reading the existing document, executing the merge, and
 writing the result** happen when the worker applies it. Kafka stores merge
 intent rather than a final document computed at request acceptance time.
@@ -322,7 +323,7 @@ Deletes issue one backend delete and return its outcome to all callers.
 | Layer | Organizer | What it combines | Effect on the call |
 | --- | --- | --- | --- |
 | Explicit SDK batching | Application / sink-go | Multiple operations in one call, split into RPCs if necessary | Fewer RPCs, with individual results preserved |
-| Automatic server batching | `BatchingServer` | One store in one process; mutations also share namespace, dataset, and mode | Bounded collection and execution; each Write RPC returns when its own results are final |
+| Automatic Engine batching | `BatchingServer` | One store in one process; mutations also share namespace, dataset, and mode | Bounded collection and execution; each Write RPC returns when its own results are final |
 | Record operation folding | Service core | Puts/Merges or repeated Reads/Deletes for one full address | One final write, read, or delete with individual results preserved |
 | Backend bulk operations | Storage adapter | Database operations that can be sent together | Fewer backend requests; partial success remains possible |
 | Kafka publication / consumption batching | Publisher / worker | Independent messages | Batched transport, execution, and offset commits |
@@ -334,19 +335,19 @@ when capacity permits. A mode change on the same address preserves batch
 collection order by completing the preceding run first. Write/Delete queues
 track these record dependencies across batches as well: later independent RPCs
 can execute while an earlier batch waits for refresh. Execution remains bounded
-by the process and per-store capacity limits.
+by the Engine process capacity limits.
 Completed document chains release their queued successors even if the same
 execution still contains other unfinished documents. Conditional/Lua failures
 from speculative state are not final until the chain commits or definitively
 fails. A shared backend bulk still has to return before its results are known.
 
-The server's automatic batching across RPCs is always active. Explicit batches,
+The Engine's automatic batching across RPCs is always active. Explicit batches,
 operation folding in the core, adapter bulk operations, Kafka consumption
 batches, core admission checks, and backend concurrency limits also apply.
 
 Ordering guarantees have a scope. Within one request, operations for the
 same full address follow input order. With stable partition routing, Kafka
-consumes that address's messages in partition order. Separate server
+consumes that address's messages in partition order. Separate Engine
 replicas, independent Read/Write/Delete queues, mixed synchronous and
 asynchronous writes, multiple producers, and DLQ replay do not share one
 global business ordering guarantee. The caller must explicitly coordinate
@@ -389,7 +390,7 @@ Use these entry points to keep this guide aligned with future changes:
 | Protocol, addresses, completion modes, and result statuses | [sink.proto](../proto/sink/sink.proto) |
 | SDK parameter binding, encoding, and error aggregation | [sink-go dataset.go at the reviewed revision](https://github.com/liran/sink-go/blob/a658b054cea20c71f753ce21a5754885fc254318/dataset.go) |
 | SDK batch splitting and Write RPCs | [sink-go client.go at the reviewed revision](https://github.com/liran/sink-go/blob/a658b054cea20c71f753ce21a5754885fc254318/client.go) |
-| Server and worker component wiring | `New` in [app.go](../internal/app/app.go) |
+| Gateway, Engine, and Worker component wiring | `New` in [app.go](../internal/app/app.go) |
 | Synchronous batching and completion-mode separation | [batching_server.go](../internal/service/batching_server.go), [mutation_batches.go](../internal/service/mutation_batches.go) |
 | Request dispatch, admission control, and Put/Merge execution | `Write` in [server.go](../internal/service/server.go), [admission.go](../internal/service/admission.go), [write.go](../internal/service/write.go) |
 | Write folding for one document | [write_group.go](../internal/service/write_group.go), [folding contract](merge-folding.md) |

@@ -20,6 +20,8 @@ implementation are unchanged. No release or production rollout is included.
   another Store's allowance available.
 - A request retains one route snapshot. Invalid reloads retain the previous
   snapshot. Removing and re-adding a route cannot reassign its database identity.
+- At the identity-history limit, existing route updates remain allowed; adding
+  another identity is rejected without replacing the valid snapshot.
 - Connections are lazy, bounded, and expire when idle. Active calls are protected
   from eviction. Real loopback DNS tests cover scale-out, scale-in, and SERVFAIL
   without replaying writes or rebuilding healthy connections.
@@ -43,6 +45,23 @@ External backend tests remain explicit opt-ins.
 - The production suite now uses separate Engines and distinct database targets
   in cross-Store scenarios. Its seven-Store deployment has two Gateways, two
   Engines per Store, and one Worker per asynchronous Store.
+
+- The seven-Store production runner passes its backend matrix, concurrent merges,
+  live Scan checkpoints, returned writes, Worker restart recovery, representative
+  load, lag/DLQ checks, and permanent-failure inspection/repair/replay.
+- Its 3-minute fault run completes 648 cycles / 3,888 logical operations while
+  injecting a Worker kill, a database outage, and a Kafka restart. Dependency
+  probes confirm the affected Store failure and healthy Gateway/other Store.
+  This is a bounded local fault test, not a sustained production capacity result.
+- The cleanup conformance run executes all 46 top-level tests (355 including
+  subtests). It exposes one test-fixture dependency on health-check request order;
+  the corrected endpoint-failure scenario passes three repeated runs and an
+  additional run asserting recovery on a different endpoint. Every other scenario
+  passes in the complete run. CI requires a clean full run against the pinned suite.
+- Test containers and disposable volumes are removed after qualification.
+
+Local production evidence:
+`/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/sink-qualification.49RRfKKK`.
 
 Local SDK evidence:
 `/var/folders/91/pzs4g26n4_s925wqcxc1xmd40000gn/T/sink-isolated-smoke.gbOYddm6`.

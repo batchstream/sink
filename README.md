@@ -166,8 +166,8 @@ docker run --rm -p 8080:8080 -p 9090:9090 \
 
 For repeatable deployments, replace `latest` with a version tag or image digest
 from the release. See the [configuration reference](docs/configuration.md) for
-store routing and server/worker modes, and [production sizing](docs/production-sizing.md)
-for measured capacity and deployment guidance.
+Store routing and Gateway/Engine/Worker roles, and [production sizing](docs/production-sizing.md)
+for resource budgeting and deployment guidance.
 
 The server validates the complete configuration. Dependency readiness recovers
 independently; inspect the health of each required store before sending traffic.

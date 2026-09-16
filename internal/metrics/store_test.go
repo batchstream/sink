@@ -87,7 +87,7 @@ func TestNativeRPCsAndTransportErrorsKeepStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := &sink.Command{Store: "mongo"}
+	command := &sink.Command{Uri: "sink://mongo"}
 	cases := []struct {
 		request any
 		method  string
@@ -169,7 +169,7 @@ func TestStoreClassificationBoundsUnknownEmptyAndNilRequests(t *testing.T) {
 	}
 	for index := range 50 {
 		store := fmt.Sprintf("untrusted-store-%d", index)
-		command := &sink.Command{Store: store}
+		command := &sink.Command{Uri: "sink://" + store}
 		request := &sink.ExecuteRequest{Command: command}
 		info := &grpc.UnaryServerInfo{FullMethod: sink.Sink_Execute_FullMethodName}
 		handler := func(context.Context, any) (any, error) {

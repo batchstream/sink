@@ -19,17 +19,20 @@ asynchronous completion modes. They are not automatically retried or deduplicate
 
 ## Execute
 
-All four native RPCs share `Command`: `store`, `namespace`, `method`, `path`,
-`query`, `headers`, `content_type`, and `payload`. The configured store selects
-the adapter. MongoDB reads namespace and the BSON payload; HTTP search reads
-method/path/query/headers and the original body. Unused fields must be empty.
+All four native RPCs share `Command`: `uri`, `method`, `path`,
+`query`, `headers`, `content_type`, and `payload`. The URI authority selects
+the configured Store; only the adapter interprets its resource path. MongoDB
+uses `sink://store/database` and the BSON payload. Search uses
+`sink://store/index` with a separate relative operation path such as `/_search`
+or `/_mapping`, plus method/query/headers and the original body. A Store-level
+resource is `sink://store`; the URI never embeds an operation suffix. Unused fields must be empty.
 Command string fields, including header names and values, must contain valid
 UTF-8 even when a client uses the VT protobuf codec.
 Native response content types and headers must also contain valid UTF-8;
 malformed backend metadata returns `INTERNAL` consistently across codecs.
 There are no database-specific protobuf branches or extra payload envelopes.
 Sink selects the connection and authentication;
-callers cannot supply a URI, endpoint host, or credentials. Unknown stores return
+callers supply a logical resource URI, never an endpoint host or credentials. Unknown stores return
 `INVALID_ARGUMENT`; adapters without native support return `UNIMPLEMENTED`.
 
 The response contains `content_type`, opaque `payload`, and `success`. Search
@@ -62,7 +65,8 @@ Nonempty payloads require a valid content type; no encoding is inferred from pat
 
 ### MongoDB commands
 
-The database is provided as `Command.namespace`, separately from the ordered
+The database is the resource in `Command.uri` (`sink://store/database`),
+separately from the ordered
 BSON command in `Command.payload`, with `content_type=application/bson`. The first BSON field is
 the command name; use a struct, `bson.D`, or `bson.Raw`, not an unordered map.
 
@@ -297,12 +301,12 @@ After successfully processing a page, persist its cursor; on completion, persist
 an explicit completed state rather than using an empty cursor to restart later.
 
 Cursors carry the seek position and a fingerprint binding it to the complete
-Command, including the store, namespace, body, parameters and caller headers,
+Command, including the complete resource URI, operation path, body, parameters and caller headers,
 and the explicit Projection.
 They are independent of any Sink process or database session, so a request can
 continue on another Pod. Treat them as opaque and preserve them byte-for-byte;
 changing the Command or Projection, or using a corrupt cursor, returns
-`INVALID_ARGUMENT`. Existing cursors without explicit projection remain valid.
+`INVALID_ARGUMENT`. Changing only the URI resource also invalidates the cursor.
 Cursor size is limited to 64 KiB. They are continuation markers, not credentials;
 backend authentication and request validation apply on every call. Checksums
 protect against accidental corruption, not caller forgery.

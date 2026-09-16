@@ -10,24 +10,26 @@ import (
 )
 
 func TestNativeCommandRejectsInvalidBSONBeforeDecoding(t *testing.T) {
+	store := &Store{store: "primary"}
 	command := bson.D{{Key: "find", Value: "documents"}, {Key: "filter", Value: bson.D{}}}
 	payload, err := bson.Marshal(command)
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := storage.NativeRequest{Namespace: "database", ContentType: "application/bson", Payload: append(bytes.Clone(payload), 0)}
-	if _, err := validateNativeCommand(request, true); err == nil {
+	request := storage.NativeRequest{URI: "sink://primary/database", ContentType: "application/bson", Payload: append(bytes.Clone(payload), 0)}
+	if _, _, err := store.validateNativeCommand(request, true); err == nil {
 		t.Fatal("native command silently ignored trailing bytes")
 	}
 	// Preserve the outer document but corrupt the embedded filter terminator.
 	request.Payload = bytes.Clone(payload)
 	request.Payload[len(request.Payload)-2] = 1
-	if _, err := validateNativeCommand(request, true); err == nil || !strings.Contains(err.Error(), "invalid BSON command") {
+	if _, _, err := store.validateNativeCommand(request, true); err == nil || !strings.Contains(err.Error(), "invalid BSON command") {
 		t.Fatalf("malformed nested command reached decoding: %v", err)
 	}
 }
 
 func TestNativeCommandAllowsWritesAndRejectsCursorSessionState(t *testing.T) {
+	store := &Store{store: "primary"}
 	tests := []struct {
 		name    string
 		command string
@@ -93,8 +95,8 @@ func TestNativeCommandAllowsWritesAndRejectsCursorSessionState(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			req := storage.NativeRequest{Store: "primary", Namespace: "catalog", ContentType: "application/bson", Payload: payload}
-			_, err = validateNativeCommand(req, test.scan)
+			req := storage.NativeRequest{URI: "sink://primary/catalog", ContentType: "application/bson", Payload: payload}
+			_, _, err = store.validateNativeCommand(req, test.scan)
 			if (err == nil) != test.allowed {
 				t.Fatalf("allowed=%v, error=%v", test.allowed, err)
 			}

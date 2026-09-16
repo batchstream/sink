@@ -125,7 +125,7 @@ func TestNativeWriteRejectsUnsafeMembersBeforeBackendAccess(t *testing.T) {
 			command := nativeWriteTestCommand(t, input)
 			raw := nativeWriteTestRaw(t, command)
 			before := bytes.Clone(raw)
-			request := storage.NativeRequest{Store: "primary", Namespace: "catalog", ContentType: "application/bson", Payload: raw}
+			request := storage.NativeRequest{URI: "sink://primary/catalog", ContentType: "application/bson", Payload: raw}
 			// A nil client panics if an unsafe command gets as far as MongoDB.
 			_, err := store.Execute(t.Context(), request)
 			code, _ := storage.ErrorDetails(err)

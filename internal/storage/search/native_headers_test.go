@@ -48,7 +48,7 @@ func TestScanResumesOnAnotherServerWithHeadersAndExactSortValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	headers := http.Header{"Es-Security-Runas-User": {"reader"}, "X-Trace": {"one", "two"}}
-	command := storage.NativeRequest{Store: "search", Method: "POST", Path: "/products/_search", Query: "routing=tenant", Headers: headers, ContentType: ContentTypeJSON, Payload: []byte(`{"sort":[{"uid":"asc"}]}`), MaxBytes: 4096}
+	command := storage.NativeRequest{URI: "sink://search", Method: "POST", Path: "/products/_search", Query: "routing=tenant", Headers: headers, ContentType: ContentTypeJSON, Payload: []byte(`{"sort":[{"uid":"asc"}]}`), MaxBytes: 4096}
 	request := storage.ScanRequest{Request: command, BatchSize: 2}
 	page, err := first.Scan(t.Context(), request)
 	if err != nil || len(page.Documents) != 2 || len(page.NextCursor) == 0 {

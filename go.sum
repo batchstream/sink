@@ -20,8 +20,8 @@ github.com/klauspost/compress v1.19.2 h1:hMRETovs/pu/dVWN7zIT1PGG8t509MwT6bO7XSi
 github.com/klauspost/compress v1.19.2/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
-github.com/liran/sink-go v0.7.1-0.20260916160040-3c3f980fb824 h1:fzSmehpWoekJmVezIK2mWPPheE0/yj/FdjD8WZzM85s=
-github.com/liran/sink-go v0.7.1-0.20260916160040-3c3f980fb824/go.mod h1:yzlNhufcKx518eeC969hAidHTM2ISB+hBag+VDuiPE4=
+github.com/liran/sink-go v0.7.1-0.20260916165515-a7ec24f6d3c8 h1:08eYYAXhhXr1fsDg4X0sZaJ1IyIqJCtlF7kO3Y5vdPM=
+github.com/liran/sink-go v0.7.1-0.20260916165515-a7ec24f6d3c8/go.mod h1:yzlNhufcKx518eeC969hAidHTM2ISB+hBag+VDuiPE4=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/pierrec/lz4/v4 v4.1.26 h1:GrpZw1gZttORinvzBdXPUXATeqlJjqUG/D87TKMnhjY=

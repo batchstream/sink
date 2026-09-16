@@ -13,6 +13,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"regexp"
@@ -580,7 +581,7 @@ func (w *worker) count(ctx context.Context, opts settings) bool {
 		w.errors["encode_count"]++
 		return false
 	}
-	native := &sink.Command{Store: opts.Store, Namespace: opts.Dataset, ContentType: "application/bson", Payload: payload}
+	native := &sink.Command{Uri: "sink://" + opts.Store + "/" + url.PathEscape(opts.Dataset), ContentType: "application/bson", Payload: payload}
 	request := &sink.CountRequest{Command: native}
 	response, err := w.client.Count(ctx, request)
 	if err != nil {

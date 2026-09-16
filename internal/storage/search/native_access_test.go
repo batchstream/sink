@@ -62,7 +62,7 @@ func TestNativeExecuteRejectsLifecycleChangesBeforeTransport(t *testing.T) {
 	}
 	for _, command := range commands {
 		t.Run(command.Method+command.Path, func(t *testing.T) {
-			command.Store = "search"
+			command.URI = "sink://search"
 			command.ContentType = ContentTypeJSON
 			command.MaxBytes = 4096
 			response, err := store.Execute(t.Context(), command)

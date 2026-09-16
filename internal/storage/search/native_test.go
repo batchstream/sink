@@ -33,7 +33,7 @@ func TestNativeExecutePreservesErrorBodyAndHeadersWithoutRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := storage.NativeRequest{Store: "search", Method: "POST", Path: "/products/_msearch", Query: "q=a&q=b", ContentType: "application/x-ndjson", Payload: []byte("{}\n{}\n"), MaxBytes: 4096}
+	req := storage.NativeRequest{URI: "sink://search", Method: "POST", Path: "/products/_msearch", Query: "q=a&q=b", ContentType: "application/x-ndjson", Payload: []byte("{}\n{}\n"), MaxBytes: 4096}
 	response, err := store.Execute(t.Context(), req)
 	if err != nil || response.Success || response.StatusCode != 429 || string(response.Payload) != payload || len(response.Headers.Values("Warning")) != 2 || calls.Load() != 1 {
 		t.Fatalf("response=%+v calls=%d err=%v", response, calls.Load(), err)
@@ -41,16 +41,17 @@ func TestNativeExecutePreservesErrorBodyAndHeadersWithoutRetry(t *testing.T) {
 }
 
 func TestNativePathsRejectConnectionOverrides(t *testing.T) {
+	store := &Store{logicalStore: "search"}
 	tests := []storage.NativeRequest{
-		{Method: "GET", Path: "http://other/_search"},
-		{Method: "GET", Path: "/products/../_search"},
-		{Method: "GET", Path: "/products/%2e%2e/_search"},
-		{Method: "GET", Path: "//_search"},
-		{Method: "GET", Path: "/products/_search", Headers: http.Header{"Authorization": {"override"}}},
+		{URI: "sink://search", Method: "GET", Path: "http://other/_search"},
+		{URI: "sink://search", Method: "GET", Path: "/products/../_search"},
+		{URI: "sink://search", Method: "GET", Path: "/products/%2e%2e/_search"},
+		{URI: "sink://search", Method: "GET", Path: "//_search"},
+		{URI: "sink://search", Method: "GET", Path: "/products/_search", Headers: http.Header{"Authorization": {"override"}}},
 	}
 	for _, command := range tests {
 		req := command
-		if _, err := nativeOptions(req); err == nil {
+		if _, err := store.nativeOptions(req); err == nil {
 			t.Errorf("accepted %+v", command)
 		}
 	}
@@ -75,7 +76,7 @@ func TestNativeExecuteCapsResponseAndDoesNotFollowRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := storage.NativeRequest{Store: "search", Method: "GET", Path: "/products/_search", MaxBytes: 100}
+	req := storage.NativeRequest{URI: "sink://search", Method: "GET", Path: "/products/_search", MaxBytes: 100}
 	_, err = store.Execute(t.Context(), req)
 	code, _ := storage.ErrorDetails(err)
 	if code != storage.ErrorCodeResourceExhausted {
@@ -90,13 +91,13 @@ func TestNativeExecuteCapsResponseAndDoesNotFollowRedirect(t *testing.T) {
 
 func TestNativeExecutePreservesAllowedRequests(t *testing.T) {
 	commands := []storage.NativeRequest{
-		{Method: "POST", Path: "/_bulk", ContentType: "application/x-ndjson", Payload: []byte("{\"index\":{\"_index\":\"products\"}}\n{\"value\":1}\n")},
-		{Method: "POST", Path: "/products/_update/id", ContentType: "application/json", Payload: []byte(`{"doc":{"value":2}}`)},
-		{Method: "PUT", Path: "/products/_doc/a%2Fb%20c", ContentType: "application/json", Payload: []byte(`{"value":1}`)},
-		{Method: "DELETE", Path: "/products/_doc/_aliases%2F_close"},
-		{Method: "GET", Path: "/_plugins/future/endpoint/", ContentType: "text/plain", Payload: []byte("opaque")},
-		{Method: "POST", Path: "/_all/_search", ContentType: "application/json", Payload: []byte(`{}`)},
-		{Method: "PUT", Path: "/products/_mapping", ContentType: "application/json", Payload: []byte(`{"properties":{"title":{"type":"keyword"}}}`)},
+		{URI: "sink://search", Method: "POST", Path: "/_bulk", ContentType: "application/x-ndjson", Payload: []byte("{\"index\":{\"_index\":\"products\"}}\n{\"value\":1}\n")},
+		{URI: "sink://search", Method: "POST", Path: "/products/_update/id", ContentType: "application/json", Payload: []byte(`{"doc":{"value":2}}`)},
+		{URI: "sink://search", Method: "PUT", Path: "/products/_doc/a%2Fb%20c", ContentType: "application/json", Payload: []byte(`{"value":1}`)},
+		{URI: "sink://search", Method: "DELETE", Path: "/products/_doc/_aliases%2F_close"},
+		{URI: "sink://search", Method: "GET", Path: "/_plugins/future/endpoint/", ContentType: "text/plain", Payload: []byte("opaque")},
+		{URI: "sink://search", Method: "POST", Path: "/_all/_search", ContentType: "application/json", Payload: []byte(`{}`)},
+		{URI: "sink://search", Method: "PUT", Path: "/products/_mapping", ContentType: "application/json", Payload: []byte(`{"properties":{"title":{"type":"keyword"}}}`)},
 	}
 	for _, command := range commands {
 		t.Run(command.Method+command.Path, func(t *testing.T) {
@@ -120,7 +121,7 @@ func TestNativeExecutePreservesAllowedRequests(t *testing.T) {
 				t.Fatal(err)
 			}
 			req := command
-			req.Store = "search"
+			req.URI = "sink://search"
 			req.MaxBytes = 4096
 			response, err := store.Execute(t.Context(), req)
 			if err != nil || response.Success || response.StatusCode != 400 || string(response.Payload) != "original backend error\n" {

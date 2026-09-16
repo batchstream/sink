@@ -14,8 +14,14 @@ import (
 	"github.com/liran/sink/internal/storage"
 )
 
-func pageOptions(req storage.NativeRequest) (requestOptions, map[string]json.RawMessage, error) {
-	opts, err := nativeOptions(req)
+func (s *Store) pageOptions(req storage.NativeRequest) (requestOptions, map[string]json.RawMessage, error) {
+	if req.Path == "" {
+		req.Path = "/_search"
+	}
+	if req.Method == "" {
+		req.Method = http.MethodPost
+	}
+	opts, err := s.nativeOptions(req)
 	if err != nil {
 		return opts, nil, err
 	}
@@ -101,13 +107,10 @@ func (s *Store) performQuery(ctx context.Context, opts requestOptions) (scanPage
 
 func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.QueryResponse, error) {
 	var empty storage.QueryResponse
-	if req.Request.Store != s.logicalStore {
-		return empty, storage.InvalidArgumentError(errors.New("search store does not match request"))
-	}
 	if err := req.Validate(); err != nil {
 		return empty, err
 	}
-	opts, body, err := pageOptions(req.Request)
+	opts, body, err := s.pageOptions(req.Request)
 	if err != nil {
 		return empty, storage.InvalidArgumentError(err)
 	}
@@ -201,10 +204,7 @@ func queryHasMore(hits *scanHits, req storage.QueryRequest) (bool, error) {
 
 func (s *Store) Count(ctx context.Context, req storage.CountRequest) (storage.CountResponse, error) {
 	var empty storage.CountResponse
-	if req.Request.Store != s.logicalStore {
-		return empty, storage.InvalidArgumentError(errors.New("search store does not match request"))
-	}
-	opts, body, err := pageOptions(req.Request)
+	opts, body, err := s.pageOptions(req.Request)
 	if err != nil {
 		return empty, storage.InvalidArgumentError(err)
 	}

@@ -43,6 +43,19 @@ func TestRecordAddressContainsOnlyCanonicalURI(t *testing.T) {
 	}
 }
 
+func TestNativeCommandUsesResourceURI(t *testing.T) {
+	message := sink.File_sink_sink_proto.Messages().ByName("Command")
+	want := []protoreflect.Name{"uri", "method", "path", "query", "headers", "content_type", "payload"}
+	if message == nil || message.Fields().Len() != len(want) {
+		t.Fatal("Command fields do not match the resource URI contract")
+	}
+	for index, name := range want {
+		if message.Fields().Get(index).Name() != name {
+			t.Fatalf("Command field %d must be %s", index, name)
+		}
+	}
+}
+
 func TestWriteRequestVTRoundTripPreservesActions(t *testing.T) {
 	key := uri.StringKey("record-1")
 	address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{"catalog", "products"}, key)}

@@ -64,9 +64,6 @@ func scanSortValues(raw json.RawMessage, count int) ([]byte, error) {
 
 func (s *Store) Scan(ctx context.Context, req storage.ScanRequest) (storage.ScanResponse, error) {
 	var empty storage.ScanResponse
-	if req.Request.Store != s.logicalStore {
-		return empty, storage.InvalidArgumentError(errors.New("search store does not match request"))
-	}
 	seek, err := req.Resume()
 	if err != nil {
 		return empty, err
@@ -79,7 +76,7 @@ func (s *Store) Scan(ctx context.Context, req storage.ScanRequest) (storage.Scan
 		return empty, storage.InvalidArgumentError(err)
 	}
 	sizingKey := sha256.Sum256(encoded)
-	opts, body, err := pageOptions(req.Request)
+	opts, body, err := s.pageOptions(req.Request)
 	if err != nil {
 		return empty, storage.InvalidArgumentError(err)
 	}

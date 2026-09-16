@@ -49,7 +49,7 @@ func (s *Server) Query(ctx context.Context, req *sink.QueryRequest) (*sink.Query
 		return nil, nativeStatus(storage.ErrNativeUnsupported)
 	}
 	encodedBytes := nativeExecutionBytes(req.GetCommand(), request) + req.SizeVT() - req.GetCommand().SizeVT()
-	admission := admissionRequest{encodedBytes: encodedBytes, stores: []string{request.Store}}
+	admission := admissionRequest{encodedBytes: encodedBytes, stores: []string{protocol.CommandStore(req.GetCommand())}}
 	admission.inputBytes = req.SizeVT()
 	ctx, release, err := s.admitRequest(ctx, admission)
 	if err != nil {
@@ -92,7 +92,7 @@ func (s *Server) Count(ctx context.Context, req *sink.CountRequest) (*sink.Count
 	if !ok {
 		return nil, nativeStatus(storage.ErrNativeUnsupported)
 	}
-	admission := admissionRequest{encodedBytes: nativeExecutionBytes(req.GetCommand(), request), stores: []string{request.Store}}
+	admission := admissionRequest{encodedBytes: nativeExecutionBytes(req.GetCommand(), request), stores: []string{protocol.CommandStore(req.GetCommand())}}
 	admission.inputBytes = req.SizeVT()
 	ctx, release, err := s.admitRequest(ctx, admission)
 	if err != nil {

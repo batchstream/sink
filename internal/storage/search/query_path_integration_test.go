@@ -19,7 +19,7 @@ func TestManagedQueriesCannotOverwriteSearchNamedDocument(t *testing.T) {
 				t.Fatalf("insert HTTP %d: %s", code, body)
 			}
 			_, before := fixture.request(t, http.MethodGet, path, nil)
-			command := storage.NativeRequest{Store: "primary", Method: "POST", Path: path,
+			command := storage.NativeRequest{URI: "sink://primary", Method: "POST", Path: path,
 				ContentType: "application/json", Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 4096}
 			var err error
 			switch method {

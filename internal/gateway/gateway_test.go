@@ -468,7 +468,7 @@ func TestNativeForwardingPreservesDetailsAndCancellation(t *testing.T) {
 	}
 	fixture := fixtureEngine{store: "a", target: serveEngine(t, backend)}
 	gateway := testGateway(t, 4096, fixture)
-	command := &sink.Command{Store: "a", Payload: []byte(`{"ok":true}`)}
+	command := &sink.Command{Uri: "sink://a/custom/tenant/partition", Payload: []byte(`{"ok":true}`)}
 	execute := &sink.ExecuteRequest{Command: command}
 	executed, err := gateway.Execute(t.Context(), execute)
 	if err != nil || !executed.GetSuccess() || string(executed.GetPayload()) != string(command.Payload) {
@@ -490,7 +490,7 @@ func TestNativeForwardingPreservesDetailsAndCancellation(t *testing.T) {
 	if status.Code(err) != codes.ResourceExhausted || len(details) != 1 || details[0].(*errdetails.ErrorInfo).Reason != "admission-marker" {
 		t.Fatalf("lost status detail: %v", err)
 	}
-	waiting := &sink.Command{Store: "a", Payload: []byte("wait")}
+	waiting := &sink.Command{Uri: "sink://a", Payload: []byte("wait")}
 	count.Command = waiting
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
 	defer cancel()

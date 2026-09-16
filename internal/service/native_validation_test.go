@@ -14,14 +14,14 @@ import (
 func TestNativeRPCRejectsInvalidUTF8CommandFields(t *testing.T) {
 	client, _ := nativeRPCFixture(t, false)
 	codec := grpc.ForceCodecV2(protocol.NewVTProtoCodec())
-	for _, field := range []string{"store", "namespace", "method", "path", "query", "content type", "header name", "header value"} {
+	for _, field := range []string{"URI store", "URI resource", "method", "path", "query", "content type", "header name", "header value"} {
 		t.Run(field, func(t *testing.T) {
 			command := nativeSearchRequest().Command
 			switch field {
-			case "store":
-				command.Store = "primary\xff"
-			case "namespace":
-				command.Namespace = "data\xff"
+			case "URI store":
+				command.Uri = "sink://primary\xff/products"
+			case "URI resource":
+				command.Uri = "sink://primary/data\xff"
 			case "method":
 				command.Method = "POST\xff"
 			case "path":

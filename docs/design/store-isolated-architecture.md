@@ -152,7 +152,7 @@ The routing layer does not rewrite business fields, document encoding, keys, rev
 
 | API | Gateway behavior | Engine behavior |
 | --- | --- | --- |
-| Execute/Query/Count/Scan | Route by Command.store; preserve business responses, cursors, and bounded gRPC error details | Execute only for the bound Store |
+| Execute/Query/Count/Scan | Route by the Store in Command.uri; preserve business responses, cursors, and bounded gRPC error details | Execute only for the bound Store |
 | Single-Store Read/Write/Delete | Use a fast path while preserving request and result boundaries | Execute within local batching and budgets |
 | Cross-Store Read/Write/Delete | Group, schedule, and restore original operation_index values and result order | Each subrequest contains operations only for the bound Store |
 

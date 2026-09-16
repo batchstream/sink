@@ -41,7 +41,7 @@ func TestScanAdmissionAndExecutionSharePageDeadline(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		command := &sink.Command{Store: "primary", ContentType: "application/json", Payload: []byte(`{}`)}
+		command := &sink.Command{Uri: "sink://primary", ContentType: "application/json", Payload: []byte(`{}`)}
 		request := &sink.ScanRequest{Command: command}
 		finished := make(chan error, 1)
 		started := time.Now()
@@ -84,7 +84,7 @@ func TestScanAdmissionWaitIsBoundedAndCanceled(t *testing.T) {
 				}
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
-				command := &sink.Command{Store: "primary"}
+				command := &sink.Command{Uri: "sink://primary"}
 				request := &sink.ScanRequest{Command: command}
 				finished := make(chan error, 1)
 				go func() { _, err := server.Scan(ctx, request); finished <- err }()

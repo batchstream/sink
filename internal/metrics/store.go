@@ -51,7 +51,7 @@ func (m *Metrics) RequestStore(request any) string {
 	case *sink.DeleteRequest:
 		return requestOperationStore(m, req.GetOperations())
 	case interface{ GetCommand() *sink.Command }:
-		return m.configuredStore(req.GetCommand().GetStore())
+		return m.configuredStore(protocol.CommandStore(req.GetCommand()))
 	default:
 		return unconfiguredStore
 	}

@@ -160,7 +160,7 @@ func TestNativeMongoWriteInvalidatesConcurrentMergeSnapshot(t *testing.T) {
 				}
 				command := nativeRevisionCommand(t, test.command)
 				native := mongoNativeRequest(t, fixture.database, command)
-				wire := &sink.Command{Store: native.Store, Namespace: native.Namespace, ContentType: native.ContentType, Payload: native.Payload}
+				wire := &sink.Command{Uri: native.URI, ContentType: native.ContentType, Payload: native.Payload}
 				execute := &sink.ExecuteRequest{Command: wire}
 				response, err := second.Execute(t.Context(), execute)
 				if err != nil || !response.GetSuccess() {

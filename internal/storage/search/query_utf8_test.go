@@ -24,7 +24,7 @@ func TestManagedQueryRejectsInvalidUTF8BeforeJSONConversion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := storage.NativeRequest{Store: "search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{}`), MaxBytes: 4096}
+	command := storage.NativeRequest{URI: "sink://search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{}`), MaxBytes: 4096}
 	for _, field := range []string{"sort", "projection", "payload keys", "payload value"} {
 		request := storage.QueryRequest{Request: command, PageSize: 1}
 		switch field {

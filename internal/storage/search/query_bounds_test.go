@@ -54,7 +54,7 @@ func TestQueryRejectsUnsupportedPageControlsBeforeTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := storage.NativeRequest{Store: "search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{"collapse":{"field":"category"}}`)}
+	command := storage.NativeRequest{URI: "sink://search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{"collapse":{"field":"category"}}`)}
 	query := storage.QueryRequest{Request: command, PageSize: 1}
 	_, err = store.Query(t.Context(), query)
 	code, retryable := storage.ErrorDetails(err)

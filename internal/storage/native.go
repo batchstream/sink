@@ -21,8 +21,7 @@ type NativeStorage interface {
 }
 
 type NativeRequest struct {
-	Store       string
-	Namespace   string
+	URI         string
 	Method      string
 	Path        string
 	Query       string

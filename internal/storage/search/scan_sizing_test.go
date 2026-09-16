@@ -49,7 +49,7 @@ func TestScanShrinksOversizedResponseWithoutSkipping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := storage.NativeRequest{Store: "search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 64 << 10}
+	command := storage.NativeRequest{URI: "sink://search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 64 << 10}
 	request := storage.ScanRequest{Request: command, BatchSize: 16}
 	for id := 1; id <= total; id++ {
 		page, err := store.Scan(t.Context(), request)
@@ -159,7 +159,7 @@ func TestScanSizingPreservesFailureAndLookaheadChecks(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			command := storage.NativeRequest{Store: "search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 64 << 10}
+			command := storage.NativeRequest{URI: "sink://search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 64 << 10}
 			request := storage.ScanRequest{Request: command, BatchSize: 16}
 			page, err := store.Scan(t.Context(), request)
 			if err == nil || len(page.Documents) != 0 || len(page.NextCursor) != 0 {

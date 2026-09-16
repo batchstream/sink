@@ -31,7 +31,7 @@ func TestNativeSearchQueriesMSearchAndScan(t *testing.T) {
 			t.Fatalf("seed write=%+v", result)
 		}
 	}
-	native := storage.NativeRequest{Store: "primary", Method: "POST", Path: "/" + fixture.index + "/_search",
+	native := storage.NativeRequest{URI: "sink://primary", Method: "POST", Path: "/" + fixture.index + "/_search",
 		ContentType: "application/json", Payload: []byte(`{"query":{"range":{"number":{"gte":2}}},"sort":[{"number":"asc"}]}`), MaxBytes: 1 << 20}
 	response, err := fixture.store.Execute(ctx, native)
 	if err != nil || !response.Success {
@@ -149,7 +149,7 @@ func TestNativeSearchRejectsIndexAndAliasCreation(t *testing.T) {
 	fixture := newIntegrationFixture(t)
 	index := fixture.index + "-native"
 	t.Cleanup(func() { fixture.request(t, http.MethodDelete, "/"+index, nil) })
-	native := storage.NativeRequest{Store: "primary", Method: http.MethodPut, Path: "/" + index,
+	native := storage.NativeRequest{URI: "sink://primary", Method: http.MethodPut, Path: "/" + index,
 		ContentType: "application/json", Payload: []byte(`{"settings":{"number_of_shards":1,"number_of_replicas":0}}`), MaxBytes: 1 << 20}
 	response, err := fixture.store.Execute(t.Context(), native)
 	code, _ := storage.ErrorDetails(err)
@@ -185,7 +185,7 @@ func TestNativeSearchRejectsIndexAndAliasCreation(t *testing.T) {
 
 func TestNativeSearchWritesAndIndexDeletionProtection(t *testing.T) {
 	fixture := newIntegrationFixture(t)
-	req := storage.NativeRequest{Store: "primary", Method: http.MethodPut, Path: "/" + fixture.index + "/_doc/native%2Fid",
+	req := storage.NativeRequest{URI: "sink://primary", Method: http.MethodPut, Path: "/" + fixture.index + "/_doc/native%2Fid",
 		Query: "refresh=wait_for", ContentType: "application/json", Payload: []byte(`{"count":1}`), MaxBytes: 1 << 20}
 	response, err := fixture.store.Execute(t.Context(), req)
 	if err != nil || !response.Success || response.StatusCode != http.StatusCreated {

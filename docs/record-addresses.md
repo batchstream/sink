@@ -119,3 +119,15 @@ consumer groups. Old requests, mutation envelopes and scan checkpoints are not
 migration inputs. Switch clients through the planned blue/green cutover after
 validating the new cluster. This change does not implement data migration or
 modify any running deployment.
+
+## Native resources
+
+Execute, Query, Count and Scan also select their resource with `Command.uri`.
+The URI contains no operation: `sink://search/products` identifies an index;
+`Command.path = "/_search"` selects an HTTP operation on it. MongoDB uses
+`sink://mongo/catalog` to select the database and an ordered BSON command for
+its operation and collection. `sink://store` selects a Store-level resource.
+Gateway routing reads only the URI Store. The adapter validates the resource
+and combines it with the native operation. There are no separate public Store
+or Namespace fields, aliases, or old Command decoders. Scan checkpoints bind
+the complete URI and command, so changing resources invalidates a checkpoint.

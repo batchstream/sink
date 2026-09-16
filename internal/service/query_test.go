@@ -43,10 +43,10 @@ func TestQueryAndCountRouteCommonCommandAndPageWithoutOverflow(t *testing.T) {
 		t.Fatalf("count=%v err=%v", response, err)
 	}
 	countCommand := (<-backend.counts).Request
-	if countCommand.Store != command.Store || countCommand.ContentType != command.ContentType || string(countCommand.Payload) != string(command.Payload) {
+	if countCommand.URI != command.Uri || countCommand.ContentType != command.ContentType || string(countCommand.Payload) != string(command.Payload) {
 		t.Fatalf("count command changed: %+v", countCommand)
 	}
-	command.Store = "missing"
+	command.Uri = "sink://missing"
 	if _, err := client.Count(t.Context(), countRequest); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("unknown count store: %v", err)
 	}

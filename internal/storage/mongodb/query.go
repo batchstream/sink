@@ -34,7 +34,7 @@ func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.Qu
 	if err := req.Validate(); err != nil {
 		return empty, err
 	}
-	command, err := validateNativeCommand(req.Request, true)
+	database, command, err := s.validateNativeCommand(req.Request, true)
 	if err != nil {
 		return empty, storage.InvalidArgumentError(err)
 	}
@@ -91,13 +91,10 @@ func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.Qu
 	default:
 		return empty, storage.InvalidArgumentError(errors.New("Query requires find or read-only aggregate"))
 	}
-	if req.Request.Store != s.store {
-		return empty, storage.InvalidArgumentError(errors.New("MongoDB store does not match request"))
-	}
 	// Include the lookahead in the first batch to avoid a separate getMore
 	// for every full page. Byte-limited batches still use the cursor normally.
 	command = scanCommand(command, req.PageSize+1)
-	cursor, err := s.client.Database(req.Request.Namespace).RunCommandCursor(ctx, command)
+	cursor, err := s.client.Database(database).RunCommandCursor(ctx, command)
 	if err != nil {
 		return empty, storage.BackendError(err)
 	}
@@ -201,10 +198,7 @@ func canEstimateCount(command bson.D) bool {
 func (s *Store) Count(ctx context.Context, req storage.CountRequest) (storage.CountResponse, error) {
 	var empty storage.CountResponse
 	request := req.Request
-	if request.Store != s.store {
-		return empty, storage.InvalidArgumentError(errors.New("MongoDB store does not match request"))
-	}
-	command, err := validateNativeCommand(request, true)
+	database, command, err := s.validateNativeCommand(request, true)
 	if err != nil {
 		return empty, storage.InvalidArgumentError(err)
 	}
@@ -219,7 +213,7 @@ func (s *Store) Count(ctx context.Context, req storage.CountRequest) (storage.Co
 				opts.SetComment(field.Value)
 			}
 		}
-		collection := s.client.Database(request.Namespace).Collection(command[0].Value.(string))
+		collection := s.client.Database(database).Collection(command[0].Value.(string))
 		count, err := collection.EstimatedDocumentCount(ctx, opts)
 		if err != nil {
 			return empty, storage.BackendError(err)

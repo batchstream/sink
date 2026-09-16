@@ -111,7 +111,7 @@ func nativeRPCFixture(t *testing.T, silent bool) (sink.SinkClient, *nativeFixtur
 }
 
 func nativeSearchRequest() *sink.ExecuteRequest {
-	command := &sink.Command{Store: "primary", Method: "POST", Path: "/products/_search", ContentType: "application/json", Payload: []byte(`{}`)}
+	command := &sink.Command{Uri: "sink://primary", Method: "POST", Path: "/products/_search", ContentType: "application/json", Payload: []byte(`{}`)}
 	request := &sink.ExecuteRequest{Command: command}
 	return request
 }

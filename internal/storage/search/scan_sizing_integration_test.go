@@ -28,7 +28,7 @@ func TestSearchScanShrinksLargeResponses(t *testing.T) {
 			t.Fatal(result)
 		}
 	}
-	command := storage.NativeRequest{Store: "primary", Method: "POST", Path: "/" + fixture.index + "/_search",
+	command := storage.NativeRequest{URI: "sink://primary", Method: "POST", Path: "/" + fixture.index + "/_search",
 		ContentType: "application/json", Payload: []byte(`{"sort":["number"]}`), MaxBytes: 64 << 10}
 	request := storage.ScanRequest{Request: command, BatchSize: 16}
 	for index := range 9 {
@@ -77,7 +77,7 @@ func TestSearchScanProjectionRetainsSortOutsideSource(t *testing.T) {
 			t.Fatal(result)
 		}
 	}
-	command := storage.NativeRequest{Store: "primary", Method: "POST", Path: "/" + fixture.index + "/_search",
+	command := storage.NativeRequest{URI: "sink://primary", Method: "POST", Path: "/" + fixture.index + "/_search",
 		ContentType: "application/json", Payload: []byte(`{"sort":["number"],"_source":false}`), Query: "_source=false", MaxBytes: 4096}
 	for _, exclude := range []bool{false, true} {
 		projection := &storage.Projection{Fields: []string{"name"}, Exclude: exclude}

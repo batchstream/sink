@@ -43,7 +43,7 @@ func TestQueryAndCountApplyControlsWithoutOpeningCursor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := storage.NativeRequest{Store: "search", Method: "GET", Path: "/products/_search",
+	command := storage.NativeRequest{URI: "sink://search", Method: "GET", Path: "/products/_search",
 		Query: "from=90&size=90&sort=old&track_total_hits=false&_source=false", ContentType: "application/json", MaxBytes: 4096,
 		Payload: []byte(`{"query":{"match_all":{}},"from":50,"size":50,"sort":["old"],"_source":false,"aggs":{"names":{"terms":{"field":"name"}}},"suggest":{"name":{"text":"item","term":{"field":"name"}}},"profile":true}`)}
 	projection := &storage.Projection{Fields: []string{"number"}}
@@ -79,7 +79,7 @@ func TestCountRejectsPartialApproximateAndInvalidTotals(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			command := storage.NativeRequest{Store: "search", Method: "GET", Path: "/products/_search", MaxBytes: 4096}
+			command := storage.NativeRequest{URI: "sink://search", Method: "GET", Path: "/products/_search", MaxBytes: 4096}
 			countRequest := storage.CountRequest{Request: command}
 			if count, err := store.Count(t.Context(), countRequest); err == nil || count.Count != 0 {
 				t.Fatalf("accepted incomplete count %+v: %v", count, err)
@@ -89,20 +89,21 @@ func TestCountRejectsPartialApproximateAndInvalidTotals(t *testing.T) {
 }
 
 func TestCommonCommandRejectsUnusedFieldsAndConflictingContentTypes(t *testing.T) {
+	store := &Store{logicalStore: "search"}
 	tests := []storage.NativeRequest{
-		{Namespace: "database", Method: "GET", Path: "/_search"},
-		{Method: "POST", Path: "/_search", Payload: []byte(`{}`)},
-		{Method: "GET", Path: "/_search", Headers: http.Header{"content-type": {"application/json"}}},
-		{Method: "GET", Path: "/_search", ContentType: "application/json\r\nX-Foo: bar"},
+		{URI: "sink://primary/database", Method: "GET", Path: "/_search"},
+		{URI: "sink://search", Method: "POST", Path: "/_search", Payload: []byte(`{}`)},
+		{URI: "sink://search", Method: "GET", Path: "/_search", Headers: http.Header{"content-type": {"application/json"}}},
+		{URI: "sink://search", Method: "GET", Path: "/_search", ContentType: "application/json\r\nX-Foo: bar"},
 	}
 	for _, command := range tests {
-		if _, err := nativeOptions(command); err == nil {
+		if _, err := store.nativeOptions(command); err == nil {
 			t.Fatalf("accepted invalid common command: %+v", command)
 		}
 	}
 	for _, query := range []string{"scroll=2m", "source=%7B%7D", "filter_path=hits"} {
-		command := storage.NativeRequest{Method: "GET", Path: "/_search", Query: query}
-		if _, _, err := pageOptions(command); err == nil {
+		command := storage.NativeRequest{URI: "sink://search", Method: "GET", Path: "/_search", Query: query}
+		if _, _, err := store.pageOptions(command); err == nil {
 			t.Fatalf("accepted stateful or incomplete query %s", query)
 		}
 	}
@@ -133,7 +134,7 @@ func TestNativePagesRequireCompletionEvidence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			command := storage.NativeRequest{Store: "search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 4096}
+			command := storage.NativeRequest{URI: "sink://search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 4096}
 			query := storage.QueryRequest{Request: command, PageSize: 1}
 			if page, err := store.Query(t.Context(), query); err == nil || len(page.Documents) != 0 || page.HasMore {
 				t.Errorf("Query accepted an unproven complete page: %+v err=%v", page, err)
@@ -170,7 +171,7 @@ func TestNativePagesAcceptCompleteClusterResults(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			command := storage.NativeRequest{Store: "search", Method: "POST", Path: "/local,remote:products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 4096}
+			command := storage.NativeRequest{URI: "sink://search", Method: "POST", Path: "/local,remote:products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 4096}
 			query := storage.QueryRequest{Request: command, PageSize: 1}
 			if page, err := store.Query(t.Context(), query); err != nil || len(page.Documents) != 0 || page.HasMore {
 				t.Fatalf("complete Query rejected: %+v err=%v", page, err)

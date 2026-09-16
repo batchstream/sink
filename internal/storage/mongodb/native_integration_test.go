@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"sync/atomic"
 	"testing"
@@ -31,7 +32,9 @@ func mongoNativeRequest(t *testing.T, database string, command bson.D) storage.N
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := storage.NativeRequest{Store: "primary", Namespace: database, ContentType: "application/bson", Payload: payload, MaxBytes: 1 << 20}
+	request := storage.NativeRequest{URI: "sink://primary/" + url.PathEscape(
+		database,
+	), ContentType: "application/bson", Payload: payload, MaxBytes: 1 << 20}
 	return request
 }
 

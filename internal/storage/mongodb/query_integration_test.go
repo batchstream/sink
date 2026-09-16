@@ -157,7 +157,7 @@ func TestMongoEmptyCountUsesMetadataUnlessExactSemanticsAreRequired(t *testing.T
 	}
 	command := bson.D{{Key: "find", Value: "documents"}}
 	request := storage.CountRequest{Request: mongoNativeRequest(t, fixture.database, command)}
-	request.Request.Store = "other"
+	request.Request.URI = "sink://other/database"
 	if _, err := store.Count(t.Context(), request); err == nil {
 		t.Fatal("estimate bypassed store validation")
 	}

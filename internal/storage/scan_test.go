@@ -6,7 +6,7 @@ import (
 )
 
 func TestScanCursorBindsCommandButAllowsDifferentPageBudgets(t *testing.T) {
-	command := NativeRequest{Store: "search", Path: "/items/_search", Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 4096}
+	command := NativeRequest{URI: "sink://search/items", Path: "/_search", Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 4096}
 	request := ScanRequest{Request: command, BatchSize: 2}
 	cursor, err := request.Resume()
 	if err != nil {
@@ -24,13 +24,13 @@ func TestScanCursorBindsCommandButAllowsDifferentPageBudgets(t *testing.T) {
 	if err != nil || !bytes.Equal(resumed.Position, []byte(`["position"]`)) {
 		t.Fatalf("resume=%+v err=%v", resumed, err)
 	}
-	for _, field := range []string{"store", "namespace", "query", "payload"} {
+	for _, field := range []string{"store", "resource", "query", "payload"} {
 		changed := request
 		switch field {
 		case "store":
-			changed.Request.Store = "another"
-		case "namespace":
-			changed.Request.Namespace = "another"
+			changed.Request.URI = "sink://another/items"
+		case "resource":
+			changed.Request.URI = "sink://search/another"
 		case "query":
 			changed.Request.Query = "routing=another"
 		case "payload":
@@ -65,7 +65,7 @@ func TestScanCursorBoundsUntrustedInput(t *testing.T) {
 }
 
 func TestScanProjectionBindsCursor(t *testing.T) {
-	command := NativeRequest{Store: "primary", Payload: []byte(`{"sort":["uid"]}`)}
+	command := NativeRequest{URI: "sink://primary", Payload: []byte(`{"sort":["uid"]}`)}
 	request := ScanRequest{Request: command, BatchSize: 1}
 	initial, err := request.Resume()
 	if err != nil {

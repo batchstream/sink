@@ -31,7 +31,7 @@ func TestManagedQueriesFailOverToHealthyEndpoint(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			command := storage.NativeRequest{Store: "search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 4096}
+			command := storage.NativeRequest{URI: "sink://search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 4096}
 			switch method {
 			case "query":
 				request := storage.QueryRequest{Request: command, PageSize: 2}

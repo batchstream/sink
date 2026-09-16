@@ -6,9 +6,9 @@ import (
 	"mime"
 	"net/http"
 	"sort"
-	"strings"
 	"unicode/utf8"
 
+	"github.com/liran/sink-go/uri"
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/forwarding"
 	"github.com/liran/sink/internal/protocol"
@@ -19,10 +19,11 @@ import (
 
 func nativeRequest(req *sink.Command, maximum int) (storage.NativeRequest, error) {
 	request := storage.NativeRequest{MaxBytes: maximum}
-	if req == nil || strings.TrimSpace(req.GetStore()) == "" {
-		return request, status.Error(codes.InvalidArgument, "native request requires a store")
+	address, err := uri.Parse(req.GetUri())
+	if err != nil {
+		return request, status.Error(codes.InvalidArgument, "invalid native URI: "+err.Error())
 	}
-	for _, value := range []string{req.GetStore(), req.GetNamespace(), req.GetMethod(), req.GetPath(), req.GetQuery(), req.GetContentType()} {
+	for _, value := range []string{req.GetMethod(), req.GetPath(), req.GetQuery(), req.GetContentType()} {
 		if !utf8.ValidString(value) {
 			return request, status.Error(codes.InvalidArgument, "native command fields must contain valid UTF-8")
 		}
@@ -50,7 +51,7 @@ func nativeRequest(req *sink.Command, maximum int) (storage.NativeRequest, error
 		}
 		headers[header.GetName()] = append(headers[header.GetName()], header.GetValues()...)
 	}
-	request = storage.NativeRequest{Store: req.GetStore(), Namespace: req.GetNamespace(),
+	request = storage.NativeRequest{URI: address.String(),
 		Method: req.GetMethod(), Path: req.GetPath(), Query: req.GetQuery(), Headers: headers,
 		ContentType: req.GetContentType(), Payload: req.GetPayload(), MaxBytes: maximum}
 	return request, nil
@@ -106,7 +107,7 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 	if !ok {
 		return nil, nativeStatus(storage.ErrNativeUnsupported)
 	}
-	admission := admissionRequest{encodedBytes: nativeExecutionBytes(req.GetCommand(), request), stores: []string{request.Store}}
+	admission := admissionRequest{encodedBytes: nativeExecutionBytes(req.GetCommand(), request), stores: []string{protocol.CommandStore(req.GetCommand())}}
 	admission.inputBytes = req.SizeVT()
 	ctx, release, err := s.admitRequest(ctx, admission)
 	if err != nil {
@@ -185,7 +186,7 @@ func (s *Server) Scan(ctx context.Context, req *sink.ScanRequest) (*sink.ScanRes
 	if mediaType != "application/bson" {
 		encodedBytes += 2 * (storage.ScanBackendBytes(maximum) - maximum)
 	}
-	admission := admissionRequest{encodedBytes: encodedBytes, stores: []string{request.Store}, scan: true, wait: true}
+	admission := admissionRequest{encodedBytes: encodedBytes, stores: []string{protocol.CommandStore(req.GetCommand())}, scan: true, wait: true}
 	ctx, release, err := s.admitRequest(ctx, admission)
 	if err != nil {
 		return nil, err

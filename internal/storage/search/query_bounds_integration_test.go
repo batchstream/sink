@@ -26,7 +26,7 @@ func TestQueryDoesNotFetchLookaheadSourceOrExceedWindow(t *testing.T) {
 			t.Fatalf("insert HTTP %d: %s", code, body)
 		}
 	}
-	command := storage.NativeRequest{Store: "primary", Method: "POST", Path: "/" + fixture.index + "/_search",
+	command := storage.NativeRequest{URI: "sink://primary", Method: "POST", Path: "/" + fixture.index + "/_search",
 		ContentType: "application/json", Payload: []byte(`{"sort":["order"],"track_total_hits":false}`), MaxBytes: 4096}
 	request := storage.QueryRequest{Request: command, PageSize: 1}
 	page, err := fixture.store.Query(t.Context(), request)

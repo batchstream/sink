@@ -10,17 +10,32 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/liran/sink-go/uri"
 	"github.com/liran/sink/internal/storage"
 	"golang.org/x/net/http/httpguts"
 )
 
-func nativeOptions(req storage.NativeRequest) (requestOptions, error) {
+func (s *Store) nativeOptions(req storage.NativeRequest) (requestOptions, error) {
 	var opts requestOptions
-	if req.Namespace != "" {
-		return opts, errors.New("search native requests do not use namespace; select resources with path")
+	address, err := uri.Parse(req.URI)
+	if err != nil {
+		return opts, err
+	}
+	if address.Store() != s.logicalStore {
+		return opts, errors.New("search Store does not match native URI")
 	}
 	command := req
-	path := command.Path
+	resources := address.Segments()
+	if len(resources) > 1 || (len(resources) == 1 && strings.ContainsAny(resources[0], "/\\\x00\r\n")) {
+		return opts, errors.New("search native URI must target the Store root or one index resource")
+	}
+	if command.Path != "" && (!strings.HasPrefix(command.Path, "/") || strings.HasPrefix(command.Path, "//")) {
+		return opts, errors.New("native operation path must start with one slash")
+	}
+	path := address.EscapedPath() + command.Path
+	if path == "" {
+		path = "/"
+	}
 	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") || strings.ContainsAny(path, "?#\\\x00\r\n") {
 		return opts, errors.New("native path must be an absolute endpoint path without a host, query, or fragment")
 	}
@@ -77,10 +92,7 @@ func nativeOptions(req storage.NativeRequest) (requestOptions, error) {
 
 func (s *Store) Execute(ctx context.Context, req storage.NativeRequest) (storage.NativeResponse, error) {
 	var empty storage.NativeResponse
-	if req.Store != s.logicalStore {
-		return empty, storage.InvalidArgumentError(errors.New("search store does not match request"))
-	}
-	opts, err := nativeOptions(req)
+	opts, err := s.nativeOptions(req)
 	if err != nil {
 		return empty, storage.InvalidArgumentError(err)
 	}

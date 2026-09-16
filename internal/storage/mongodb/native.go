@@ -9,41 +9,48 @@ import (
 	"strings"
 	"time"
 
+	"github.com/liran/sink-go/uri"
 	"github.com/liran/sink/internal/storage"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
-func validateNativeCommand(req storage.NativeRequest, scan bool) (bson.D, error) {
+func (s *Store) validateNativeCommand(req storage.NativeRequest, scan bool) (string, bson.D, error) {
 	var command bson.D
-	if strings.TrimSpace(req.Namespace) == "" {
-		return command, errors.New("MongoDB native requests require a namespace")
+	address, err := uri.Parse(req.URI)
+	if err != nil {
+		return "", command, err
 	}
+	parts := address.Segments()
+	if address.Store() != s.store || len(parts) != 1 || strings.TrimSpace(parts[0]) == "" || strings.ContainsAny(parts[0], "/\\. \"$\x00") {
+		return "", command, errors.New("MongoDB native URI requires the configured Store and one valid database segment")
+	}
+	database := parts[0]
 	if req.Method != "" || req.Path != "" || req.Query != "" || len(req.Headers) != 0 {
-		return command, errors.New("MongoDB native requests do not use method, path, query or headers")
+		return database, command, errors.New("MongoDB native requests do not use method, path, query or headers")
 	}
 	mediaType, _, err := mime.ParseMediaType(req.ContentType)
 	if err != nil || mediaType != "application/bson" {
-		return command, errors.New("MongoDB native requests require application/bson content_type")
+		return database, command, errors.New("MongoDB native requests require application/bson content_type")
 	}
 	if err := storage.ValidateBSONDocument(req.Payload); err != nil {
-		return command, fmt.Errorf("invalid BSON command: %w", err)
+		return database, command, fmt.Errorf("invalid BSON command: %w", err)
 	}
 	if err := bson.Unmarshal(req.Payload, &command); err != nil {
-		return command, fmt.Errorf("decode BSON command: %w", err)
+		return database, command, fmt.Errorf("decode BSON command: %w", err)
 	}
 	if len(command) == 0 {
-		return command, errors.New("BSON command is empty")
+		return database, command, errors.New("BSON command is empty")
 	}
 	seen := make(map[string]bool, len(command))
 	for _, field := range command {
 		if seen[field.Key] {
-			return command, fmt.Errorf("duplicate command field %q", field.Key)
+			return database, command, fmt.Errorf("duplicate command field %q", field.Key)
 		}
 		seen[field.Key] = true
 		switch field.Key {
 		case "$db", "lsid", "txnNumber", "startTransaction", "autocommit", "apiVersion", "apiStrict", "apiDeprecationErrors", "maxTimeMS", "$readPreference":
-			return command, fmt.Errorf("command field %q is managed by Sink's driver", field.Key)
+			return database, command, fmt.Errorf("command field %q is managed by Sink's driver", field.Key)
 		}
 	}
 	name := command[0].Key
@@ -51,38 +58,35 @@ func validateNativeCommand(req storage.NativeRequest, scan bool) (bson.D, error)
 		switch name {
 		case "find", "aggregate", "listIndexes", "listCollections":
 		default:
-			return command, fmt.Errorf("command %q cannot be scanned", name)
+			return database, command, fmt.Errorf("command %q cannot be scanned", name)
 		}
 		if forbiddenNativeQuery(command) {
-			return command, errors.New("scan does not permit data-writing stages or tailable cursors")
+			return database, command, errors.New("scan does not permit data-writing stages or tailable cursors")
 		}
 		for _, field := range command {
 			if field.Key == "allowPartialResults" && field.Value != false {
-				return command, errors.New("native queries require complete results from every shard")
+				return database, command, errors.New("native queries require complete results from every shard")
 			}
 		}
-		return command, nil
+		return database, command, nil
 	}
 	switch name {
 	case "find", "aggregate", "listIndexes", "listCollections", "getMore", "killCursors", "parallelCollectionScan", "bulkWrite":
-		return command, fmt.Errorf("command %q uses a cursor; Execute does not manage cursor sessions, use Scan for supported cursor queries", name)
+		return database, command, fmt.Errorf("command %q uses a cursor; Execute does not manage cursor sessions, use Scan for supported cursor queries", name)
 	case "startSession", "refreshSessions", "endSessions", "commitTransaction", "abortTransaction":
-		return command, fmt.Errorf("command %q requires client-managed sessions, which Execute does not support", name)
+		return database, command, fmt.Errorf("command %q requires client-managed sessions, which Execute does not support", name)
 	case "insert", "update", "delete", "findAndModify", "findandmodify",
 		"count", "distinct", "explain", "createIndexes", "dropIndexes",
 		"collStats", "dbStats", "ping", "hello", "isMaster", "ismaster", "buildInfo", "serverStatus":
-		return command, nil
+		return database, command, nil
 	default:
-		return command, fmt.Errorf("command %q is not supported by revision-protected MongoDB Execute", name)
+		return database, command, fmt.Errorf("command %q is not supported by revision-protected MongoDB Execute", name)
 	}
 }
 
 func (s *Store) Execute(ctx context.Context, req storage.NativeRequest) (storage.NativeResponse, error) {
 	var empty storage.NativeResponse
-	if req.Store != s.store {
-		return empty, storage.InvalidArgumentError(errors.New("MongoDB store does not match request"))
-	}
-	command, err := validateNativeCommand(req, false)
+	database, command, err := s.validateNativeCommand(req, false)
 	if err != nil {
 		return empty, storage.InvalidArgumentError(err)
 	}
@@ -90,7 +94,7 @@ func (s *Store) Execute(ctx context.Context, req storage.NativeRequest) (storage
 	if err != nil {
 		return empty, err
 	}
-	raw, err := s.client.Database(req.Namespace).RunCommand(ctx, command).Raw()
+	raw, err := s.client.Database(database).RunCommand(ctx, command).Raw()
 	if len(raw) == 0 {
 		var commandError mongo.CommandError
 		if errors.As(err, &commandError) {
@@ -139,15 +143,12 @@ func (s *Store) scanDocuments(ctx context.Context, req storage.ScanRequest, send
 	if req.BatchSize < 1 || req.BatchSize > 1000 {
 		return storage.InvalidArgumentError(errors.New("scan batch size must be between 1 and 1000"))
 	}
-	if req.Request.Store != s.store {
-		return storage.InvalidArgumentError(errors.New("MongoDB store does not match request"))
-	}
-	command, err := validateNativeCommand(req.Request, true)
+	database, command, err := s.validateNativeCommand(req.Request, true)
 	if err != nil {
 		return storage.InvalidArgumentError(err)
 	}
 	command = scanCommand(command, req.BatchSize)
-	cursor, err := s.client.Database(req.Request.Namespace).RunCommandCursor(ctx, command)
+	cursor, err := s.client.Database(database).RunCommandCursor(ctx, command)
 	if err != nil {
 		return storage.BackendError(err)
 	}

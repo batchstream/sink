@@ -32,13 +32,13 @@ func CheckStore(request any, store string) error {
 			stores = append(stores, RecordStore(op.GetAddress()))
 		}
 	case *sink.ExecuteRequest:
-		stores = append(stores, req.GetCommand().GetStore())
+		stores = append(stores, CommandStore(req.GetCommand()))
 	case *sink.QueryRequest:
-		stores = append(stores, req.GetCommand().GetStore())
+		stores = append(stores, CommandStore(req.GetCommand()))
 	case *sink.CountRequest:
-		stores = append(stores, req.GetCommand().GetStore())
+		stores = append(stores, CommandStore(req.GetCommand()))
 	case *sink.ScanRequest:
-		stores = append(stores, req.GetCommand().GetStore())
+		stores = append(stores, CommandStore(req.GetCommand()))
 	}
 	for _, actual := range stores {
 		if actual != store {
@@ -69,7 +69,11 @@ func ValidateLuaDeclarations(programs []*sink.LuaProgram) error {
 
 // ParseAddress validates the canonical URI without interpreting Store path rules.
 func ParseAddress(address *sink.RecordAddress) (uri.Address, error) {
-	return uri.Parse(address.GetUri())
+	parsed, err := uri.Parse(address.GetUri())
+	if err == nil && len(parsed.Segments()) == 0 {
+		err = fmt.Errorf("record URI requires a resource path")
+	}
+	return parsed, err
 }
 
 func RecordStore(address *sink.RecordAddress) string {
@@ -78,4 +82,13 @@ func RecordStore(address *sink.RecordAddress) string {
 		return ""
 	}
 	return parsed.Store()
+}
+
+// CommandStore reads only the URI authority. Native path rules belong to adapters.
+func CommandStore(command *sink.Command) string {
+	address, err := uri.Parse(command.GetUri())
+	if err != nil {
+		return ""
+	}
+	return address.Store()
 }

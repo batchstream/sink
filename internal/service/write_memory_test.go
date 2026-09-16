@@ -90,7 +90,7 @@ func TestSmallVisibleWriteReturnsUnusedWorkingCapacityToScans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	native := &sink.Command{Store: "primary", Namespace: "catalog", ContentType: "application/bson", Payload: payload}
+	native := &sink.Command{Uri: "sink://primary/catalog", ContentType: "application/bson", Payload: payload}
 	scan := &sink.ScanRequest{Command: native}
 	if _, err := core.Scan(t.Context(), scan); err != nil {
 		t.Fatalf("56 MiB BSON scan could not use released write capacity: %v", err)

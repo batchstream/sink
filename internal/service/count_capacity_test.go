@@ -48,7 +48,7 @@ func TestCountReservesBoundedResponsesAndReleasesCapacity(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			command := &sink.Command{Store: "primary", Method: "POST", Path: "/products/_search", ContentType: contentType}
+			command := &sink.Command{Uri: "sink://primary", Method: "POST", Path: "/products/_search", ContentType: contentType}
 			want := 32 // Search counts can use every configured process request slot.
 			if contentType == "application/bson" {
 				fields := bson.D{{Key: "find", Value: "products"}}
@@ -57,7 +57,7 @@ func TestCountReservesBoundedResponsesAndReleasesCapacity(t *testing.T) {
 					t.Fatal(err)
 				}
 				command.Method, command.Path = "", ""
-				command.Namespace, command.Payload = "catalog", payload
+				command.Uri, command.Payload = "sink://primary/catalog", payload
 				want = 5 // MongoDB still reserves its 48 MiB driver wire ceiling.
 			}
 			request := &sink.CountRequest{Command: command}

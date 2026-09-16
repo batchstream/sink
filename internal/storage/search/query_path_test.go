@@ -28,7 +28,7 @@ func TestManagedQueriesRejectMutationPathsBeforeTransport(t *testing.T) {
 		"/_scripts/_search", "/_ingest/pipeline/_search", "/_index_template/_search",
 	} {
 		t.Run(path, func(t *testing.T) {
-			command := storage.NativeRequest{Store: "search", Method: "POST", Path: path,
+			command := storage.NativeRequest{URI: "sink://search", Method: "POST", Path: path,
 				ContentType: ContentTypeJSON, Payload: []byte(`{"sort":["uid"]}`)}
 			query := storage.QueryRequest{Request: command, PageSize: 1}
 			_, queryErr := store.Query(t.Context(), query)
@@ -50,9 +50,10 @@ func TestManagedQueriesRejectMutationPathsBeforeTransport(t *testing.T) {
 }
 
 func TestManagedQueriesAcceptSearchPaths(t *testing.T) {
+	store := &Store{logicalStore: "search"}
 	for _, path := range []string{"/_search", "/products/_search", "/products/%5fsearch", "/_all/_search", "/_all,products/_search", "/*/_search", "/products-*/_search", "/local,remote:products/_search", "/_remote:products/_search"} {
-		command := storage.NativeRequest{Method: "GET", Path: path}
-		if _, _, err := pageOptions(command); err != nil {
+		command := storage.NativeRequest{URI: "sink://search", Method: "GET", Path: path}
+		if _, _, err := store.pageOptions(command); err != nil {
 			t.Errorf("valid search path %q rejected: %v", path, err)
 		}
 	}

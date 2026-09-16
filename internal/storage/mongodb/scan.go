@@ -134,14 +134,11 @@ func scanFind(command bson.D, req storage.ScanRequest, position []byte) (bson.D,
 
 func (s *Store) Scan(ctx context.Context, req storage.ScanRequest) (storage.ScanResponse, error) {
 	var empty storage.ScanResponse
-	if req.Request.Store != s.store {
-		return empty, storage.InvalidArgumentError(errors.New("MongoDB store does not match request"))
-	}
 	seek, err := req.Resume()
 	if err != nil {
 		return empty, err
 	}
-	command, err := validateNativeCommand(req.Request, true)
+	database, command, err := s.validateNativeCommand(req.Request, true)
 	if err != nil {
 		return empty, storage.InvalidArgumentError(err)
 	}
@@ -149,7 +146,7 @@ func (s *Store) Scan(ctx context.Context, req storage.ScanRequest) (storage.Scan
 	if err != nil {
 		return empty, storage.InvalidArgumentError(err)
 	}
-	cursor, err := s.client.Database(req.Request.Namespace).RunCommandCursor(ctx, command)
+	cursor, err := s.client.Database(database).RunCommandCursor(ctx, command)
 	if err != nil {
 		return empty, storage.BackendError(err)
 	}

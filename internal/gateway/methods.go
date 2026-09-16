@@ -6,6 +6,7 @@ import (
 	forward "github.com/liran/sink/gen/forward"
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/forwarding"
+	"github.com/liran/sink/internal/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -51,7 +52,7 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 		return nil, err
 	}
 	defer release()
-	route, err := routeFor(s.current.Load(), req.GetCommand().GetStore())
+	route, err := routeFor(s.current.Load(), protocol.CommandStore(req.GetCommand()))
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +80,7 @@ func (s *Server) Query(ctx context.Context, req *sink.QueryRequest) (*sink.Query
 		return nil, err
 	}
 	defer release()
-	route, err := routeFor(s.current.Load(), req.GetCommand().GetStore())
+	route, err := routeFor(s.current.Load(), protocol.CommandStore(req.GetCommand()))
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +108,7 @@ func (s *Server) Count(ctx context.Context, req *sink.CountRequest) (*sink.Count
 		return nil, err
 	}
 	defer release()
-	route, err := routeFor(s.current.Load(), req.GetCommand().GetStore())
+	route, err := routeFor(s.current.Load(), protocol.CommandStore(req.GetCommand()))
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +136,7 @@ func (s *Server) Scan(ctx context.Context, req *sink.ScanRequest) (*sink.ScanRes
 		return nil, err
 	}
 	defer release()
-	route, err := routeFor(s.current.Load(), req.GetCommand().GetStore())
+	route, err := routeFor(s.current.Load(), protocol.CommandStore(req.GetCommand()))
 	if err != nil {
 		return nil, err
 	}

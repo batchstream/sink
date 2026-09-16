@@ -21,7 +21,7 @@ func TestScanRejectsUnsafeOrdersBeforeTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, payload := range []string{`{}`, `{"sort":["_id"]}`, `{"sort":["_doc"]}`, `{"sort":["_shard_doc"]}`, `{"sort":["_score"]}`, `{"sort":["uid","uid"]}`, `{"sort":[{"uid":{"missing":"_last"}}]}`, `{"sort":["uid"],"pit":{"id":"x"}}`, `{"sort":["uid"],"collapse":{"field":"uid"}}`} {
-		command := storage.NativeRequest{Store: "search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(payload), MaxBytes: 4096}
+		command := storage.NativeRequest{URI: "sink://search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(payload), MaxBytes: 4096}
 		request := storage.ScanRequest{Request: command, BatchSize: 2}
 		if _, err := store.Scan(t.Context(), request); err == nil {
 			t.Errorf("accepted %s", payload)
@@ -50,7 +50,7 @@ func TestScanRejectsPartialResultsAndAmbiguousBoundary(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			command := storage.NativeRequest{Store: "search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 4096}
+			command := storage.NativeRequest{URI: "sink://search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 4096}
 			request := storage.ScanRequest{Request: command, BatchSize: 2}
 			page, err := store.Scan(t.Context(), request)
 			if err == nil || len(page.Documents) != 0 || len(page.NextCursor) != 0 {
@@ -84,7 +84,7 @@ func TestScanByteLimitedPageResumesWithoutSkipping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := storage.NativeRequest{Store: "search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 300}
+	command := storage.NativeRequest{URI: "sink://search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON, Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 300}
 	request := storage.ScanRequest{Request: command, BatchSize: 3}
 	page, err := store.Scan(t.Context(), request)
 	if err != nil || len(page.Documents) != 2 || len(page.NextCursor) == 0 {
@@ -132,7 +132,7 @@ func TestScanProjectionOverridesNativeSourceSelection(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			command := storage.NativeRequest{Store: "search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON,
+			command := storage.NativeRequest{URI: "sink://search", Method: "POST", Path: "/products/_search", ContentType: ContentTypeJSON,
 				Payload: []byte(`{"sort":["uid"],"_source":false}`), Query: "_source=false&_source_includes=old&_source_excludes=new", MaxBytes: 4096}
 			request := storage.ScanRequest{Request: command, BatchSize: 2, Projection: test.projection}
 			if _, err := store.Scan(t.Context(), request); err != nil {

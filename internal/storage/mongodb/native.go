@@ -22,25 +22,51 @@ func (s *Store) validateNativeCommand(req storage.NativeRequest, scan bool) (str
 		return "", command, err
 	}
 	parts := address.Segments()
-	if address.Store() != s.store || len(parts) != 1 || strings.TrimSpace(parts[0]) == "" || strings.ContainsAny(parts[0], "/\\. \"$\x00") {
-		return "", command, errors.New("MongoDB native URI requires the configured Store and one valid database segment")
+	if address.Store() != s.store || len(parts) < 1 || len(parts) > 2 || strings.TrimSpace(parts[0]) == "" || strings.ContainsAny(parts[0], "/\\. \"$\x00") {
+		return "", command, errors.New("MongoDB native URI requires the configured Store and database[/collection]")
 	}
 	database := parts[0]
+	collection := ""
+	if len(parts) == 2 {
+		collection = parts[1]
+		if strings.ContainsRune(collection, '\x00') {
+			return database, command, errors.New("invalid MongoDB collection name")
+		}
+	}
 	if req.Method != "" || req.Path != "" || req.Query != "" || len(req.Headers) != 0 {
 		return database, command, errors.New("MongoDB native requests do not use method, path, query or headers")
 	}
-	mediaType, _, err := mime.ParseMediaType(req.ContentType)
-	if err != nil || mediaType != "application/bson" {
-		return database, command, errors.New("MongoDB native requests require application/bson content_type")
+	if req.ContentType != "" || len(req.Payload) > 0 {
+		mediaType, _, err := mime.ParseMediaType(req.ContentType)
+		if err != nil || mediaType != "application/bson" {
+			return database, command, errors.New("MongoDB native requests require application/bson content_type")
+		}
 	}
-	if err := storage.ValidateBSONDocument(req.Payload); err != nil {
-		return database, command, fmt.Errorf("invalid BSON command: %w", err)
-	}
-	if err := bson.Unmarshal(req.Payload, &command); err != nil {
-		return database, command, fmt.Errorf("decode BSON command: %w", err)
+	if len(req.Payload) == 0 && scan && collection != "" {
+		command = bson.D{{Key: "find", Value: collection}}
+	} else {
+		if err := storage.ValidateBSONDocument(req.Payload); err != nil {
+			return database, command, fmt.Errorf("invalid BSON command: %w", err)
+		}
+		if err := bson.Unmarshal(req.Payload, &command); err != nil {
+			return database, command, fmt.Errorf("decode BSON command: %w", err)
+		}
 	}
 	if len(command) == 0 {
 		return database, command, errors.New("BSON command is empty")
+	}
+	if collection != "" {
+		switch command[0].Key {
+		case "find", "aggregate", "listIndexes", "insert", "update", "delete", "findAndModify", "findandmodify",
+			"count", "distinct", "createIndexes", "dropIndexes", "collStats":
+		default:
+			return database, command, errors.New("command requires a database URI, not a collection URI")
+		}
+		target, ok := command[0].Value.(string)
+		if !ok || (target != "" && target != collection) {
+			return database, command, errors.New("native command must target the URI collection")
+		}
+		command[0].Value = collection
 	}
 	seen := make(map[string]bool, len(command))
 	for _, field := range command {

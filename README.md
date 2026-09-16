@@ -153,16 +153,27 @@ generate a standard gRPC client from [`proto/sink/sink.proto`](proto/sink/sink.p
 
 ## Run the container
 
-For a real deployment, copy [`config.example.yaml`](config.example.yaml), edit
-the backend connection, and start the container with the file mounted:
+Choose the annotated configuration for the component you are deploying:
+
+| Component | Configuration | Purpose |
+| --- | --- | --- |
+| Gateway | [config.gateway.example.yaml](config.gateway.example.yaml) | Public ingress and forwarding; uses [routes.example.yaml](routes.example.yaml). |
+| Engine | [config.engine.example.yaml](config.engine.example.yaml) | One Store's synchronous execution and optional asynchronous publication. |
+| Worker | [config.worker.example.yaml](config.worker.example.yaml) | One Store's Kafka consumption and mutation execution. |
+
+For an Engine, copy its example, edit the backend connection, and mount the file:
 
 ```shell
-cp config.example.yaml config.yaml
+cp config.engine.example.yaml config.yaml
 # Edit config.yaml for the target backend.
 docker run --rm -p 8080:8080 -p 9090:9090 \
   --mount type=bind,source="$(pwd)/config.yaml",target=/etc/sink/config.yaml,readonly \
   ghcr.io/liran/sink:latest --config /etc/sink/config.yaml
 ```
+
+For Gateway, mount the configuration directory including its routes file so atomic
+route replacements remain visible. Worker needs its own configuration and no
+public gRPC port. The [quickstart](examples/quickstart/README.md) runs all three roles.
 
 For repeatable deployments, replace `latest` with a version tag or image digest
 from the release. See the [configuration reference](docs/configuration.md) for

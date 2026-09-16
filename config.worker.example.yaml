@@ -1,0 +1,88 @@
+# Worker: consume and apply Kafka mutations for one Store; no business gRPC listener.
+# Values are defaults unless marked as examples or derived defaults.
+# Capacities are per process, not cluster-wide or hard RSS limits.
+# Byte sizes accept KiB/MiB/GiB or integer bytes; durations accept ms/s/m/h.
+# Positive limits cannot be disabled with 0. Unknown fields are rejected.
+# Validate offline: sink config check --config config.worker.example.yaml
+# Engine must enable Kafka to publish mutations for this Worker.
+mode: worker # Required process role.
+
+# Optional HTTP metrics and health listener.
+prometheus:
+  address: ":9090" # Example; default empty disables /metrics, /livez, /readyz.
+
+# Bind this process to one Store. Its replicas must use the same Store name.
+storage:
+  name: primary # Required globally unique Store name; shared by all its replicas.
+  driver: mongodb # Required: mongodb, elasticsearch, or opensearch.
+
+  # MongoDB driver settings. Replace with the search block for a search driver.
+  mongodb:
+    uri: mongodb://mongodb:27017 # Example; required MongoDB connection URI.
+    metadata_field: __sink # Internal revision field; hidden from returned documents.
+    max_concurrent_writes: 64 # Concurrent conditional MongoDB writes per process.
+    max_concurrent_groups: 16 # Concurrent collection groups shared by all calls.
+
+  # Search driver alternative: set driver to elasticsearch or opensearch above.
+  # search: # Backend endpoints and authentication for this Store only.
+  #   endpoints: [http://opensearch:9200] # Example; at least one endpoint required.
+  #   username: "" # Basic-auth user; configure together with password.
+  #   password: "" # Basic-auth password; use deployment-managed secret values.
+  #   api_key: "" # API key alternative; cannot be combined with basic auth.
+
+  # Kafka consumption is required; match the Engine Store, backend, and topic policy.
+  kafka:
+    enabled: true # Required in Worker mode; no default consumer without Kafka.
+    brokers: [kafka:9092] # Example bootstrap addresses; required when enabled.
+    # Source topic policy. Matching Engine/Worker replicas must use the same policy.
+    topic:
+      name: primary-mutations # Example; required when Kafka is enabled.
+      partitions: 4 # Exact source/DLQ partition count; changes need a drained migration.
+      replication_factor: 2 # Replicas per partition; requires enough Kafka brokers.
+      retention: 72h # Source topic retention; must be at least 1ms.
+      min_insync_replicas: 2 # Default min(2, replication_factor); cannot exceed it.
+      max_record_bytes: 900KiB # Encoded mutation plus key; <= producer buffer, <=64MiB.
+    # Consumption and retry settings for this Store.
+    consumer:
+      group_id: primary-workers # Example; required for Worker, default empty.
+      max_poll_records: 500 # Maximum records handled in one fetched batch.
+      processing_timeout: 20s # Backend time per batch; <=20s, plus bounded settlement.
+      # Temporary failures remain pending after a round; attempts do not discard them.
+      retry:
+        max_attempts: 10 # Attempts per processing round, not a message lifetime limit.
+        backoff: 100ms # Initial retry delay before jitter.
+        max_backoff: 10s # Delay cap before jitter; must be >= backoff.
+    # Permanent, malformed, and wrong-Store messages go to the dead-letter topic.
+    dead_letter:
+      topic: primary-mutations.dlq # Default <topic.name>.dlq; must differ from source.
+      retention: 720h # Independent DLQ retention (30 days); at least 1ms.
+
+# Limits for synchronous application of consumed mutations and Lua execution.
+service:
+  # Limits per execution call made by the consumer.
+  request:
+    timeout: 30s # Execution deadline; consumer.processing_timeout may shorten it.
+    max_read_bytes: 32MiB # Merge snapshot/output budget per execution call; default 32MiB.
+    max_operations: 1000 # Caps consumer poll records and operations in each execution call.
+
+  # Storage execution capacity for applying consumed mutations.
+  execution:
+    max_requests: 128 # Concurrent admitted mutation execution calls; maximum 10000.
+    max_bytes: 256MiB # Admitted input/output reservations; <=16GiB; not a heap/RSS cap.
+    # Bounded waiting for synchronous mutation execution.
+    queue:
+      max_requests: 1024 # Pending direct requests; maximum 10000.
+      max_bytes: 32MiB # Waiting input/bookkeeping; default min(32MiB, execution.max_bytes).
+      max_wait: 2s # Default min(2s, request.timeout); cannot exceed request.timeout.
+
+  # Conditional mutation conflict handling and Lua limits, shared by Engine/Worker.
+  merge:
+    max_attempts: 3 # Revision-conflict attempts for Merge and folded conditional Put.
+    lua:
+      timeout: 100ms # Maximum wall-clock time per Lua execution.
+      max_source_bytes: 64KiB # Maximum Lua program source bytes.
+      max_result_bytes: 16MiB # Current/input/result document bound, including expansion.
+      max_cached_programs: 256 # Compiled programs retained in this process's LRU cache.
+      max_instructions: 1000000 # Maximum VM instruction checkpoints per execution.
+
+shutdown_timeout: 15s # Grace period for consumer shutdown and database disconnect.

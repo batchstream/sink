@@ -110,8 +110,17 @@ Gateway handles cross-Store batches and preserves original result order, includi
 mixed asynchronous batches whose Stores have different publishing availability.
 It does not load database or Kafka settings.
 
-Use [`config.example.yaml`](../config.example.yaml) for a synchronous Engine and
-the [quickstart](../examples/quickstart/README.md) for all three components.
+Use the annotated example for the role you are configuring:
+
+- [Gateway](../config.gateway.example.yaml): public request limits, forwarding, and connection discovery.
+- [Engine](../config.engine.example.yaml): one Store's backend, execution, batching, Lua, and optional Kafka publication.
+- [Worker](../config.worker.example.yaml): one Store's backend, consumption, execution, and Lua; no RPC listener or RPC batching.
+- [Gateway routes](../routes.example.yaml): a separate routing table referenced by the Gateway configuration.
+
+Each component file loads directly without uncommenting another role's settings.
+Engine and Worker include a small commented search-driver alternative to MongoDB.
+Together the component examples cover all supported configuration fields.
+Use the [quickstart](../examples/quickstart/README.md) to run all three components.
 
 ## Address routing
 

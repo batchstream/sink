@@ -35,7 +35,7 @@ flowchart TD
 Configuration decoding opens no dependencies. `config.Decode` returns a fully
 resolved value or an error; its private file types retain omission only while
 resolving defaults. Service, storage and Kafka sections validate their own
-settings. Each Engine/Worker configuration binds one Store and database identity;
+settings. Each Engine/Worker configuration binds one Store name;
 the deployment inventory owns uniqueness across processes.
 
 `internal/app` owns dependency construction and cleanup. Its service, Kafka,

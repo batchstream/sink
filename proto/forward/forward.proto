@@ -21,7 +21,8 @@ message Budget {
 message ForwardRequest {
   uint32 version = 1;
   string store = 2;
-  string database_id = 3;
+  reserved 3;
+  reserved "database_id";
   Budget grant = 4;
   oneof request {
     sink.v1.ReadRequest read = 10;
@@ -37,7 +38,8 @@ message ForwardRequest {
 message ForwardResponse {
   uint32 version = 1;
   string store = 2;
-  string database_id = 3;
+  reserved 3;
+  reserved "database_id";
   Budget used = 4;
   // gRPC application status is carried inside the envelope so usage survives errors.
   uint32 code = 5;

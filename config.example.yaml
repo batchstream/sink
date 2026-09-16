@@ -1,55 +1,147 @@
-# Sizes use binary units (KiB, MiB, GiB); durations use ms, s, m, or h.
-mode: engine
+# Complete configuration reference. This file is a valid MongoDB Engine config.
+# Values below are defaults unless marked as examples or derived defaults.
+# All capacities are PER PROCESS; they do not impose a cluster-wide or RSS limit.
+# Byte sizes accept KiB/MiB/GiB or integer bytes; durations accept ms/s/m/h.
+# Positive limits cannot be disabled with 0. Unknown fields are rejected.
+# Validate offline: sink config check --config config.example.yaml
+# See docs/configuration.md for constraints and docs/store-isolation.md for roles.
+#
+# Role selection:
+# - Engine: use this file; enable Kafka to accept asynchronous mutations.
+# - Worker: set mode: worker, enable Kafka, and set consumer.group_id. It opens
+#   no business gRPC listener and executes its Store's Kafka messages directly.
+# - Gateway: remove storage and service.{execution,publish,batching,merge}, keep
+#   service.request, set mode: gateway, and uncomment the gateway block below.
+#   Gateway must not contain database/Kafka configuration.
+mode: engine # Required: gateway, engine, or worker; no implicit default.
 
+# Public RPC/health listener in Gateway and Engine; Worker opens no gRPC listener.
 grpc:
-  address: ":8080"
-  max_receive_message_bytes: 64MiB
-  max_send_message_bytes: 64MiB
+  address: ":8080" # TCP listen address.
+  max_receive_message_bytes: 64MiB # Maximum encoded inbound gRPC message.
+  max_send_message_bytes: 64MiB # Maximum encoded outbound gRPC message.
 
+# Optional HTTP metrics and health listener, available in every role.
 prometheus:
-  address: ":9090"
+  address: ":9090" # Example; default empty disables /metrics, /livez, /readyz.
 
+# Exactly one Store per Engine/Worker. Forbidden in Gateway.
 storage:
-  name: primary
-  database_id: catalog-database
-  driver: mongodb
+  name: primary # Required globally unique Store name; shared by all its replicas.
+  driver: mongodb # Required: mongodb, elasticsearch, or opensearch.
+
+  # MongoDB driver settings. Replace with the search block for a search driver.
   mongodb:
-    uri: mongodb://mongodb:27017
-    metadata_field: __sink
-    max_concurrent_writes: 64
-    max_concurrent_groups: 16
+    uri: mongodb://mongodb:27017 # Example; required MongoDB connection URI.
+    metadata_field: __sink # Internal revision field; hidden from returned documents.
+    max_concurrent_writes: 64 # Concurrent conditional MongoDB writes per process.
+    max_concurrent_groups: 16 # Concurrent collection groups shared by all calls.
 
+  # Search driver alternative: set driver to elasticsearch or opensearch above.
+  # search: # Backend endpoints and authentication for this Store only.
+  #   endpoints: [http://opensearch:9200] # Example; at least one endpoint required.
+  #   username: "" # Basic-auth user; configure together with password.
+  #   password: "" # Basic-auth password; use deployment-managed secret values.
+  #   api_key: "" # API key alternative; cannot be combined with basic auth.
+
+  # Optional for Engine; required and enabled for Worker. No Kafka in Gateway.
+  kafka:
+    enabled: false # Engine publishes when true; Worker consumes when true.
+    brokers: [kafka:9092] # Example bootstrap addresses; required when enabled.
+    # Source topic policy. Matching Engine/Worker replicas must use the same policy.
+    topic:
+      name: primary-mutations # Example; required when Kafka is enabled.
+      partitions: 4 # Exact source/DLQ partition count; changes need a drained migration.
+      replication_factor: 2 # Replicas per partition; requires enough Kafka brokers.
+      retention: 72h # Source topic retention; must be at least 1ms.
+      min_insync_replicas: 2 # Default min(2, replication_factor); cannot exceed it.
+      max_record_bytes: 900KiB # Encoded mutation plus key; <= producer buffer, <=64MiB.
+    # Buffer capacity for Engine mutation publication and Worker DLQ publication.
+    producer:
+      max_buffered_bytes: 64MiB # Additional to service budgets; maximum 1GiB.
+    # Worker-only consumption settings; Engine does not start a consumer.
+    consumer:
+      group_id: primary-workers # Example; required for Worker, default empty.
+      max_poll_records: 500 # Maximum records handled in one fetched batch.
+      processing_timeout: 20s # Backend time per batch; <=20s, plus bounded settlement.
+      # Temporary failures remain pending after a round; attempts do not discard them.
+      retry:
+        max_attempts: 10 # Attempts per processing round, not a message lifetime limit.
+        backoff: 100ms # Initial retry delay before jitter.
+        max_backoff: 10s # Delay cap before jitter; must be >= backoff.
+    # Permanent, malformed, and wrong-Store messages go to the dead-letter topic.
+    dead_letter:
+      topic: primary-mutations.dlq # Default <topic.name>.dlq; must differ from source.
+      retention: 720h # Independent DLQ retention (30 days); at least 1ms.
+
+# Request limits are accepted by every role; other sections belong to Engine/Worker.
 service:
+  # Per-original-request limits, including requests split/coalesced by Gateway/Engine.
   request:
-    timeout: 30s
-    max_read_bytes: 32MiB
-    max_operations: 1000
-  execution:
-    max_requests: 128
-    max_bytes: 256MiB
-    queue:
-      max_requests: 1024
-      max_bytes: 32MiB
-      max_wait: 2s
-    scan:
-      admission_wait: 2s
-  publish:
-    max_requests: 32
-    max_bytes: 256MiB
-  batching:
-    max_wait: 2ms
-    max_operations: 1000
-    max_bytes: 16MiB
-    queue:
-      max_operations: 10_000
-      max_bytes: 128MiB
-  merge:
-    max_attempts: 3
-    lua:
-      timeout: 100ms
-      max_source_bytes: 64KiB
-      max_result_bytes: 16MiB
-      max_cached_programs: 256
-      max_instructions: 1_000_000
+    timeout: 30s # Overall unary/page deadline including waits; <=300s; caller may shorten.
+    max_read_bytes: 32MiB # Read/returned-write/native document budget; <=half gRPC send limit.
+    max_operations: 1000 # Maximum operations in one Read, Write, or Delete request.
 
-shutdown_timeout: 15s
+  # Storage execution for all synchronous methods, not only the Execute RPC.
+  execution:
+    max_requests: 128 # Concurrent admitted execution requests; maximum 10000.
+    max_bytes: 256MiB # Admitted input/output reservations; <=16GiB; not a heap/RSS cap.
+    # Waiting direct synchronous calls; separate from batching and Scan queues.
+    queue:
+      max_requests: 1024 # Pending direct requests; maximum 10000.
+      max_bytes: 32MiB # Waiting input/bookkeeping; default min(32MiB, execution.max_bytes).
+      max_wait: 2s # Default min(2s, request.timeout); cannot exceed request.timeout.
+    # Scan pages also consume the total execution capacity above.
+    scan:
+      max_requests: 64 # Default max(1, execution.max_requests/2); <= execution.max_requests.
+      max_bytes: 128MiB # Default max(1, execution.max_bytes/2); <= execution.max_bytes.
+      admission_wait: 2s # Default min(2s, request.timeout); included in page deadline.
+
+  # Engine asynchronous Write/Delete admission; independent of storage execution.
+  publish:
+    max_requests: 32 # Concurrent publishing requests; maximum 10000.
+    max_bytes: 256MiB # Publication reservations; <=16GiB; Kafka buffers are additional.
+
+  # Engine Read/Write/Delete batching is always active; these are collection targets.
+  batching:
+    max_wait: 2ms # Collection delay starting with the first request in a batch.
+    max_operations: 1000 # Default request.max_operations; cannot exceed that limit.
+    max_bytes: 16MiB # Encoded batch target; a larger valid single RPC can run alone.
+    # Separate bounded queue for each batched method: Read, Write, and Delete.
+    queue:
+      max_operations: 10000 # Default max(10000, request.max_operations); >= batch target.
+      max_bytes: 128MiB # Default max(128MiB, grpc receive limit); >= receive/batch limits.
+
+  # Conditional mutation conflict handling and Lua limits, shared by Engine/Worker.
+  merge:
+    max_attempts: 3 # Revision-conflict attempts for Merge and folded conditional Put.
+    lua:
+      timeout: 100ms # Maximum wall-clock time per Lua execution.
+      max_source_bytes: 64KiB # Maximum Lua program source bytes.
+      max_result_bytes: 16MiB # Current/input/result document bound, including expansion.
+      max_cached_programs: 256 # Compiled programs retained in this process's LRU cache.
+      max_instructions: 1000000 # Maximum VM instruction checkpoints per execution.
+
+# Gateway-only alternative. Apply the role changes at the top before uncommenting.
+# gateway: # Stateless routing, bounded forwarding, and lazy downstream connections.
+#   routes_file: routes.yaml # Required; relative to this config file's directory.
+#   reload_interval: 5s # Poll interval for atomic route-file replacements.
+#   dns_refresh_interval: 30s # Refresh DNS-backed Engine replica addresses.
+#   idle_timeout: 5m # Evict unused downstream channels after this idle duration.
+#   max_connections: 256 # Cached downstream channels; <=10000; active calls protected.
+#   max_requests: 128 # Concurrent public Gateway requests; maximum 10000.
+#   max_requests_per_store: 32 # Default min(32, max_requests); per-Store forwarding cap.
+#   max_bytes: 256MiB # Input/envelope/response reservations; maximum 1TiB.
+#   max_fanout: 8 # Concurrent Store groups per RPC; <=128; budget-sensitive groups serialize.
+
+# Gateway route-file reference; save separately as routes.yaml, not as a config key.
+# Duplicate Store names are rejected. All replicas of a Store must share its name.
+# routes: # Complete snapshot, at most 10000 routes and 4MiB; invalid reloads keep old data.
+#   - store: primary # Must match the Engine/Worker storage.name and public request Store.
+#     target: dns:///engine-primary:8080 # Required gRPC target for this Store's Engines.
+#     state: active # Default active; draining/disabled reject new calls, existing calls finish.
+#     tls: # Downstream transport; identity checks do not replace authentication.
+#       insecure: false # Default false uses TLS/system trust; true only on trusted plaintext links.
+#       server_name: "" # Optional TLS name override; forbidden when insecure is true.
+
+shutdown_timeout: 15s # Grace period for service shutdown and database disconnect.

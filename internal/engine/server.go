@@ -19,7 +19,6 @@ type Server struct {
 	forward.UnimplementedEngineServer
 	service         sink.SinkServer
 	store           string
-	databaseID      string
 	maximum         int
 	maxRequestBytes int
 	metrics         *metrics.Metrics
@@ -28,23 +27,22 @@ type Options struct {
 	Metrics         *metrics.Metrics
 	Service         sink.SinkServer
 	Store           string
-	DatabaseID      string
 	MaxReadBytes    int
 	MaxRequestBytes int
 }
 
 func New(opts Options) (*Server, error) {
-	if opts.Service == nil || opts.Store == "" || opts.DatabaseID == "" || opts.MaxReadBytes <= 0 || opts.MaxRequestBytes < 0 {
-		return nil, errors.New("engine requires service, Store, database identity and a positive byte limit")
+	if opts.Service == nil || opts.Store == "" || opts.MaxReadBytes <= 0 || opts.MaxRequestBytes < 0 {
+		return nil, errors.New("engine requires service, Store and a positive byte limit")
 	}
 	if opts.MaxRequestBytes == 0 {
 		opts.MaxRequestBytes = 64 << 20
 	}
-	server := &Server{maxRequestBytes: opts.MaxRequestBytes, service: opts.Service, store: opts.Store, databaseID: opts.DatabaseID, maximum: opts.MaxReadBytes, metrics: opts.Metrics}
+	server := &Server{maxRequestBytes: opts.MaxRequestBytes, service: opts.Service, store: opts.Store, maximum: opts.MaxReadBytes, metrics: opts.Metrics}
 	return server, nil
 }
 func (s *Server) Forward(ctx context.Context, req *forward.ForwardRequest) (*forward.ForwardResponse, error) {
-	response := &forward.ForwardResponse{Version: forwarding.Version, Store: s.store, DatabaseId: s.databaseID, NotStarted: true}
+	response := &forward.ForwardResponse{Version: forwarding.Version, Store: s.store, NotStarted: true}
 	started := time.Now()
 	defer func() { s.metrics.ObserveForward(req, response, time.Since(started)) }()
 	tracker := forwarding.NewTracker(req.GetGrant(), s.maximum)
@@ -58,7 +56,7 @@ func (s *Server) Forward(ctx context.Context, req *forward.ForwardRequest) (*for
 	if req.GetVersion() != forwarding.Version {
 		return reject(status.Error(codes.FailedPrecondition, "unsupported forwarding protocol version"))
 	}
-	if req.GetStore() != s.store || req.GetDatabaseId() != s.databaseID {
+	if req.GetStore() != s.store {
 		return reject(status.Error(codes.FailedPrecondition, "Engine identity does not match route"))
 	}
 	if req.GetGrant() == nil {

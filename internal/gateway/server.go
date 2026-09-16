@@ -27,8 +27,6 @@ type Server struct {
 	inFlight     int
 	bytes        int
 	metrics      *metrics
-	identities   map[string]string
-	databases    map[string]string
 	reloadMu     sync.Mutex
 	activeStores map[string]int
 }
@@ -53,12 +51,6 @@ func New(opts Options) (*Server, error) {
 	server.pool.messageBytes = opts.MaxMessageBytes + forwarding.EnvelopeBytes
 	server.pool.idleTimeout = opts.Gateway.IdleTimeout
 	server.pool.dnsRefresh = opts.Gateway.DNSRefreshInterval
-	server.identities = make(map[string]string, len(initial.routes))
-	server.databases = make(map[string]string, len(initial.routes))
-	for store, route := range initial.routes {
-		server.identities[store] = route.DatabaseID
-		server.databases[route.DatabaseID] = store
-	}
 	server.current.Store(initial)
 	server.metrics.routes.Set(float64(len(initial.routes)))
 	server.metrics.config.WithLabelValues(initial.hash).Set(1)
@@ -81,25 +73,6 @@ func (s *Server) Reload() (reloadErr error) {
 	previous := s.current.Load()
 	if next.hash == previous.hash {
 		return nil
-	}
-	identityCount := len(s.identities)
-	for store, route := range next.routes {
-		if _, exists := s.identities[store]; !exists {
-			identityCount++
-		}
-		if owner, exists := s.databases[route.DatabaseID]; exists && owner != store {
-			return errors.New("database_id cannot move between Stores during route reload")
-		}
-		if old, exists := s.identities[store]; exists && old != route.DatabaseID {
-			return errors.New("database_id cannot change during route reload")
-		}
-	}
-	if identityCount > 20000 {
-		return errors.New("route identity history limit reached; restart to load a new inventory")
-	}
-	for store, route := range next.routes {
-		s.identities[store] = route.DatabaseID
-		s.databases[route.DatabaseID] = store
 	}
 	s.current.Store(next)
 	s.metrics.routes.Set(float64(len(next.routes)))
@@ -176,7 +149,6 @@ func (s *Server) forward(ctx context.Context, route Route, req *forward.ForwardR
 	}()
 	req.Version = forwarding.Version
 	req.Store = route.Store
-	req.DatabaseId = route.DatabaseID
 	entry, err := s.pool.acquire(route)
 	if err != nil {
 		return localRejection(route, status.Code(err), status.Convert(err).Message()), nil
@@ -188,7 +160,7 @@ func (s *Server) forward(ctx context.Context, route Route, req *forward.ForwardR
 	if err != nil {
 		return nil, err
 	}
-	if response.GetVersion() != forwarding.Version || response.GetStore() != route.Store || response.GetDatabaseId() != route.DatabaseID || response.GetUsed() == nil || response.GetCode() > uint32(codes.Unauthenticated) {
+	if response.GetVersion() != forwarding.Version || response.GetStore() != route.Store || response.GetUsed() == nil || response.GetCode() > uint32(codes.Unauthenticated) {
 		return nil, status.Error(codes.Internal, "invalid Engine response identity or version")
 	}
 	if !validUsage(req.GetGrant(), response.GetUsed()) {
@@ -238,6 +210,6 @@ func (s *Server) reservation(req *forward.ForwardRequest) int {
 }
 func localRejection(route Route, code codes.Code, message string) *forward.ForwardResponse {
 	usage := &forward.Budget{}
-	response := &forward.ForwardResponse{Version: forwarding.Version, Store: route.Store, DatabaseId: route.DatabaseID, Used: usage, Code: uint32(code), Message: message, NotStarted: true}
+	response := &forward.ForwardResponse{Version: forwarding.Version, Store: route.Store, Used: usage, Code: uint32(code), Message: message, NotStarted: true}
 	return response
 }

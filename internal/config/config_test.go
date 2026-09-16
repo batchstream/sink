@@ -12,7 +12,6 @@ func TestLoadConfigEngineDefaults(t *testing.T) {
 	path := writeConfig(t, `mode: engine
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -56,7 +55,6 @@ func TestLoadConfigDisablesKafkaByDefault(t *testing.T) {
 	path := writeConfig(t, `mode: engine
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -81,7 +79,6 @@ grpc:
   max_receive_message_bytes: 1048576
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -113,7 +110,6 @@ func TestLoadConfigRejectsBatchingSwitch(t *testing.T) {
 			contents := `mode: engine
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -156,7 +152,6 @@ func TestLoadConfigRejectsUnsafeBatchingLimits(t *testing.T) {
 			contents := `mode: engine
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -204,7 +199,6 @@ func TestLoadConfigOpenSearchBasicAuthentication(t *testing.T) {
 	path := writeConfig(t, `mode: engine
 storage:
   name: search-main
-  database_id: test-database
   driver: opensearch
   search:
     endpoints:
@@ -226,7 +220,6 @@ func TestLoadConfigRejectsConflictingSearchAuthentication(t *testing.T) {
 	path := writeConfig(t, `mode: engine
 storage:
   name: search-main
-  database_id: test-database
   driver: elasticsearch
   search:
     endpoints: [http://search:9200]
@@ -245,7 +238,6 @@ func TestLoadConfigWorkerSettings(t *testing.T) {
 mode: worker
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -311,7 +303,6 @@ func TestLoadConfigEngineAllowsKafkaWithoutConsumerGroup(t *testing.T) {
 mode: engine
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -335,7 +326,6 @@ func TestLoadConfigRejectsNonPositiveLuaLimits(t *testing.T) {
 	path := writeConfig(t, `mode: engine
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -383,20 +373,18 @@ func TestLoadConfigRequiresStorageNameAndDriver(t *testing.T) {
 	path := writeConfig(t, `mode: engine
 storage:
   name: ""
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
 `)
 	_, err := Load(path)
-	if err == nil || !strings.Contains(err.Error(), "storage.name and database_id") {
+	if err == nil || !strings.Contains(err.Error(), "storage.name") {
 		t.Fatalf("Load() error = %v", err)
 	}
 
 	path = writeConfig(t, `mode: engine
 storage:
   name: primary
-  database_id: test-database
   mongodb:
     uri: mongodb://mongodb:27017
 `)
@@ -410,7 +398,6 @@ func TestLoadConfigRejectsBindings(t *testing.T) {
 	path := writeConfig(t, `mode: engine
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -426,7 +413,6 @@ func TestLoadConfigRejectsPartialKafkaConfiguration(t *testing.T) {
 	path := writeConfig(t, `mode: engine
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -445,7 +431,6 @@ func TestLoadConfigWorkerRequiresGroupForEveryKafkaStore(t *testing.T) {
 mode: worker
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -465,7 +450,6 @@ func TestLoadConfigRejectsTopLevelKafkaConfiguration(t *testing.T) {
 	path := writeConfig(t, `mode: engine
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -485,7 +469,6 @@ func TestLoadConfigWorkerRequiresAtLeastOneKafkaStore(t *testing.T) {
 mode: worker
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -500,7 +483,6 @@ func TestLoadConfigRejectsUnknownFields(t *testing.T) {
 	path := writeConfig(t, `mode: engine
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -516,7 +498,6 @@ func TestLoadConfigRejectsNonPositiveValues(t *testing.T) {
 	path := writeConfig(t, `mode: engine
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -535,7 +516,6 @@ func TestLoadConfigDefaultsWorkerDeadLetterTopic(t *testing.T) {
 mode: worker
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -588,7 +568,6 @@ func TestLoadConfigRejectsInvalidKafkaTopicSettings(t *testing.T) {
 			contents := `mode: engine
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -614,7 +593,6 @@ func TestLoadConfigDoesNotReadLegacyEnvironmentVariables(t *testing.T) {
 mode: engine
 storage:
   name: configured
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://configured:27017

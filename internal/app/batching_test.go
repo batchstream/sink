@@ -72,7 +72,6 @@ grpc:
   address: "127.0.0.1:0"
 storage:
   name: primary
-  database_id: test-database
   driver: opensearch
   search:
     endpoints: [%q]

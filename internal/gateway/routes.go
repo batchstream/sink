@@ -22,11 +22,10 @@ type TLS struct {
 	ServerName string `yaml:"server_name"`
 }
 type Route struct {
-	Store      string `yaml:"store"`
-	DatabaseID string `yaml:"database_id"`
-	Target     string `yaml:"target"`
-	State      string `yaml:"state"`
-	TLS        TLS    `yaml:"tls"`
+	Store  string `yaml:"store"`
+	Target string `yaml:"target"`
+	State  string `yaml:"state"`
+	TLS    TLS    `yaml:"tls"`
 }
 type routeFile struct {
 	Routes []Route `yaml:"routes"`
@@ -63,16 +62,12 @@ func readRoutes(path string) (*snapshot, error) {
 		return nil, errors.New("routes must contain between 1 and 10000 entries")
 	}
 	routes := make(map[string]Route, len(parsed.Routes))
-	databases := make(map[string]string, len(parsed.Routes))
 	for _, route := range parsed.Routes {
-		if !validIdentity(route.Store) || !validIdentity(route.DatabaseID) || route.Target == "" || len(route.Target) > 2048 || strings.TrimSpace(route.Target) != route.Target {
-			return nil, errors.New("each route requires valid store, database_id and target")
+		if !validIdentity(route.Store) || route.Target == "" || len(route.Target) > 2048 || strings.TrimSpace(route.Target) != route.Target {
+			return nil, errors.New("each route requires valid store and target")
 		}
 		if _, exists := routes[route.Store]; exists {
 			return nil, fmt.Errorf("duplicate Store %q", route.Store)
-		}
-		if _, exists := databases[route.DatabaseID]; exists {
-			return nil, fmt.Errorf("database_id %q belongs to more than one Store", route.DatabaseID)
 		}
 		switch route.State {
 		case "":
@@ -85,7 +80,6 @@ func readRoutes(path string) (*snapshot, error) {
 			return nil, errors.New("insecure routes must not set TLS server_name")
 		}
 		routes[route.Store] = route
-		databases[route.DatabaseID] = route.Store
 	}
 	digest := sha256.Sum256(data)
 	loaded := &snapshot{routes: routes, hash: hex.EncodeToString(digest[:])}

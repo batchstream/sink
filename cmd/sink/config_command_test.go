@@ -10,7 +10,6 @@ func TestConfigCheckDoesNotOpenDependenciesOrPrintValues(t *testing.T) {
 	path := writeConfig(t, `mode: engine
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://127.0.0.1:1

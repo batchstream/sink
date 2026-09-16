@@ -7,7 +7,6 @@ import (
 
 func resolveStorage(prefix string, file storageFile) (Storage, error) {
 	var loaded Storage
-	loaded.DatabaseID = strings.TrimSpace(file.DatabaseID)
 	loaded.Name = strings.TrimSpace(file.Name)
 	if loaded.Name == "" {
 		return loaded, fmt.Errorf("%s.name is required", prefix)

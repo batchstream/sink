@@ -11,7 +11,6 @@ import (
 const minimalStorage = `mode: engine
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://127.0.0.1:1

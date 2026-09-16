@@ -237,7 +237,6 @@ func TestLuaTestCommandUsesConfiguredLimitsWithoutOpeningBackends(t *testing.T) 
 	config := fixture.write(t, "sink.yaml", `mode: engine
 storage:
   name: primary
-  database_id: test-database
   driver: mongodb
   mongodb:
     uri: mongodb://unreachable.invalid:27017

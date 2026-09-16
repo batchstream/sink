@@ -10,7 +10,6 @@ prometheus:
 
 storage:
   name: primary
-  database_id: quickstart-primary
   driver: mongodb
   mongodb:
     uri: mongodb://mongo:27017/?replicaSet=rs0

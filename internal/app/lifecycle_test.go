@@ -30,6 +30,7 @@ grpc:
   address: "127.0.0.1:0"
 prometheus:
   enabled: true
+http:
   address: "127.0.0.1:0"
 storage:
   name: primary
@@ -83,7 +84,7 @@ shutdown_timeout: 1s
 				}
 			}()
 			client := &http.Client{Timeout: 3 * time.Second}
-			response, err := client.Get("http://" + app.metricsListener.Addr().String() + "/metrics")
+			response, err := client.Get("http://" + app.httpListener.Addr().String() + "/metrics")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -113,6 +114,7 @@ grpc:
   address: %q
 prometheus:
   enabled: true
+http:
   address: %q
 storage:
   name: primary
@@ -135,7 +137,7 @@ storage:
 	}
 	reopened, err := net.Listen("tcp", address)
 	if err != nil {
-		t.Fatalf("failed assembly leaked the metrics listener: %v", err)
+		t.Fatalf("failed assembly leaked the HTTP listener: %v", err)
 	}
 	_ = reopened.Close()
 }

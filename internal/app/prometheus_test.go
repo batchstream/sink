@@ -16,7 +16,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kfake"
 )
 
-func TestPrometheusListenerRequiresOptInForEveryRole(t *testing.T) {
+func TestHealthEndpointsDoNotRequirePrometheus(t *testing.T) {
 	occupied, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -34,14 +34,15 @@ func TestPrometheusListenerRequiresOptInForEveryRole(t *testing.T) {
 	tests := []struct {
 		name    string
 		yaml    string
+		address string
 		enabled bool
 		fails   bool
 	}{
 		{name: "omitted"},
-		{name: "address only", yaml: fmt.Sprintf("prometheus: {address: %q}\n", occupied.Addr().String())},
-		{name: "disabled", yaml: fmt.Sprintf("prometheus: {enabled: false, address: %q}\n", occupied.Addr().String())},
-		{name: "enabled", yaml: "prometheus: {enabled: true, address: '127.0.0.1:0'}\n", enabled: true},
-		{name: "enabled occupied address", yaml: fmt.Sprintf("prometheus: {enabled: true, address: %q}\n", occupied.Addr().String()), fails: true},
+		{name: "disabled", yaml: "prometheus: {enabled: false}\n"},
+		{name: "enabled", yaml: "prometheus: {enabled: true}\n", enabled: true},
+		{name: "occupied without metrics", address: occupied.Addr().String(), fails: true},
+		{name: "occupied with metrics", yaml: "prometheus: {enabled: true}\n", address: occupied.Addr().String(), fails: true},
 	}
 	for _, mode := range []string{"gateway", "engine", "worker"} {
 		base := fmt.Sprintf("mode: %s\ngrpc: {address: '127.0.0.1:0'}\nshutdown_timeout: 1s\n", mode)
@@ -55,7 +56,12 @@ func TestPrometheusListenerRequiresOptInForEveryRole(t *testing.T) {
 		}
 		for _, test := range tests {
 			t.Run(mode+"/"+test.name, func(t *testing.T) {
-				loaded, err := config.Decode(strings.NewReader(base + test.yaml))
+				address := test.address
+				if address == "" {
+					address = "127.0.0.1:0"
+				}
+				settings := base + test.yaml + fmt.Sprintf("http: {address: %q}\n", address)
+				loaded, err := config.Decode(strings.NewReader(settings))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -64,9 +70,9 @@ func TestPrometheusListenerRequiresOptInForEveryRole(t *testing.T) {
 				if test.fails {
 					if err == nil {
 						application.Close()
-						t.Fatal("enabled listener ignored an occupied address")
+						t.Fatal("HTTP listener ignored an occupied address")
 					}
-					if !strings.Contains(err.Error(), "listen for Prometheus metrics") {
+					if !strings.Contains(err.Error(), "listen for HTTP endpoints") {
 						t.Fatal(err)
 					}
 					return
@@ -75,11 +81,8 @@ func TestPrometheusListenerRequiresOptInForEveryRole(t *testing.T) {
 					t.Fatal(err)
 				}
 				t.Cleanup(application.Close)
-				if (application.metricsListener != nil) != test.enabled || (application.metricsServer != nil) != test.enabled {
-					t.Fatal("HTTP listener did not honor prometheus.enabled")
-				}
-				if !test.enabled {
-					return
+				if application.httpListener == nil || application.httpServer == nil {
+					t.Fatal("HTTP health listener must start independently of Prometheus")
 				}
 				ctx, cancel := context.WithCancel(t.Context())
 				done := make(chan error, 1)
@@ -95,9 +98,9 @@ func TestPrometheusListenerRequiresOptInForEveryRole(t *testing.T) {
 						t.Error("application did not stop")
 					}
 				})
-				client := &http.Client{Timeout: 3 * time.Second}
+				client := &http.Client{Timeout: 5 * time.Second}
 				for _, endpoint := range []string{"/metrics", "/livez", "/readyz"} {
-					response, err := client.Get("http://" + application.metricsListener.Addr().String() + endpoint)
+					response, err := client.Get("http://" + application.httpListener.Addr().String() + endpoint)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -106,14 +109,17 @@ func TestPrometheusListenerRequiresOptInForEveryRole(t *testing.T) {
 					if readErr != nil {
 						t.Fatal(readErr)
 					}
-					if endpoint == "/readyz" {
-						if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusServiceUnavailable {
-							t.Fatalf("unexpected readiness status: %d", response.StatusCode)
-						}
-					} else if response.StatusCode != http.StatusOK {
-						t.Fatalf("%s: status %d", endpoint, response.StatusCode)
+					expected := http.StatusOK
+					if endpoint == "/readyz" && mode == "worker" {
+						expected = http.StatusServiceUnavailable
 					}
-					if endpoint == "/metrics" && !strings.Contains(string(body), "sink_") {
+					if endpoint == "/metrics" && !test.enabled {
+						expected = http.StatusNotFound
+					}
+					if response.StatusCode != expected {
+						t.Fatalf("%s: status %d, want %d", endpoint, response.StatusCode, expected)
+					}
+					if endpoint == "/metrics" && test.enabled && !strings.Contains(string(body), "sink_") {
 						t.Fatal("enabled metrics endpoint did not export Sink metrics")
 					}
 				}

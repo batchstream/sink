@@ -32,11 +32,11 @@ func (app *Application) Run(ctx context.Context) error {
 			}
 		}()
 	}
-	if app.metricsServer != nil {
+	if app.httpServer != nil {
 		go func() {
-			err := app.metricsServer.Serve(app.metricsListener)
+			err := app.httpServer.Serve(app.httpListener)
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				runErrors <- fmt.Errorf("serve Prometheus metrics: %w", err)
+				runErrors <- fmt.Errorf("serve HTTP endpoints: %w", err)
 			}
 		}()
 	}
@@ -87,16 +87,16 @@ func (app *Application) Close() {
 	if app.batchingServer != nil {
 		app.batchingServer.Close()
 	}
-	if app.metricsServer != nil {
+	if app.httpServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), app.config.ShutdownTimeout)
 		defer cancel()
-		if err := app.metricsServer.Shutdown(ctx); err != nil {
-			slog.Error("shut down Prometheus metrics", "error", err)
-			_ = app.metricsServer.Close()
+		if err := app.httpServer.Shutdown(ctx); err != nil {
+			slog.Error("shut down HTTP endpoints", "error", err)
+			_ = app.httpServer.Close()
 		}
 	}
-	if app.metricsListener != nil {
-		_ = app.metricsListener.Close()
+	if app.httpListener != nil {
+		_ = app.httpListener.Close()
 	}
 	if app.worker != nil {
 		app.worker.Close()

@@ -24,6 +24,7 @@ type Config struct {
 	Gateway         Gateway
 	Mode            Mode
 	GRPC            GRPC
+	HTTP            HTTP
 	Prometheus      Prometheus
 	Storage         Storage
 	Service         Service
@@ -36,9 +37,12 @@ type GRPC struct {
 	MaxSendMessageBytes    int
 }
 
+type HTTP struct {
+	Address string
+}
+
 type Prometheus struct {
 	Enabled bool
-	Address string
 }
 
 type Service struct {

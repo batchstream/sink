@@ -9,6 +9,7 @@ type configFile struct {
 	Gateway         *gatewayFile   `yaml:"gateway"`
 	Mode            Mode           `yaml:"mode"`
 	GRPC            gRPCFile       `yaml:"grpc"`
+	HTTP            httpFile       `yaml:"http"`
 	Prometheus      prometheusFile `yaml:"prometheus"`
 	Service         serviceFile    `yaml:"service"`
 	ShutdownTimeout *time.Duration `yaml:"shutdown_timeout"`
@@ -20,9 +21,12 @@ type gRPCFile struct {
 	MaxSendMessageBytes    *byteSize `yaml:"max_send_message_bytes"`
 }
 
-type prometheusFile struct {
-	Enabled bool   `yaml:"enabled"`
+type httpFile struct {
 	Address string `yaml:"address"`
+}
+
+type prometheusFile struct {
+	Enabled bool `yaml:"enabled"`
 }
 
 type serviceFile struct {

@@ -13,10 +13,13 @@ grpc:
   max_receive_message_bytes: 64MiB # Maximum encoded inbound gRPC message.
   max_send_message_bytes: 64MiB # Maximum encoded outbound gRPC message.
 
-# Optional HTTP metrics and health listener.
+# HTTP health listener, always available independently of Prometheus.
+http:
+  address: ":9090" # HTTP listen address for /livez, /readyz, and optional /metrics.
+
+# Optional Prometheus metrics on the HTTP listener.
 prometheus:
-  enabled: false # Opt in to the HTTP /metrics, /livez, and /readyz endpoints; default false.
-  address: ":9090" # HTTP listen address, used only when enabled; default :9090.
+  enabled: false # Enable /metrics only; /livez and /readyz remain available; default false.
 
 # Per-public-request limits, retained across all forwarded Store groups.
 service:

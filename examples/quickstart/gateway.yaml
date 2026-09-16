@@ -3,6 +3,7 @@ grpc:
   address: ":8080"
 prometheus:
   enabled: true
+http:
   address: ":9090"
 gateway:
   routes_file: routing/routes.yaml

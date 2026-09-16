@@ -68,7 +68,7 @@ func resolve(file configFile) (Config, error) {
 	loaded.GRPC.MaxReceiveMessageBytes = v.bytes("grpc.max_receive_message_bytes", file.GRPC.MaxReceiveMessageBytes, 64<<20, math.MaxInt)
 	loaded.GRPC.MaxSendMessageBytes = v.bytes("grpc.max_send_message_bytes", file.GRPC.MaxSendMessageBytes, 64<<20, math.MaxInt)
 	loaded.Prometheus.Enabled = file.Prometheus.Enabled
-	loaded.Prometheus.Address = valueOrDefault(file.Prometheus.Address, ":9090")
+	loaded.HTTP.Address = valueOrDefault(file.HTTP.Address, ":9090")
 	loaded.ShutdownTimeout = v.duration("shutdown_timeout", file.ShutdownTimeout, 15*time.Second)
 	loaded.Service = resolveService(file.Service, loaded.GRPC, &v)
 	if v.err != nil {

@@ -11,9 +11,9 @@ Engine and Worker files.
 | [worker.yaml](worker.yaml) | One Store's database, Kafka consumption, execution, and Lua. |
 | [routes.yaml](routes.yaml) | Gateway's separate routing table; keep it alongside `gateway.yaml`. |
 
-Prometheus HTTP serving is disabled by default. Set `prometheus.enabled: true` to
-start `/metrics`, `/livez`, and `/readyz` at `prometheus.address` (default `:9090`).
-Deployments that use HTTP health probes must enable it explicitly.
+HTTP `/livez` and `/readyz` are always available at `http.address` (default
+`:9090`). Prometheus is disabled by default. Set `prometheus.enabled: true` to
+add `/metrics` on the same listener; the flag does not affect health checks.
 
 Validate without connecting to databases or Kafka, from the repository root:
 

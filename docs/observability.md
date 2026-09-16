@@ -4,17 +4,17 @@ Gateway has its own forwarding metrics and process readiness. Engine keeps the
 existing execution metrics; Worker keeps its Kafka metrics. See the
 [role-specific scaling and health contract](store-isolation.md#readiness-metrics-and-scaling).
 
-Set `prometheus.enabled: true` to open the separate HTTP metrics and health
-listener in `gateway`, `engine`, and `worker` modes. It is disabled by default;
-setting `prometheus.address` alone does not enable it. The address defaults to
-`:9090` when omitted or empty. Set `enabled: false` to disable the listener.
-The switch controls `/metrics`, `/livez`, and `/readyz` together; gRPC health is
-independent. Deployments using HTTP probes must explicitly enable this listener.
+Every role serves HTTP `/livez` and `/readyz` independently of Prometheus.
+`http.address` defaults to `:9090` when omitted or empty. Set
+`prometheus.enabled: true` to also expose `/metrics` on that listener. The default
+`false` leaves health checks available and returns 404 for `/metrics`. Gateway
+and Engine gRPC health is independent of both HTTP configuration and Prometheus.
 
 ```yaml
+http:
+  address: ":9090"
 prometheus:
   enabled: true
-  address: ":9090"
 ```
 
 The endpoint includes the standard Go runtime and process collectors plus these

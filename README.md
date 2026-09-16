@@ -164,8 +164,9 @@ docker run --rm -p 8080:8080 \
   ghcr.io/liran/sink:latest --config /etc/sink/config.yaml
 ```
 
-Metrics and HTTP health endpoints are disabled by default. Set
-`prometheus.enabled: true` and publish the configured HTTP port when needed.
+HTTP health endpoints are always available at `http.address` (default `:9090`).
+Publish that port when needed. Set `prometheus.enabled: true` to also expose
+`/metrics`; Prometheus is disabled by default and does not control health checks.
 
 For Gateway, mount the configuration directory including its routes file so atomic
 route replacements remain visible. Worker needs its own configuration and no

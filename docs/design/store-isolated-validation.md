@@ -124,7 +124,7 @@ file contains only settings used by that component. [Routes](../../configs/route
 are a separate file. Each component configuration and the Engine/Worker search-driver
 alternatives were checked with the offline config command.
 
-Prometheus HTTP serving is opt-in through `prometheus.enabled` (default `false`).
-Configuration and application tests cover all three roles, address-only and
-explicit-disabled settings, occupied ports, and enabled metrics/health endpoints.
-Runnable quickstart and qualification fixtures explicitly enable their probes.
+Prometheus metrics are opt-in through `prometheus.enabled` (default `false`),
+while HTTP health endpoints always run. Configuration and application tests cover
+all three roles, enabled/disabled/omitted flags, occupied ports, and actual metrics
+and health responses. Quickstart and qualification fixtures use `http.address`.

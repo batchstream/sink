@@ -20,22 +20,22 @@ import (
 )
 
 type Application struct {
-	gateway         *gateway.Server
-	topics          *queuekafka.TopicManager
-	background      sync.WaitGroup
-	config          config.Config
-	mongoClient     *mongo.Client
-	storage         storagecontract.Storage
-	publisher       queue.Publisher
-	kafkaPublisher  *queuekafka.Publisher
-	healthChecks    []*configuredHealthCheck
-	worker          *queuekafka.Worker
-	batchingServer  *service.BatchingServer
-	grpcServer      *grpc.Server
-	health          *health.Server
-	listener        net.Listener
-	metricsServer   *http.Server
-	metricsListener net.Listener
+	gateway        *gateway.Server
+	topics         *queuekafka.TopicManager
+	background     sync.WaitGroup
+	config         config.Config
+	mongoClient    *mongo.Client
+	storage        storagecontract.Storage
+	publisher      queue.Publisher
+	kafkaPublisher *queuekafka.Publisher
+	healthChecks   []*configuredHealthCheck
+	worker         *queuekafka.Worker
+	batchingServer *service.BatchingServer
+	grpcServer     *grpc.Server
+	health         *health.Server
+	listener       net.Listener
+	httpServer     *http.Server
+	httpListener   net.Listener
 }
 
 type Options struct {
@@ -68,14 +68,16 @@ func New(ctx context.Context, opts Options) (*Application, error) {
 		}
 	}()
 	var observed *sinkmetrics.Metrics
+	var metricsHandler http.Handler
 	if loaded.Prometheus.Enabled {
 		observed, err = sinkmetrics.New(opts.Version, loaded.Storage.Name)
 		if err != nil {
 			return nil, err
 		}
-		if err := app.configurePrometheus(observed.Handler()); err != nil {
-			return nil, err
-		}
+		metricsHandler = observed.Handler()
+	}
+	if err := app.configureHTTP(metricsHandler); err != nil {
+		return nil, err
 	}
 	if err := app.configureKafka(observed); err != nil {
 		return nil, err

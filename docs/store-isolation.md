@@ -127,9 +127,9 @@ to Engine. Neither SDK nor public protobuf changes are required.
 
 ## Readiness, metrics and scaling
 
-HTTP metrics and health endpoints require `prometheus.enabled: true`; the listener
-is disabled by default. Its address defaults to `:9090`. Gateway and Engine gRPC
-health remain independent of this switch.
+HTTP health endpoints are always available at `http.address` (default `:9090`).
+`prometheus.enabled` controls only `/metrics` and defaults to `false`. Gateway and
+Engine gRPC health also remains independent of this switch.
 
 Gateway and Engine `/readyz` indicate that the process can serve its role. One
 failed Engine does not make Gateway unready. Engine capability probes remain

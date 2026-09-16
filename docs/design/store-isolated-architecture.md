@@ -305,9 +305,9 @@ A cross-instance coordinator is not required to borrow connection allowance dyna
 | Engine | CPU/memory, execution and publishing pool occupancy, queue waits, rejection reasons, storage latency, Lua duration, connection use/waits, publishing latency | Determine whether replicas can reduce local waits; do not scale indefinitely when the database is saturated |
 | Worker | Kafka lag, oldest unprocessed-message age, processing rate, CPU, batch duration, retries/DLQ, last consume/commit time | Distinguish insufficient processing capacity, hot partitions, and dependency failures; partition parallelism limits scaling |
 
-Expose metrics through platform-neutral Prometheus/health interfaces when
-`prometheus.enabled` is true. HTTP serving is disabled by default; configuring an
-address alone does not enable it. Define names together with the existing-metric migration mapping before implementation.
+Expose health endpoints through the always-on `http.address` listener,
+independently of monitoring. `prometheus.enabled` defaults to false and controls
+only `/metrics` on that listener. Define names together with the existing-metric migration mapping before implementation.
 Labels use only configured Stores and bounded method/result/reason values. Never use keys, datasets, arbitrary unknown Stores, or request IDs as labels.
 Define connection metrics according to what the driver can actually observe. Do not invent precise values for unavailable statistics.
 Gateway diagnostics may include Store identity but must not expose backend credentials.

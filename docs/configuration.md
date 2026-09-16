@@ -76,9 +76,10 @@ A request's Store must match the process binding before any side effect.
 mode: engine
 grpc:
   address: ":8080"
+http:
+  address: ":9090"
 prometheus:
   enabled: false
-  address: ":9090"
 storage:
   name: catalog
   driver: mongodb
@@ -140,9 +141,9 @@ for queue admission, ordering, execution budgets, and completion boundaries.
 
 ## Prometheus metrics
 
-`prometheus.enabled: true` starts `/metrics`, `/livez`, and `/readyz` in every
-process mode. The listener is disabled by default, even when an address is set.
-`prometheus.address` defaults to `:9090` and is used only when enabled. See
+`http.address` defaults to `:9090` and always serves `/livez` and `/readyz` in
+every process mode. `prometheus.enabled` defaults to `false` and controls only
+whether `/metrics` is exposed on that listener. See
 [metrics and health](observability.md) for the metric catalog, label budgets,
 queries, and dependency readiness semantics.
 
@@ -158,8 +159,8 @@ use the lowercase spelling shown below. Storage names are also case-sensitive.
 | `grpc.address` | string | No | `:8080` | Any valid TCP listen address | TCP listen address for the gRPC and gRPC health services. Used in `gateway` and `engine` modes. |
 | `grpc.max_receive_message_bytes` | byte size | No | `64MiB` | Size greater than `0B` | Maximum encoded gRPC request size accepted by the server. |
 | `grpc.max_send_message_bytes` | byte size | No | `64MiB` | Size greater than `0B` | Maximum encoded gRPC response size sent by the server. |
-| `prometheus.enabled` | boolean | No | `false` | `true`, `false` | Start the HTTP `/metrics`, `/livez`, and `/readyz` listener in any role. An address alone does not enable it. |
-| `prometheus.address` | string | No | `:9090` | Any valid TCP listen address; empty uses the default | HTTP listen address used only when `prometheus.enabled` is true. |
+| `http.address` | string | No | `:9090` | Any valid TCP listen address; empty uses the default | Always-on HTTP listener for `/livez`, `/readyz`, and optional `/metrics` in every role. |
+| `prometheus.enabled` | boolean | No | `false` | `true`, `false` | Expose `/metrics` on the HTTP listener; health endpoints are unaffected. |
 | `storage` | object | Engine/Worker | none | Exactly one storage object | The process-bound Store; forbidden in Gateway. |
 | `storage.name` | string | Yes | none | Nonempty UTF-8 identity, at most 256 bytes | Globally unique Store name selected by `address.store`; all replicas of that Store use the same name. |
 | `storage.driver` | enum string | Yes | none | `mongodb`, `elasticsearch`, `opensearch` | Adapter used by this storage instance. See [Storage driver values](#storage-driver-values). |

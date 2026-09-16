@@ -14,6 +14,10 @@ import (
 func (app *Application) Run(ctx context.Context) error {
 	runContext, cancel := context.WithCancel(ctx)
 	defer func() {
+		app.draining.Store(true)
+		if app.health != nil {
+			app.health.Shutdown()
+		}
 		cancel()
 		app.background.Wait()
 	}()
@@ -67,6 +71,7 @@ func (app *Application) Run(ctx context.Context) error {
 }
 
 func (app *Application) Close() {
+	app.draining.Store(true)
 	if app.health != nil {
 		app.health.Shutdown()
 	}

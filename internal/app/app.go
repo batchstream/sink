@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 
 	"github.com/liran/sink/internal/config"
 	"github.com/liran/sink/internal/gateway"
@@ -20,6 +21,7 @@ import (
 )
 
 type Application struct {
+	draining        atomic.Bool
 	gateway         *gateway.Server
 	topics          *queuekafka.TopicManager
 	background      sync.WaitGroup

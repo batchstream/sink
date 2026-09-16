@@ -2,6 +2,7 @@ mode: gateway
 grpc:
   address: ":8080"
 prometheus:
+  enabled: true
   address: ":9090"
 gateway:
   routes_file: routing/routes.yaml

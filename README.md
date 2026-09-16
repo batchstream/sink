@@ -157,19 +157,22 @@ Choose the annotated configuration for the component you are deploying:
 
 | Component | Configuration | Purpose |
 | --- | --- | --- |
-| Gateway | [config.gateway.example.yaml](config.gateway.example.yaml) | Public ingress and forwarding; uses [routes.example.yaml](routes.example.yaml). |
-| Engine | [config.engine.example.yaml](config.engine.example.yaml) | One Store's synchronous execution and optional asynchronous publication. |
-| Worker | [config.worker.example.yaml](config.worker.example.yaml) | One Store's Kafka consumption and mutation execution. |
+| Gateway | [configs/gateway.yaml](configs/gateway.yaml) | Public ingress and forwarding; uses [configs/routes.yaml](configs/routes.yaml). |
+| Engine | [configs/engine.yaml](configs/engine.yaml) | One Store's synchronous execution and optional asynchronous publication. |
+| Worker | [configs/worker.yaml](configs/worker.yaml) | One Store's Kafka consumption and mutation execution. |
 
 For an Engine, copy its example, edit the backend connection, and mount the file:
 
 ```shell
-cp config.engine.example.yaml config.yaml
+cp configs/engine.yaml config.yaml
 # Edit config.yaml for the target backend.
-docker run --rm -p 8080:8080 -p 9090:9090 \
+docker run --rm -p 8080:8080 \
   --mount type=bind,source="$(pwd)/config.yaml",target=/etc/sink/config.yaml,readonly \
   ghcr.io/liran/sink:latest --config /etc/sink/config.yaml
 ```
+
+Metrics and HTTP health endpoints are disabled by default. Set
+`prometheus.enabled: true` and publish the configured HTTP port when needed.
 
 For Gateway, mount the configuration directory including its routes file so atomic
 route replacements remain visible. Worker needs its own configuration and no

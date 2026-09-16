@@ -21,6 +21,7 @@ type gRPCFile struct {
 }
 
 type prometheusFile struct {
+	Enabled bool   `yaml:"enabled"`
 	Address string `yaml:"address"`
 }
 

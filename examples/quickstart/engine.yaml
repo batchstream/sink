@@ -6,6 +6,7 @@ grpc:
   max_send_message_bytes: 64MiB
 
 prometheus:
+  enabled: true
   address: ":9090"
 
 storage:

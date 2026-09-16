@@ -23,8 +23,8 @@ storage:
 	if loaded.Mode != ModeEngine || loaded.GRPC.Address != ":8080" {
 		t.Fatalf("Load() = %#v", loaded)
 	}
-	if loaded.Prometheus.Address != "" {
-		t.Fatalf("Load() Prometheus address = %q", loaded.Prometheus.Address)
+	if loaded.Prometheus.Enabled || loaded.Prometheus.Address != ":9090" {
+		t.Fatalf("Load() Prometheus = %#v", loaded.Prometheus)
 	}
 	configured := loaded.Storage
 	if configured.Name != "primary" || configured.Driver != DriverMongoDB || configured.MongoDB.URI != "mongodb://mongodb:27017" {
@@ -608,9 +608,9 @@ storage:
 
 func TestExampleConfigurationFilesLoad(t *testing.T) {
 	paths := []string{
-		"../../config.gateway.example.yaml",
-		"../../config.engine.example.yaml",
-		"../../config.worker.example.yaml",
+		"../../configs/gateway.yaml",
+		"../../configs/engine.yaml",
+		"../../configs/worker.yaml",
 		"../../examples/quickstart/engine.yaml", "../../examples/quickstart/worker.yaml", "../../examples/quickstart/gateway.yaml",
 		"../../examples/kubernetes/sink.yaml",
 	}
@@ -632,4 +632,31 @@ func writeConfig(t *testing.T, contents string) string {
 		t.Fatalf("write config: %v", err)
 	}
 	return path
+}
+
+func TestPrometheusRequiresExplicitOptIn(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		enabled bool
+		address string
+	}{
+		{name: "omitted", address: ":9090"},
+		{name: "address only", yaml: "prometheus: {address: '127.0.0.1:9999'}\n", address: "127.0.0.1:9999"},
+		{name: "disabled with address", yaml: "prometheus: {enabled: false, address: '127.0.0.1:9999'}\n", address: "127.0.0.1:9999"},
+		{name: "enabled default address", yaml: "prometheus: {enabled: true}\n", enabled: true, address: ":9090"},
+		{name: "enabled custom address", yaml: "prometheus: {enabled: true, address: ' 127.0.0.1:9999 '}\n", enabled: true, address: "127.0.0.1:9999"},
+		{name: "empty address uses default", yaml: "prometheus: {enabled: true, address: ''}\n", enabled: true, address: ":9090"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			loaded, err := Decode(strings.NewReader(minimalStorage + test.yaml))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if loaded.Prometheus.Enabled != test.enabled || loaded.Prometheus.Address != test.address {
+				t.Fatalf("unexpected Prometheus settings: %#v", loaded.Prometheus)
+			}
+		})
+	}
 }

@@ -46,3 +46,9 @@ Engine/Worker configurations and route files; strict decoding rejects it. Privat
 forwarding now uses protocol version 2. Upgrade Gateway and Engine together using
 a coordinated cutover; mixed protocol versions reject forwarding before execution.
 The public client protocol and Kafka mutation format remain unchanged.
+
+Prometheus HTTP endpoints now require `prometheus.enabled: true`. An existing
+`prometheus.address` alone no longer starts the listener. Add the flag to any
+deployment that uses `/metrics`, `/livez`, or `/readyz`; the shipped quickstart and
+Kubernetes example enable it explicitly. Annotated component configurations and
+the routing table now live together in [`configs/`](../configs/README.md).

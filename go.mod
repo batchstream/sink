@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/iceisfun/golua v1.1.1
-	github.com/liran/sink-go v0.7.1-0.20260916192124-fe933934fe28
+	github.com/liran/sink-go v0.8.0
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10
 	github.com/prometheus/client_golang v1.24.1
 	github.com/twmb/franz-go v1.21.6

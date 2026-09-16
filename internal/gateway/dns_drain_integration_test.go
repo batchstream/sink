@@ -77,8 +77,6 @@ func TestGatewayDNSWithdrawalDrainBoundary(t *testing.T) {
 					}
 					time.Sleep(10 * time.Millisecond)
 				}
-			case "stop-before-refresh":
-				state.stage.Store(2)
 			case "dns-outage-during-stop":
 				state.stage.Store(3)
 			case "scale-to-zero":
@@ -90,6 +88,11 @@ func TestGatewayDNSWithdrawalDrainBoundary(t *testing.T) {
 				if write() {
 					t.Fatal("stale endpoint unexpectedly accepted a new RPC after shutdown")
 				}
+			}
+			if scenario == "stop-before-refresh" {
+				// Publish the replacement only after observing the failed call.
+				// Scheduler delays must not let a refresh hide this boundary.
+				state.stage.Store(2)
 			}
 			if scenario == "dns-outage-during-stop" || scenario == "stale-cache-during-stop" || scenario == "scale-to-zero" {
 				deadline := time.Now().Add(1200 * time.Millisecond)

@@ -101,41 +101,38 @@ registry or historical Store/database association cache is introduced.
 
 ### 4.1 Platform-Neutral Route Input
 
-The first version uses ordinary configuration files and DNS or explicit service addresses. Request handling does not call configuration services or deployment-platform APIs.
-Each route contains a Store name, Engine target address, transport settings, and route state. Concurrency, byte, and connection limits belong to Gateway process configuration.
-See the [runtime guide](../store-isolation.md#configuration) for the final YAML fields.
+Gateway reads `gateway.routes` from its own configuration at startup. Each route
+contains a Store name, Engine target, and transport settings. Every configured
+route is active; there is no state flag, separate route file, or hot reload.
+Concurrency, byte, and connection limits belong to the same process configuration.
+Request handling never queries configuration services or deployment APIs.
+See the [runtime guide](../store-isolation.md#configuration) for final YAML fields.
 
-Gateway periodically checks for file-content changes, reads and validates a complete candidate configuration, and atomically replaces an immutable route snapshot.
-Deployment tooling must replace configuration files atomically. A failed reload retains the last valid in-memory snapshot and reports the failure. An instance with no valid initial configuration is not ready.
-DNS/address discovery selects Engine replicas only within the same Store and database target.
-
-Each public RPC holds one snapshot from the start, and all of its Store subrequests use that configuration version.
-An update must not send the first part of a request through an old route and the rest through a new route.
-Multiple Gateways need not update simultaneously. Configuration versions/hashes provide deployment visibility; the deployment layer must confirm that every intended instance has updated.
+Restart Gateway after any configuration change. An invalid initial configuration
+fails startup. Each process keeps an immutable route snapshot, so all subrequests
+of a public RPC use the same configuration. During a rolling restart, deployment
+tooling confirms that all intended instances report the expected route hash.
+DNS discovery still selects changing Engine replicas within the configured target.
 
 ### 4.2 Connection Lifecycle
 
-Create and reuse downstream connections on demand. Do not preallocate a large pool for every combination of Gateway replica and Store.
-The cache has global and per-target bounds. Entries that have been idle for a long time and have no in-flight calls may be reclaimed.
-After route removal or an address change, old connections wait for calls holding the old snapshot to finish before closing. Cancel remaining calls after the drain deadline.
-Cancelling a call during a route change does not prove that it had no side effects.
+Create downstream connections on demand and reuse them. Bound the cache globally
+and per target; reclaim idle entries while protecting active calls. On process
+shutdown, drain accepted calls within the deadline before closing connections.
+A closed connection does not prove that a mutation had no side effects.
 
-New replicas of a Store must receive new RPCs. Validation must cover replica arrival, departure, and load distribution with long-lived connections, rather than checking process counts alone.
+New replicas of a Store must receive new RPCs. Validation covers DNS replica
+arrival, departure, and load distribution with long-lived connections.
 
-### 4.3 Route States and Change Rules
+### 4.3 Route Changes
 
-Route states are `active`, `draining`, and `disabled`:
-
-| Change | New requests | In-flight requests | Constraint |
-| --- | --- | --- | --- |
-| Add an active route | Forward after validating target identity and protocol capabilities | Unaffected | An unready downstream affects only this route |
-| Change Engine address for the same database target | Use the new address from the new snapshot | Keep the original snapshot and drain within a deadline | Never automatically replay writes already sent |
-| Set draining | Return temporary unavailability for this Store | Continue draining | Confirm configuration versions and in-flight counts on each Gateway |
-| Delete or disable | Reject new requests for this Store | Finish according to the drain policy | Removing a route does not delete its database, topic, or deployment |
-| Change the backend database | Configure through Engine/Worker deployment, not Gateway routing | Requires a controlled drain and data migration plan | Store name validation cannot detect a changed database URI |
-
-Removing a Gateway route does not forcibly revoke every old instance's ability to operate. Emergency write suspension must also be enforced at Engine/access-control boundaries.
-Change credentials or physical database connection targets through controlled Engine/Worker rolling updates, without silently switching live database clients.
+Add, change, or remove entries in `gateway.routes` and restart Gateway. Removing a
+route stops new instances from forwarding to that Store; it does not delete the
+Store's database, topics, or workloads. Old instances retain their startup routes
+until they stop, so emergency access revocation belongs at Engine/network controls.
+Change credentials or backend targets through coordinated Engine/Worker rolling
+updates. Database changes require a drain and data migration plan; the Store name
+check alone cannot detect a different database configured under the same name.
 
 ### 4.4 Meaning of Stateless
 
@@ -229,7 +226,7 @@ If an Engine has a smaller request limit, Gateway must handle that mismatch befo
 | --- | --- | --- |
 | Globally invalid request or Gateway rejection before any send | Top-level InvalidArgument, ResourceExhausted, or equivalent | Gateway does not replay; callers follow the existing error contract |
 | An operation references an unknown Store | INVALID_ARGUMENT for that operation; other valid operations continue | No |
-| A Store route is disabled, identity mismatches, or scheduling fails before sending | Fail the affected operations; identify a safe temporary rejection only when non-dispatch can be proven | Gateway still does not replay |
+| A Store route is absent, identity mismatches, or scheduling fails before sending | Fail the affected operations; identify a safe temporary rejection only when non-dispatch can be proven | Gateway still does not replay |
 | Engine returns complete, valid results | Preserve status, revision, document, and failure; restore original indexes | No |
 | A subrequest disconnects, times out, or returns malformed results after sending | Operations in that group without confirmed results have unknown outcomes; preserve known results from other groups | No |
 | The original call is cancelled/times out, or Gateway crashes | Cancel downstream promptly; the complete aggregate response may be undeliverable, and existing side effects remain | No |
@@ -301,13 +298,13 @@ A cross-instance coordinator is not required to borrow connection allowance dyna
 
 | Component | Required observability | Interpretation for deployment scaling |
 | --- | --- | --- |
-| Gateway | Own CPU/memory, in-flight forwarding, buffered bytes, route waits/rejections, downstream latency, connection count, route version/reload failures | Distinguish forwarding pressure from downstream failures; do not scale solely on total response latency |
+| Gateway | Own CPU/memory, in-flight forwarding, buffered bytes, route waits/rejections, downstream latency, connection count, startup route version | Distinguish forwarding pressure from downstream failures; do not scale solely on total response latency |
 | Engine | CPU/memory, execution and publishing pool occupancy, queue waits, rejection reasons, storage latency, Lua duration, connection use/waits, publishing latency | Determine whether replicas can reduce local waits; do not scale indefinitely when the database is saturated |
 | Worker | Kafka lag, oldest unprocessed-message age, processing rate, CPU, batch duration, retries/DLQ, last consume/commit time | Distinguish insufficient processing capacity, hot partitions, and dependency failures; partition parallelism limits scaling |
 
-Expose health endpoints through the always-on `http.address` listener,
-independently of monitoring. `prometheus.enabled` defaults to false and controls
-only `/metrics` on that listener. Define names together with the existing-metric migration mapping before implementation.
+Expose `/livez` and `/readyz` through the always-on `health.address` listener
+(default `:8081`). Prometheus uses a separate `prometheus.address` listener
+(default `:9090`), started only when `prometheus.enabled` is true; the default is false. Define names together with the existing-metric migration mapping before implementation.
 Labels use only configured Stores and bounded method/result/reason values. Never use keys, datasets, arbitrary unknown Stores, or request IDs as labels.
 Define connection metrics according to what the driver can actually observe. Do not invent precise values for unavailable statistics.
 Gateway diagnostics may include Store identity but must not expose backend credentials.
@@ -347,7 +344,7 @@ The following criteria define the required behavior. The [validation record](sto
 | Request cancellation or Gateway crash | Downstream resources are eventually released; completed side effects are acknowledged as possible, and callers receive no fabricated success |
 | Returned documents/conditional writes near the total allowance | Enforce limits before commit without Gateway truncation of successful returned documents; explicitly record differences from the old implementation |
 | Missing budget settlement | No allowance reuse or deadlock; remaining Stores follow ledger and failure rules |
-| Route reload/removal | One snapshot per request; invalid configuration retains the old snapshot; old connections are released after draining |
+| Route change and Gateway restart | Running instances retain startup routes; new instances validate changed routes; old connections drain during shutdown |
 | Downstream identity/version mismatch | Reject only the affected route without incorrect writes |
 | One Store's database slows down or disconnects | Effects on other Stores' queues and tail latency stay within agreed bounds; the same Store's asynchronous capability follows the failure matrix |
 | Kafka failure | Synchronous work remains independent; no premature ACCEPTED and no asynchronous-to-synchronous fallback |

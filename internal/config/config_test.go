@@ -23,8 +23,8 @@ storage:
 	if loaded.Mode != ModeEngine || loaded.GRPC.Address != ":8080" {
 		t.Fatalf("Load() = %#v", loaded)
 	}
-	if loaded.Prometheus.Enabled || loaded.HTTP.Address != ":9090" {
-		t.Fatalf("Load() HTTP/Prometheus = %#v / %#v", loaded.HTTP, loaded.Prometheus)
+	if loaded.Prometheus.Enabled || loaded.Prometheus.Address != ":9090" || loaded.Health.Address != ":8081" {
+		t.Fatalf("Load() health/Prometheus = %#v / %#v", loaded.Health, loaded.Prometheus)
 	}
 	configured := loaded.Storage
 	if configured.Name != "primary" || configured.Driver != DriverMongoDB || configured.MongoDB.URI != "mongodb://mongodb:27017" {
@@ -169,7 +169,7 @@ service:
 
 func TestLoadConfigRejectsMultipleStorages(t *testing.T) {
 	path := writeConfig(t, `
-http:
+health:
   address: ":9090"
 storages:
   - name: mongo-main
@@ -642,11 +642,11 @@ func TestPrometheusRequiresExplicitOptIn(t *testing.T) {
 		address string
 	}{
 		{name: "omitted", address: ":9090"},
-		{name: "address only", yaml: "http: {address: '127.0.0.1:9999'}\n", address: "127.0.0.1:9999"},
-		{name: "disabled with address", yaml: "prometheus: {enabled: false}\nhttp: {address: '127.0.0.1:9999'}\n", address: "127.0.0.1:9999"},
+		{name: "address only", yaml: "prometheus: {address: '127.0.0.1:9999'}\n", address: "127.0.0.1:9999"},
+		{name: "disabled with address", yaml: "prometheus: {enabled: false, address: '127.0.0.1:9999'}\n", address: "127.0.0.1:9999"},
 		{name: "enabled default address", yaml: "prometheus: {enabled: true}\n", enabled: true, address: ":9090"},
-		{name: "enabled custom address", yaml: "prometheus: {enabled: true}\nhttp: {address: ' 127.0.0.1:9999 '}\n", enabled: true, address: "127.0.0.1:9999"},
-		{name: "empty address uses default", yaml: "prometheus: {enabled: true}\nhttp: {address: ''}\n", enabled: true, address: ":9090"},
+		{name: "enabled custom address", yaml: "prometheus: {enabled: true, address: ' 127.0.0.1:9999 '}\n", enabled: true, address: "127.0.0.1:9999"},
+		{name: "empty address uses default", yaml: "prometheus: {enabled: true, address: ''}\n", enabled: true, address: ":9090"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -654,8 +654,8 @@ func TestPrometheusRequiresExplicitOptIn(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if loaded.Prometheus.Enabled != test.enabled || loaded.HTTP.Address != test.address {
-				t.Fatalf("unexpected HTTP/Prometheus settings: %#v / %#v", loaded.HTTP, loaded.Prometheus)
+			if loaded.Prometheus.Enabled != test.enabled || loaded.Prometheus.Address != test.address || loaded.Health.Address != ":8081" {
+				t.Fatalf("unexpected health/Prometheus settings: %#v / %#v", loaded.Health, loaded.Prometheus)
 			}
 		})
 	}

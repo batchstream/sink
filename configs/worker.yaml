@@ -7,13 +7,14 @@
 # Engine must enable Kafka to publish mutations for this Worker.
 mode: worker # Required process role.
 
-# HTTP health listener, always available independently of Prometheus.
-http:
-  address: ":9090" # HTTP listen address for /livez, /readyz, and optional /metrics.
+# Dedicated health listener; always available independently of Prometheus.
+health:
+  address: ":8081" # Listen address for /livez and /readyz; default :8081.
 
-# Optional Prometheus metrics on the HTTP listener.
+# Separate optional Prometheus listener.
 prometheus:
-  enabled: false # Enable /metrics only; /livez and /readyz remain available; default false.
+  enabled: false # Start /metrics on its own port; does not affect health; default false.
+  address: ":9090" # Metrics-only listen address, used only when enabled; default :9090.
 
 # Bind this process to one Store. Its replicas must use the same Store name.
 storage:

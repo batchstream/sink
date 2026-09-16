@@ -64,7 +64,7 @@ func runConfigCommand(args []string, stdout io.Writer) error {
 		return err
 	}
 	if loaded.Mode == config.ModeGateway {
-		if err := gateway.ValidateRoutes(loaded.Gateway.RoutesFile); err != nil {
+		if err := gateway.ValidateRoutes(loaded.Gateway.Routes); err != nil {
 			return err
 		}
 	}

@@ -24,7 +24,7 @@ type Config struct {
 	Gateway         Gateway
 	Mode            Mode
 	GRPC            GRPC
-	HTTP            HTTP
+	Health          Health
 	Prometheus      Prometheus
 	Storage         Storage
 	Service         Service
@@ -37,12 +37,13 @@ type GRPC struct {
 	MaxSendMessageBytes    int
 }
 
-type HTTP struct {
+type Health struct {
 	Address string
 }
 
 type Prometheus struct {
 	Enabled bool
+	Address string
 }
 
 type Service struct {
@@ -173,12 +174,23 @@ type DeadLetter struct {
 // Gateway owns only routing and bounded forwarding resources.
 type Gateway struct {
 	MaxRequestsPerStore int
-	RoutesFile          string
-	ReloadInterval      time.Duration
+	Routes              []Route
 	DNSRefreshInterval  time.Duration
 	IdleTimeout         time.Duration
 	MaxConnections      int
 	MaxRequests         int
 	MaxBytes            int
 	MaxFanout           int
+}
+
+// Route belongs to the Gateway configuration and names one Store's Engines.
+type Route struct {
+	Store  string   `yaml:"store"`
+	Target string   `yaml:"target"`
+	TLS    RouteTLS `yaml:"tls"`
+}
+
+type RouteTLS struct {
+	Insecure   bool   `yaml:"insecure"`
+	ServerName string `yaml:"server_name"`
 }

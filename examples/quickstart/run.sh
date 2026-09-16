@@ -6,8 +6,8 @@ compose=(docker compose --env-file /dev/null --project-directory "${script_dir}"
 
 "${compose[@]}" up --build --detach --wait
 for role in engine worker; do
-  metrics_address="$("${compose[@]}" port "${role}" 9090)"
-  endpoint="http://${metrics_address}/readyz"
+  health_address="$("${compose[@]}" port "${role}" 8081)"
+  endpoint="http://${health_address}/readyz"
   if [[ "${role}" == engine ]]; then
     endpoint+="?service=sink.kafka.primary"
   fi

@@ -20,9 +20,9 @@ implementation are unchanged. No release or production rollout is included.
 - Budgets are checked before commit and remain scoped to each original RPC even
   when requests are coalesced. Saturating one Store's forwarding allowance leaves
   another Store's allowance available.
-- A request retains one route snapshot. Invalid reloads retain the previous
-  snapshot. Duplicate Store names are rejected at startup and on reload. A removed
-  Store can be re-added with a new Engine address without retaining identity history.
+- Gateway uses an immutable startup route snapshot. Configuration changes take
+  effect after restart, and duplicate Store names fail validation. Removed route
+  file, reload interval, and state settings are rejected.
 - Connections are lazy, bounded, and expire when idle. Active calls are protected
   from eviction. Real loopback DNS tests cover scale-out, scale-in, and SERVFAIL
   without replaying writes or rebuilding healthy connections.
@@ -111,20 +111,21 @@ request mixes, and latency targets.
 ## Store name identity follow-up
 
 The configured identity is now only `storage.name` (Gateway routes use `store`).
-Local race tests cover duplicate route names, invalid reload snapshot retention,
-re-adding a Store at a new Engine address, and rejection of old forwarding versions
+Local race tests cover duplicate route names, configuration changes taking effect
+only after restart, and rejection of old forwarding versions
 or mismatched envelope/operation Stores before writes. The public protobuf is
 unchanged. Real MongoDB/Kafka quickstart tests pass through Gateway for public
 record operations, native methods, and asynchronous Worker completion.
 
 The annotated [Gateway](../../configs/gateway.yaml),
 [Engine](../../configs/engine.yaml), and [Worker](../../configs/worker.yaml)
-examples collectively cover all 67 supported main-configuration leaf fields. Each
-file contains only settings used by that component. [Routes](../../configs/routes.yaml)
-are a separate file. Each component configuration and the Engine/Worker search-driver
+examples collectively cover all 70 supported main-configuration leaf fields. Each
+file contains only settings used by that component. Store routes are included
+under `gateway.routes` and all listed entries are active. Each component configuration and the Engine/Worker search-driver
 alternatives were checked with the offline config command.
 
 Prometheus metrics are opt-in through `prometheus.enabled` (default `false`),
-while HTTP health endpoints always run. Configuration and application tests cover
+while HTTP health endpoints always run on their own port. Configuration and application tests cover
 all three roles, enabled/disabled/omitted flags, occupied ports, and actual metrics
-and health responses. Quickstart and qualification fixtures use `http.address`.
+and health responses on separate ports. Quickstart and qualification fixtures
+use `health.address` for probes and `prometheus.address` for metrics.

@@ -26,11 +26,12 @@ func TestApplicationModesKeepTheirOwnResources(t *testing.T) {
 			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 			defer backend.Close()
 			input := fmt.Sprintf(`mode: %s
+health:
+  address: "127.0.0.1:0"
 grpc:
   address: "127.0.0.1:0"
 prometheus:
   enabled: true
-http:
   address: "127.0.0.1:0"
 storage:
   name: primary
@@ -84,7 +85,7 @@ shutdown_timeout: 1s
 				}
 			}()
 			client := &http.Client{Timeout: 3 * time.Second}
-			response, err := client.Get("http://" + app.httpListener.Addr().String() + "/metrics")
+			response, err := client.Get("http://" + app.metricsListener.Addr().String() + "/metrics")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -110,11 +111,12 @@ func TestAssemblyFailureReleasesPreviouslyOpenedListener(t *testing.T) {
 	address := metrics.Addr().String()
 	_ = metrics.Close()
 	input := fmt.Sprintf(`mode: engine
+health:
+  address: "127.0.0.1:0"
 grpc:
   address: %q
 prometheus:
   enabled: true
-http:
   address: %q
 storage:
   name: primary
@@ -137,7 +139,7 @@ storage:
 	}
 	reopened, err := net.Listen("tcp", address)
 	if err != nil {
-		t.Fatalf("failed assembly leaked the HTTP listener: %v", err)
+		t.Fatalf("failed assembly leaked the metrics listener: %v", err)
 	}
 	_ = reopened.Close()
 }

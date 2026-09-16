@@ -150,7 +150,7 @@ Choose the annotated configuration for the component you are deploying:
 
 | Component | Configuration | Purpose |
 | --- | --- | --- |
-| Gateway | [configs/gateway.yaml](configs/gateway.yaml) | Public ingress and forwarding; uses [configs/routes.yaml](configs/routes.yaml). |
+| Gateway | [configs/gateway.yaml](configs/gateway.yaml) | Public ingress, inline Store routes, and forwarding. |
 | Engine | [configs/engine.yaml](configs/engine.yaml) | One Store's synchronous execution and optional asynchronous publication. |
 | Worker | [configs/worker.yaml](configs/worker.yaml) | One Store's Kafka consumption and mutation execution. |
 
@@ -164,12 +164,12 @@ docker run --rm -p 8080:8080 \
   ghcr.io/liran/sink:latest --config /etc/sink/config.yaml
 ```
 
-HTTP health endpoints are always available at `http.address` (default `:9090`).
-Publish that port when needed. Set `prometheus.enabled: true` to also expose
-`/metrics`; Prometheus is disabled by default and does not control health checks.
+HTTP health endpoints are always available at `health.address` (default `:8081`).
+Prometheus uses a separate `prometheus.address` (default `:9090`) and requires
+`prometheus.enabled: true`. Publish the corresponding ports when needed.
 
-For Gateway, mount the configuration directory including its routes file so atomic
-route replacements remain visible. Worker needs its own configuration and no
+Gateway includes its Store routes under `gateway.routes`. Restart after changing
+configuration; routes are loaded only at startup. Worker needs its own configuration and no
 public gRPC port. The [quickstart](examples/quickstart/README.md) runs all three roles.
 
 For repeatable deployments, replace `latest` with a version tag or image digest

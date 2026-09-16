@@ -2,17 +2,15 @@ package config
 
 import (
 	"errors"
-	"strings"
 	"time"
 )
 
 func resolveGateway(file gatewayFile, v *validator) Gateway {
 	var loaded Gateway
-	loaded.RoutesFile = strings.TrimSpace(file.RoutesFile)
-	if loaded.RoutesFile == "" {
-		v.reject(errors.New("gateway.routes_file is required"))
+	loaded.Routes = file.Routes
+	if len(loaded.Routes) == 0 || len(loaded.Routes) > 10000 {
+		v.reject(errors.New("gateway.routes must contain between 1 and 10000 entries"))
 	}
-	loaded.ReloadInterval = v.duration("gateway.reload_interval", file.ReloadInterval, 5*time.Second)
 	loaded.DNSRefreshInterval = v.duration("gateway.dns_refresh_interval", file.DNSRefreshInterval, 30*time.Second)
 	loaded.IdleTimeout = v.duration("gateway.idle_timeout", file.IdleTimeout, 5*time.Minute)
 	loaded.MaxConnections = v.bounded("gateway.max_connections", file.MaxConnections, 256, 10000)

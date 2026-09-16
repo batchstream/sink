@@ -1,8 +1,6 @@
 package app
 
 import (
-	"net/http"
-
 	"github.com/liran/sink/internal/gateway"
 )
 
@@ -20,12 +18,13 @@ func newGateway(opts Options) (*Application, error) {
 			app.Close()
 		}
 	}()
-	var metricsHandler http.Handler
-	if loaded.Prometheus.Enabled {
-		metricsHandler = server.MetricsHandler()
-	}
-	if err := app.configureHTTP(metricsHandler); err != nil {
+	if err := app.configureHealth(); err != nil {
 		return nil, err
+	}
+	if loaded.Prometheus.Enabled {
+		if err := app.configurePrometheus(server.MetricsHandler()); err != nil {
+			return nil, err
+		}
 	}
 	if err := app.configureGRPC(server, nil); err != nil {
 		return nil, err

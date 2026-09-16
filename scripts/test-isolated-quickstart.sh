@@ -21,18 +21,21 @@ services:
   gateway:
     ports: !override
       - "127.0.0.1::8080"
+      - "127.0.0.1::8081"
       - "127.0.0.1::9090"
   engine:
     ports: !override
+      - "127.0.0.1::8081"
       - "127.0.0.1::9090"
   worker:
     ports: !override
+      - "127.0.0.1::8081"
       - "127.0.0.1::9090"
 YAML
 "${compose[@]}" up --build --detach --wait --wait-timeout 180
 for role in engine worker; do
-  metrics_address="$("${compose[@]}" port "${role}" 9090)"
-  endpoint="http://${metrics_address}/readyz"
+  health_address="$("${compose[@]}" port "${role}" 8081)"
+  endpoint="http://${health_address}/readyz"
   if [[ "${role}" == engine ]]; then
     endpoint+="?service=sink.kafka.primary"
   fi

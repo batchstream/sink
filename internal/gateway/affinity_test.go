@@ -1,15 +1,104 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	forward "github.com/liran/sink/gen/forward"
 	sink "github.com/liran/sink/gen/sink"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/resolver"
 )
+
+func TestMembershipWithdrawalRetainsInFlightRequestSnapshot(t *testing.T) {
+	for _, stopEarly := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stop-before-request-drains=%v", stopEarly), func(t *testing.T) {
+			slow := &controlledEngine{store: "a", entered: make(chan struct{}, 1), release: make(chan struct{})}
+			old := &controlledEngine{store: "a"}
+			first := fixtureEngine{store: "a", target: serveEngine(t, slow)}
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := grpc.NewServer()
+			forward.RegisterEngineServer(server, old)
+			go func() { _ = server.Serve(listener) }()
+			t.Cleanup(server.Stop)
+			second := fixtureEngine{store: "a", target: listener.Addr().String()}
+			gateway := testGateway(t, 4096, first)
+			view := replicaView(t, gateway, []fixtureEngine{first, second})
+			routes := []Route{{endpoint: first.target}, {endpoint: second.target}}
+			operations := make([]*sink.WriteOperation, 2)
+			for i := 0; i < 10000 && (operations[0] == nil || operations[1] == nil); i++ {
+				operation := put("a", fmt.Sprintf("snapshot-%d", i), true)
+				owner := affinityRoute(operation.Address.Uri, routes)
+				index := 0
+				if owner.endpoint == second.target {
+					index = 1
+				}
+				operations[index] = operation
+			}
+			if operations[0] == nil || operations[1] == nil {
+				t.Fatal("could not find keys for both owners")
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			request := &sink.WriteRequest{CompletionMode: sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, Operations: operations}
+			done := make(chan *sink.WriteResponse, 1)
+			go func() { response, _ := gateway.Write(ctx, request); done <- response }()
+			select {
+			case <-slow.entered:
+			case <-ctx.Done():
+				t.Fatal("first group did not enter")
+			}
+			state := resolver.State{Addresses: []resolver.Address{{Addr: first.target}}}
+			if err := view.UpdateState(state); err != nil {
+				t.Fatal(err)
+			}
+			if stopEarly {
+				server.GracefulStop()
+			}
+			close(slow.release)
+			select {
+			case response := <-done:
+				if response == nil || len(response.Results) != 2 || response.Results[0].Status != sink.WriteStatus_WRITE_STATUS_APPLIED {
+					t.Fatalf("first group failed: %v", response)
+				}
+				if stopEarly {
+					if response.Results[1].GetFailure() == nil || response.Results[1].GetFailure().GetRetryable() || old.calls.Load() != 0 {
+						t.Fatalf("late dispatch lost its unknown-outcome contract: %v", response)
+					}
+				} else if response.Results[1].Status != sink.WriteStatus_WRITE_STATUS_APPLIED || old.calls.Load() != 1 {
+					t.Fatalf("withdrawal changed an accepted request's snapshot: %v", response)
+				}
+			case <-ctx.Done():
+				t.Fatal("request did not finish")
+			}
+		})
+	}
+}
+
+func TestAffinityRoutingKeepsPublishedHashMapping(t *testing.T) {
+	// Fixed vectors protect routing compatibility across mixed-version rollouts,
+	// including an address that exceeds the hash buffer's stack capacity.
+	routes := []Route{
+		{endpoint: "10.0.0.1:8080"},
+		{endpoint: "[2001:db8::1]:8080"},
+		{endpoint: "engine-" + strings.Repeat("x", 300) + ":8080"},
+	}
+	for i, expected := range []int{2, 1, 1, 1, 2, 0, 0, 2} {
+		identity := fmt.Sprintf("sink://catalog/products/items/s:record-%d", i)
+		if got := affinityRoute(identity, routes); got != routes[expected] {
+			t.Fatalf("record %d mapped to %q, want %q", i, got.endpoint, routes[expected].endpoint)
+		}
+	}
+}
 
 func replicaView(t *testing.T, gateway *Server, engines []fixtureEngine) *discovery {
 	t.Helper()

@@ -104,7 +104,7 @@ func (s *Server) records(ctx context.Context, req *forward.ForwardRequest) (*for
 		}
 		return used
 	}
-	if parallelBatch(req) {
+	if len(groups) > 1 && parallelBatch(req) {
 		// These operations do not consume document budgets. Bound fanout independently
 		// of the number of Stores; requests never create an unbounded goroutine fanout.
 		var work sync.WaitGroup

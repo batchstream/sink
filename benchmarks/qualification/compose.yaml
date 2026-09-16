@@ -1,0 +1,54 @@
+services:
+  mongo:
+    image: mongo:8.2@sha256:e0ce8c35124d4a9f9785532d1f268f39e9728ffa1cb38f46fa482436424c4bd3
+    environment:
+      GLIBC_TUNABLES: glibc.pthread.rseq=1
+    command: ["--replSet", "rs0", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]
+    cpus: 2
+    mem_limit: 1g
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ping:1}).ok"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+  mongo-init:
+    image: mongo:8.2@sha256:e0ce8c35124d4a9f9785532d1f268f39e9728ffa1cb38f46fa482436424c4bd3
+    environment:
+      GLIBC_TUNABLES: glibc.pthread.rseq=1
+    depends_on:
+      mongo: {condition: service_healthy}
+    entrypoint: ["mongosh", "--host", "mongo:27017", "--quiet", "--eval"]
+    command: ['rs.initiate({_id:"rs0",members:[{_id:0,host:"mongo:27017"}]})']
+  engine:
+    image: ${SINK_PERF_IMAGE:?set SINK_PERF_IMAGE}
+    command: ["--config", "/etc/sink/engine.yaml"]
+    cpus: 1
+    mem_limit: 768m
+    environment:
+      GOMEMLIMIT: 512MiB
+      GOMAXPROCS: "2"
+    depends_on:
+      mongo-init: {condition: service_completed_successfully}
+    volumes:
+      - ${SINK_PERF_ENGINE_CONFIG:-./engine.yaml}:/etc/sink/engine.yaml:ro
+    ports:
+      - "127.0.0.1::8081"
+      - "127.0.0.1::9090"
+  gateway:
+    image: ${SINK_PERF_IMAGE:?set SINK_PERF_IMAGE}
+    command: ["--config", "/etc/sink/gateway.yaml"]
+    cpus: 1
+    mem_limit: 256m
+    environment:
+      GOMEMLIMIT: 192MiB
+      GOMAXPROCS: "2"
+    depends_on: [engine]
+    volumes:
+      - ${SINK_PERF_GATEWAY_CONFIG:-./gateway.yaml}:/etc/sink/gateway.yaml:ro
+    ports:
+      - "127.0.0.1::8080"
+      - "127.0.0.1::9090"
+volumes:
+  mongo-data:

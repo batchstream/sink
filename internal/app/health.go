@@ -75,6 +75,10 @@ func (app *Application) updateHealth(parent context.Context) {
 }
 
 func (app *Application) serveReadiness(w http.ResponseWriter, r *http.Request) {
+	if app.draining.Load() {
+		http.Error(w, "process is shutting down", http.StatusServiceUnavailable)
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), healthCheckTimeout)
 	defer cancel()
 	selected := r.URL.Query().Get("service")
@@ -98,6 +102,10 @@ func (app *Application) serveReadiness(w http.ResponseWriter, r *http.Request) {
 	}
 	work.Wait()
 	close(failures)
+	if app.draining.Load() {
+		http.Error(w, "process is shutting down", http.StatusServiceUnavailable)
+		return
+	}
 	if checks == 0 && selected != "" {
 		http.Error(w, "unknown health service", http.StatusNotFound)
 		return

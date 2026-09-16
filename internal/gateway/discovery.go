@@ -208,10 +208,17 @@ func (p *connections) destinations(ctx context.Context, route Route) ([]Route, f
 // never DNS answer order or a process-random hash seed. A removed endpoint only
 // moves records that it owned; a new endpoint takes only records it now wins.
 func affinityRoute(identity string, routes []Route) Route {
+	if len(routes) == 1 {
+		return routes[0]
+	}
 	var owner Route
 	var highest uint64
 	identityDigest := sha256.Sum256([]byte(identity))
-	prefix := append(identityDigest[:], 0)
+	// DNS endpoints are usually IP:port strings. Keep their hash input on the
+	// stack; append still supports longer resolver addresses without truncation.
+	var buffer [256]byte
+	prefix := append(buffer[:0], identityDigest[:]...)
+	prefix = append(prefix, 0)
 	for i, route := range routes {
 		digest := sha256.Sum256(append(prefix, route.endpoint...))
 		score := binary.BigEndian.Uint64(digest[:8])

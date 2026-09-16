@@ -1,0 +1,16 @@
+mode: gateway
+prometheus: {enabled: true, address: ":9090"}
+gateway:
+  routes:
+    - store: mongo
+      target: dns:///engine:8080
+      tls: {insecure: true}
+  dns_refresh_interval: 1s
+  max_requests: 128
+  max_requests_per_store: 128
+  max_bytes: 128MiB
+service:
+  request:
+    max_read_bytes: 1MiB
+    timeout: 5s
+shutdown_timeout: 10s

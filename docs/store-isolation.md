@@ -126,6 +126,9 @@ to Engine. Neither SDK nor public protobuf changes are required.
 
 ## Readiness, metrics and scaling
 
+See [rolling upgrades](rolling-upgrades.md) for the relationship between DNS
+caching, refresh intervals, accepted request snapshots and termination grace.
+
 HTTP health endpoints are always available at `health.address` (default `:8081`).
 Prometheus uses its own `prometheus.address` (default `:9090`) and is disabled
 unless `prometheus.enabled` is true. Gateway and Engine gRPC health remains

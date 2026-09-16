@@ -4,6 +4,10 @@ Size and scale each role separately. Engine and Worker serve one Store per proce
 Gateway forwards requests across Stores and does not create database connections.
 The old multi-Store process measurements are not capacity guarantees for this topology.
 
+Use the [fixed-resource qualification runner](../benchmarks/qualification/README.md)
+to compare workload profiles with explicit container CPU and memory limits. Pair
+capacity measurements with the [rollout drain budget](rolling-upgrades.md).
+
 ## Process budgets
 
 - Gateway: bound admitted requests, retained bytes, concurrent Store forwards,
@@ -47,6 +51,9 @@ can affect multiple Stores, so it needs independent capacity planning.
 KEDA or another external scaler consumes these metrics. Minimum/maximum replicas,
 resource requests, scale-down stabilization and Worker scale-to-zero belong to
 deployment configuration. Keep at least one production Engine replica per Store.
+
+Validate the [backend image and kernel combination](backend-environment.md) before
+using capacity measurements, including MongoDB allocator settings.
 
 ## Qualification before rollout
 

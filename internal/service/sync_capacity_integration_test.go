@@ -178,7 +178,7 @@ func newSyncCapacityClient(b *testing.B, fixture syncCapacityFixture) sink.SinkC
 	if err != nil {
 		b.Fatal(err)
 	}
-	serverOptions := Options{Storage: fixture.backend, Lua: engine, StoreNames: []string{"primary"}}
+	serverOptions := Options{BoundStore: "primary", Storage: fixture.backend, Lua: engine}
 	if value := os.Getenv("SINK_SYNC_BENCH_EXECUTION_MIB"); value != "" {
 		mib, parseErr := strconv.Atoi(value)
 		if parseErr != nil || mib <= 0 || mib > 65536 {
@@ -197,7 +197,7 @@ func newSyncCapacityClient(b *testing.B, fixture syncCapacityFixture) sink.SinkC
 			b.Fatal("SINK_SYNC_BENCH_WAIT must be a positive duration")
 		}
 	}
-	batchOptions := BatchingOptions{StoreNames: []string{"primary"}, MaxWait: maxWait}
+	batchOptions := BatchingOptions{MaxWait: maxWait}
 	batched, err := NewBatchingServer(core, batchOptions)
 	if err != nil {
 		b.Fatal(err)

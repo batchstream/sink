@@ -22,7 +22,7 @@ func TestSearchFoldsPutsWithMergeAndRepeatedReadsDeletes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := service.Options{Storage: observed, Lua: lua}
+	opts := service.Options{BoundStore: "primary", Storage: observed, Lua: lua}
 	server, err := service.New(opts)
 	if err != nil {
 		t.Fatal(err)

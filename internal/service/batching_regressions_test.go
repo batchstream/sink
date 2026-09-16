@@ -15,7 +15,7 @@ import (
 func TestRegressionAppliedRequestBehindRunningVisibleBatch(t *testing.T) {
 	backend := &completionStorage{Storage: memory.New(), events: make(chan completionEvent, 10), blocked: "product", release: make(chan struct{})}
 	core := completionServer(t, backend).server
-	opts := BatchingOptions{StoreNames: []string{"primary"}, MaxOperations: 1, MaxWait: time.Millisecond}
+	opts := BatchingOptions{MaxOperations: 1, MaxWait: time.Millisecond}
 	server, err := NewBatchingServer(core, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -257,9 +257,9 @@ func TestMutationDispatcherPreservesDependenciesAcrossBatches(t *testing.T) {
 			method := test.method
 			backend := &completionStorage{Storage: memory.New(), events: make(chan completionEvent, 16), blocked: "product", release: make(chan struct{})}
 			core := completionServer(t, backend).server
-			core.maxStoreRequests = 2
 			core.maxInFlightRequests = 2
-			opts := BatchingOptions{StoreNames: []string{"primary"}, MaxOperations: 1, MaxWait: time.Millisecond}
+			core.maxInFlightRequests = 2
+			opts := BatchingOptions{MaxOperations: 1, MaxWait: time.Millisecond}
 			server, err := NewBatchingServer(core, opts)
 			if err != nil {
 				t.Fatal(err)
@@ -281,7 +281,7 @@ func TestMutationDispatcherPreservesDependenciesAcrossBatches(t *testing.T) {
 						operations = append(operations, completionPut(key, 1))
 					}
 					call := completionWriteCall(ctx, mode, operations...)
-					return enqueueCompletionCall(t, server.writes["primary"], call)
+					return enqueueCompletionCall(t, server.writes, call)
 				}
 				request := &sink.DeleteRequest{CompletionMode: mode}
 				for _, key := range keys {
@@ -289,21 +289,21 @@ func TestMutationDispatcherPreservesDependenciesAcrossBatches(t *testing.T) {
 					request.Operations = append(request.Operations, operation)
 				}
 				call := &batchCall[*sink.DeleteRequest, *sink.DeleteResponse]{ctx: ctx, request: request, operationCount: len(keys), result: make(chan batchResult[*sink.DeleteResponse], 1)}
-				return enqueueCompletionCall(t, server.deletes["primary"], call)
+				return enqueueCompletionCall(t, server.deletes, call)
 			}
 			visible := submit(sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE, "product")
 			awaitCompletion(t, backend.events)
 			bridge := submit(sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, "product", "dependent")
 			if method == "Write" {
-				waitForQueuedCalls(t, server.writes["primary"], 1)
+				waitForQueuedCalls(t, server.writes, 1)
 			} else {
-				waitForQueuedCalls(t, server.deletes["primary"], 1)
+				waitForQueuedCalls(t, server.deletes, 1)
 			}
 			dependent := submit(sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, "dependent")
 			if method == "Write" {
-				waitForQueuedCalls(t, server.writes["primary"], 2)
+				waitForQueuedCalls(t, server.writes, 2)
 			} else {
-				waitForQueuedCalls(t, server.deletes["primary"], 2)
+				waitForQueuedCalls(t, server.deletes, 2)
 			}
 			independent := submit(sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, "archive")
 			event := awaitCompletion(t, backend.events)

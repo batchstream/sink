@@ -1,7 +1,11 @@
 # Metrics and health
 
+Gateway has its own forwarding metrics and process readiness. Engine keeps the
+existing execution metrics; Worker keeps its Kafka metrics. See the
+[role-specific scaling and health contract](store-isolation.md#readiness-metrics-and-scaling).
+
 Set `prometheus.address` to open a separate HTTP listener. Prometheus metrics
-are served at the fixed `/metrics` path in `server`, `worker`, and `all` modes.
+are served at the fixed `/metrics` path in `gateway`, `engine`, and `worker` modes.
 Omit the address or set it to an empty string to disable the listener.
 
 ```yaml
@@ -40,19 +44,19 @@ Sink metrics:
 | `sink_kafka_worker_mutations_total` | counter | `store`, `status` | Mutations applied or failed by workers. |
 | `sink_kafka_worker_retries_total` | counter | `store` | Retried Kafka mutations. |
 | `sink_kafka_worker_dead_letters_total` | counter | `store` | Mutations copied to the dead-letter topic. |
-| `sink_in_flight_requests` | gauge | none | Executing core calls across all routes. |
+| `sink_in_flight_requests` | gauge | none | Executing core calls in this process. |
 | `sink_in_flight_bytes` | gauge | none | Request/output reservations; not RSS. |
-| `sink_admission_rejected_total` | counter | none | Global/per-store execution admission rejections. |
+| `sink_admission_rejected_total` | counter | none | Process execution admission rejections. |
 | `sink_admission_pool_requests` | gauge | `store`, `pool` | Executing requests in the independent `execution` or `publish` pool. |
 | `sink_admission_pool_bytes` | gauge | `store`, `pool` | Bytes reserved in each independent pool. The legacy in-flight gauges report their sum. |
-| `sink_admission_pool_rejected_total` | counter | `store`, `pool`, `reason` | Rejections from request/store/scan slots (`requests`), global bytes (`bytes`), store bytes (`store_bytes`), an older byte waiter (`fairness`), a full direct/Scan waiting queue (`queue`), admission wait expiry (`wait_timeout`), or write reservation growth (`resize`). |
+| `sink_admission_pool_rejected_total` | counter | `store`, `pool`, `reason` | Rejections from request/scan slots (`requests`), global bytes (`bytes`), an older byte waiter (`fairness`), a full direct/Scan waiting queue (`queue`), admission wait expiry (`wait_timeout`), or write reservation growth (`resize`). |
 | `sink_execution_queued_requests` | gauge | `store` | Direct synchronous RPCs waiting for admission, separate from batching and Scan queues. |
 | `sink_execution_queued_bytes` | gauge | `store` | Input and bookkeeping bytes charged to the direct admission queue. |
 | `sink_execution_admission_wait_duration_seconds` | histogram | `store` | Direct RPC queue time until admission, rejection or cancellation. |
 | `sink_scan_queued_requests` | gauge | `store` | Scan pages waiting for execution admission. |
 | `sink_scan_queued_bytes` | gauge | `store` | Conservative reservation bytes charged to the separate Scan waiting queue. |
 | `sink_scan_admission_wait_duration_seconds` | histogram | `store` | Time queued Scan pages waited before admission, rejection or cancellation. |
-| `sink_execution_store_bytes` | gauge | `store` | Current execution bytes charged to each configured store. Cross-store requests charge each touched store, so this sum can exceed the global pool gauge. |
+| `sink_execution_store_bytes` | gauge | `store` | Execution bytes reserved by this process, attributed to its bound Store. |
 | `sink_kafka_worker_last_poll_timestamp_seconds` | gauge | `store` | Last completed poll, not an idle-worker heartbeat. |
 | `sink_kafka_worker_last_commit_timestamp_seconds` | gauge | `store` | Last successful offset commit. |
 | `sink_kafka_worker_pending_records` | gauge | `store` | Unresolved records from the last fetch; excludes unpolled backlog. |
@@ -63,20 +67,15 @@ Sink metrics:
 | `sink_kafka_worker_delivery_seconds` | histogram | `store` | Oldest fetched-record age at source commit, including quarantined outcomes. |
 | `sink_kafka_worker_quarantined_total` | counter | `store` | Acknowledged DLQ publications, including replayed quarantine attempts. |
 
-Store labels use `storages[].name` captured at startup. Each request counter and
-latency observation is attributed once: requests targeting one configured store
-use its name, mixed-store requests use `_multiple`, and empty or unknown stores
-use `_unconfigured`. Per-operation result counters use each original operation's
-store, including failures in mixed-store batches. Native Execute, Query, Count,
-and Scan use `command.store`. Kafka publisher and worker observations use their
-configured store, including malformed or misrouted messages sent to a worker's
-DLQ. Batch queues use the store owning the queue. Merge counters use the record's
-store; write phases and execution rounds use the core request's store or fallback.
-
-Admission pool metrics include `store`; mixed-store requests and their byte
-reservations count once under `_multiple`. The global `sink_in_flight_*` and
-`sink_admission_rejected_total` metrics remain totals across stores and pools.
-Build info and standard Go/process collectors remain process-wide.
+Engine and Worker Store labels use the single `storage.name` captured at startup.
+Unknown or malformed request identities use bounded fallback labels instead of
+creating arbitrary time series. Gateway forwarding metrics use the configured
+route Store names; the Gateway splits cross-Store RPCs before Engine execution.
+Kafka observations use the bound Store, including malformed or misrouted messages
+sent to that Worker's DLQ. Admission pool metrics attribute reservations to the
+bound Store. The `sink_in_flight_*` and `sink_admission_rejected_total` metrics
+remain process totals across pools. Build info and standard Go/process collectors
+also remain process-wide.
 
 Labels exclude namespaces, datasets, record keys, and error messages to keep
 metric cardinality bounded. The endpoint has no application-level authentication;
@@ -142,28 +141,26 @@ attributing a slow batch to refresh. Several short phases or retries can also
 produce a slow overall RPC without incrementing the slow-phase counter.
 
 The series budget for these write diagnostics is **123 × S + 168 per Pod**, where
-S is the configured store count. This includes both fixed fallback labels for write phases/rounds,
+S is the configured store count (one per Engine or Worker). This includes both fixed fallback labels for write phases/rounds,
 all possible phase/outcome combinations, `+Inf`, `_sum`, and `_count`. The
 breakdown is 30 queue-histogram series and 9 queue-exit counters per configured
 store, plus 60 phase-histogram series, 18 round-histogram series, and 6 slow-phase
-counters per store/fallback. Queues exist only for configured stores. With three
-stores and six Pods, the upper bound is **3,222 series** for these diagnostics.
+counters per store/fallback. Queues exist only for configured stores. For six single-Store Engine Pods, the upper bound is **1,746 series** for these diagnostics.
 Series are created on observation. Other metrics and historical Pod churn are
 outside this budget. A regression test exports both Prometheus text and
-OpenMetrics with 1, 3, and 16 stores to enforce the budget; it also checks that
+OpenMetrics with 1, 3, and 16 label values to enforce the collector budget; it also checks that
 unknown store/phase/method/outcome values cannot create unbounded dimensions.
 
-The default standard gRPC health service is the process readiness signal for
-`server` and `all` modes. It remains `SERVING` during a runtime failure of one
-store dependency, allowing unrelated stores to continue serving traffic. Sink
-checks dependencies every five seconds with a three-second timeout and exposes
-their status under `sink.storage.<store>` and, when Kafka is enabled,
-`sink.kafka.<store>`. A dependency-specific service reports `NOT_SERVING` until
-that dependency recovers. Dependency-specific health begins as `NOT_SERVING`.
-When Prometheus is enabled, `/livez` reports process liveness and `/readyz` checks
-all configured dependencies, including workers. Use
-`/readyz?service=sink.worker.<store>` for one worker or the existing storage/Kafka
-service name for one dependency. Keep liveness independent from dependency
-readiness to avoid restart loops during an outage.
+The default standard gRPC health service and `/readyz` report process readiness
+for Gateway and Engine. They stay ready during a downstream dependency failure.
+The Gateway does not proxy dependency health. On each Engine, dependency status is
+available under `sink.storage.<store>` and, when enabled, `sink.kafka.<store>`.
+Dependency-specific gRPC health begins as `NOT_SERVING` and is refreshed every
+five seconds with a three-second timeout. HTTP
+`/readyz?service=sink.storage.<store>` (or the Kafka service name) checks that
+specific capability. Worker `/readyz` checks its database, Kafka, and consumer;
+`/readyz?service=sink.worker.<store>` selects consumer readiness.
+`/livez` reports process liveness independently of dependencies. Keep liveness
+independent from dependency readiness to avoid restart loops during an outage.
 
 See the [configuration reference](configuration.md) for listener settings.

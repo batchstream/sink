@@ -28,8 +28,8 @@ func (b *blockedReadStorage) Read(ctx context.Context, req storage.ReadRequest) 
 	return response, ctx.Err()
 }
 
-func TestCoreAdmissionCoversCrossStoreAndBypassRequests(t *testing.T) {
-	observed, err := sinkmetrics.New("test", "a", "b")
+func TestCoreAdmissionBoundsRequestsAndReleasesCancellation(t *testing.T) {
+	observed, err := sinkmetrics.New("test", "a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,14 +39,13 @@ func TestCoreAdmissionCoversCrossStoreAndBypassRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 	backend := &blockedReadStorage{Storage: memory.New(), started: make(chan struct{}, 4)}
-	opts := Options{Storage: backend, Lua: lua, Metrics: observed, StoreNames: []string{"a", "b"},
-		MaxStoreRequests: 1, MaxInFlightRequests: 2, MaxReadBytes: 1024, RequestTimeout: 100 * time.Millisecond, AdmissionWait: 10 * time.Millisecond}
+	opts := Options{BoundStore: "a", Storage: backend, Lua: lua, Metrics: observed, MaxInFlightRequests: 1, MaxReadBytes: 1024, RequestTimeout: 100 * time.Millisecond, AdmissionWait: 10 * time.Millisecond}
 	s, err := New(opts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	a := admissionRead("a")
-	b := admissionRead("b")
+	b := admissionRead("a")
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() { _, _ = s.Read(ctx, a); close(done) }()
@@ -61,9 +60,9 @@ func TestCoreAdmissionCoversCrossStoreAndBypassRequests(t *testing.T) {
 	body := recorder.Body.String()
 	for _, line := range []string{
 		`sink_admission_pool_requests{pool="execution",store="a"} 1`,
-		`sink_admission_pool_rejected_total{pool="execution",reason="wait_timeout",store="_multiple"} 1`,
-		`sink_execution_queued_requests{store="_multiple"} 0`,
-		`sink_execution_queued_bytes{store="_multiple"} 0`,
+		`sink_admission_pool_rejected_total{pool="execution",reason="wait_timeout",store="a"} 1`,
+		`sink_execution_queued_requests{store="a"} 0`,
+		`sink_execution_queued_bytes{store="a"} 0`,
 		`sink_in_flight_requests 1`,
 		`sink_admission_rejected_total 1`,
 	} {
@@ -78,7 +77,7 @@ func TestCoreAdmissionCoversCrossStoreAndBypassRequests(t *testing.T) {
 	if err == nil {
 		t.Fatal("blocked read unexpectedly succeeded")
 	}
-	if s.inFlightRequests != 0 || s.inFlightBytes != 0 || s.storeRequests["a"] != 0 || s.storeRequests["b"] != 0 {
+	if s.inFlightRequests != 0 || s.inFlightBytes != 0 {
 		t.Fatal("cancelled/timed-out calls leaked admission capacity")
 	}
 }

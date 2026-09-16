@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/liran/sink/internal/config"
+
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -76,6 +78,10 @@ func (app *Application) serveReadiness(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), healthCheckTimeout)
 	defer cancel()
 	selected := r.URL.Query().Get("service")
+	if selected == "" && (app.config.Mode == config.ModeEngine || app.config.Mode == config.ModeGateway) {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	checks := 0
 	failures := make(chan string, len(app.healthChecks))
 	var work sync.WaitGroup

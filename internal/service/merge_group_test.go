@@ -33,7 +33,7 @@ func TestMergeFoldingAcrossRPCsPreservesResponseBoundaries(t *testing.T) {
 	observed := &countingStorage{backend: backend}
 	core := newTestServer(t, observed, nil)
 	const callers = 16
-	opts := service.BatchingOptions{StoreNames: []string{"primary"}, MaxWait: time.Second, MaxOperations: callers * 2}
+	opts := service.BatchingOptions{MaxWait: time.Second, MaxOperations: callers * 2}
 	server, err := service.NewBatchingServer(core, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -120,7 +120,7 @@ func TestMergeFoldingBoundsConflictAttemptsAndOutput(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			options := service.Options{Storage: observed, Lua: engine, MaxMergeAttempts: 2, MaxReadBytes: 140}
+			options := service.Options{BoundStore: "primary", Storage: observed, Lua: engine, MaxMergeAttempts: 2, MaxReadBytes: 140}
 			server, err := service.New(options)
 			if err != nil {
 				t.Fatal(err)
@@ -441,7 +441,7 @@ func TestMergeFoldingWaitsForVisibilityWhileOneCallerCancels(t *testing.T) {
 	backend := memory.New()
 	observed := &foldingVisibilityStorage{Storage: backend, started: make(chan struct{}), release: make(chan struct{})}
 	core := newTestServer(t, observed, nil)
-	opts := service.BatchingOptions{StoreNames: []string{"primary"}, MaxWait: time.Second, MaxOperations: 2}
+	opts := service.BatchingOptions{MaxWait: time.Second, MaxOperations: 2}
 	server, err := service.NewBatchingServer(core, opts)
 	if err != nil {
 		t.Fatal(err)

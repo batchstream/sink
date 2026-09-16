@@ -10,6 +10,8 @@ import (
 	"unicode/utf8"
 
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/forwarding"
+	"github.com/liran/sink/internal/protocol"
 	"github.com/liran/sink/internal/storage"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -89,7 +91,14 @@ func nativeStatus(err error) error {
 }
 
 func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.ExecuteResponse, error) {
-	request, err := nativeRequest(req.GetCommand(), s.maxReadBytes)
+	maximum := forwarding.FromContext(ctx).Limit(forwarding.Outputs, s.maxReadBytes)
+	if maximum <= 0 {
+		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
+	}
+	if err := protocol.CheckStore(req, s.boundStore); err != nil {
+		return nil, err
+	}
+	request, err := nativeRequest(req.GetCommand(), maximum)
 	if err != nil {
 		return nil, err
 	}
@@ -130,18 +139,25 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 		header := &sink.Header{Name: name, Values: result.Headers[name]}
 		response.Headers = append(response.Headers, header)
 	}
-	if response.SizeVT() > s.maxReadBytes {
+	if response.SizeVT() > maximum {
 		return nil, status.Error(codes.ResourceExhausted, "native response exceeds byte limit")
 	}
 	return response, nil
 }
 
 func (s *Server) Scan(ctx context.Context, req *sink.ScanRequest) (*sink.ScanResponse, error) {
+	maximum := forwarding.FromContext(ctx).Limit(forwarding.Outputs, s.maxReadBytes)
+	if maximum <= 0 {
+		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
+	}
+	if err := protocol.CheckStore(req, s.boundStore); err != nil {
+		return nil, err
+	}
 	// Admission and backend execution share one page deadline, even when the
 	// caller did not provide one. Admission has an additional, shorter bound.
 	ctx, cancel := context.WithTimeout(ctx, s.requestTimeout)
 	defer cancel()
-	maximum := min(s.maxReadBytes, 4<<20)
+	maximum = min(maximum, 4<<20)
 	request, err := nativeRequest(req.GetCommand(), maximum)
 	if err != nil {
 		return nil, err

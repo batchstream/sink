@@ -60,13 +60,11 @@ func TestByteSizeRejectsAmbiguousLossyAndOverflowValues(t *testing.T) {
 }
 
 func TestAllByteLimitsAcceptHumanReadableUnits(t *testing.T) {
-	input := minimalStorage + `    limits:
-      max_execution_bytes: 64MiB
-    kafka:
-      topic:
-        max_record_bytes: 900KiB
-      producer:
-        max_buffered_bytes: 64MiB
+	input := minimalStorage + `  kafka:
+    topic:
+      max_record_bytes: 900KiB
+    producer:
+      max_buffered_bytes: 64MiB
 grpc:
   max_receive_message_bytes: 64MiB
   max_send_message_bytes: 64MiB

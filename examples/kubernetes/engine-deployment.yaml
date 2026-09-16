@@ -1,0 +1,124 @@
+# Replace the image tag with a tested release or digest.
+# Create the sink-catalog-engine-config Secret separately, with a sink.yaml key.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sink-catalog-engine
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sink-catalog-engine
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sink-catalog-engine
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 90
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: sink-catalog-engine
+              topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: sink-catalog-engine
+      containers:
+        - name: sink
+          image: ghcr.io/liran/sink:REPLACE_WITH_TESTED_RELEASE
+          args: ["--config", "/etc/sink/sink.yaml"]
+          resources:
+            requests:
+              cpu: "2"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          env:
+            - name: GOMEMLIMIT
+              value: 1536MiB
+            - name: GOGC
+              value: "100"
+          ports:
+            - name: grpc
+              containerPort: 8080
+            - name: metrics
+              containerPort: 9090
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: metrics
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics
+            periodSeconds: 2
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: metrics
+            periodSeconds: 10
+            timeoutSeconds: 2
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 40
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: configuration
+              mountPath: /etc/sink
+              readOnly: true
+      volumes:
+        - name: configuration
+          secret:
+            secretName: sink-catalog-engine-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sink-catalog-engine
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: sink-catalog-engine
+  ports:
+    - name: grpc
+      port: 8080
+      targetPort: grpc
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sink-catalog-engine
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sink-catalog-engine

@@ -1,0 +1,6 @@
+routes:
+  - store: primary
+    database_id: quickstart-primary
+    target: dns:///engine:8080
+    tls:
+      insecure: true # Local Compose network; use TLS termination in production.

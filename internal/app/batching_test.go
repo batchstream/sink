@@ -19,25 +19,25 @@ import (
 )
 
 func TestApplicationAlwaysBatchesGRPCRequests(t *testing.T) {
-	for _, mode := range []config.Mode{config.ModeServer, config.ModeAll} {
-		t.Run(string(mode), func(t *testing.T) {
+	for _, kafkaEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("kafka=%t", kafkaEnabled), func(t *testing.T) {
 			kafkaConfig := ""
-			if mode == config.ModeAll {
+			if kafkaEnabled {
 				broker, err := kfake.NewCluster(kfake.NumBrokers(1))
 				if err != nil {
 					t.Fatal(err)
 				}
 				defer broker.Close()
-				kafkaConfig = fmt.Sprintf(`    kafka:
-      enabled: true
-      brokers: [%q]
-      topic:
-        name: batching-test
-        replication_factor: 1
-        min_insync_replicas: 1
+				kafkaConfig = fmt.Sprintf(`  kafka:
+    enabled: true
+    brokers: [%q]
+    topic:
+      name: batching-test
+      replication_factor: 1
+      min_insync_replicas: 1
 
-      consumer:
-        group_id: batching-test`, broker.ListenAddrs()[0])
+    consumer:
+      group_id: batching-test`, broker.ListenAddrs()[0])
 			}
 			var calls atomic.Int32
 			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -70,17 +70,18 @@ func TestApplicationAlwaysBatchesGRPCRequests(t *testing.T) {
 			contents := fmt.Sprintf(`mode: %s
 grpc:
   address: "127.0.0.1:0"
-storages:
-  - name: primary
-    driver: opensearch
-    search:
-      endpoints: [%q]
+storage:
+  name: primary
+  database_id: test-database
+  driver: opensearch
+  search:
+    endpoints: [%q]
 %s
 service:
   batching:
     max_operations: 2
     max_wait: 1000ms
-`, mode, backend.URL, kafkaConfig)
+`, config.ModeEngine, backend.URL, kafkaConfig)
 			path := writeConfig(t, contents)
 			loaded, err := config.Load(path)
 			if err != nil {

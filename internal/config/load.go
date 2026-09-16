@@ -6,8 +6,11 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -23,6 +26,9 @@ func Load(path string) (Config, error) {
 	loaded, err := Decode(file)
 	if err != nil {
 		return empty, fmt.Errorf("config file %q: %w", path, err)
+	}
+	if loaded.Gateway.RoutesFile != "" && !filepath.IsAbs(loaded.Gateway.RoutesFile) {
+		loaded.Gateway.RoutesFile = filepath.Join(filepath.Dir(path), loaded.Gateway.RoutesFile)
 	}
 	return loaded, nil
 }
@@ -53,9 +59,9 @@ func Decode(reader io.Reader) (Config, error) {
 
 func resolve(file configFile) (Config, error) {
 	var loaded Config
-	loaded.Mode = Mode(valueOrDefault(string(file.Mode), string(ModeServer)))
-	if loaded.Mode != ModeServer && loaded.Mode != ModeWorker && loaded.Mode != ModeAll {
-		return loaded, errors.New("mode must be server, worker, or all")
+	loaded.Mode = file.Mode
+	if loaded.Mode != ModeWorker && loaded.Mode != ModeEngine && loaded.Mode != ModeGateway {
+		return loaded, errors.New("mode is required and must be gateway, engine, or worker")
 	}
 	v := validator{}
 	loaded.GRPC.Address = valueOrDefault(file.GRPC.Address, ":8080")
@@ -67,11 +73,37 @@ func resolve(file configFile) (Config, error) {
 	if v.err != nil {
 		return loaded, v.err
 	}
-	storages, err := resolveStorages(file.Storages, loaded.Service.Execution.MaxBytes)
+	if loaded.Mode == ModeGateway {
+		for _, section := range []any{file.Service.Execution, file.Service.Publish, file.Service.Batching, file.Service.Merge} {
+			if !reflect.ValueOf(section).IsZero() {
+				return loaded, errors.New("gateway only accepts service.request; execution, publish, batching and merge belong to Engine/Worker")
+			}
+		}
+		if file.Storage != nil {
+			return loaded, errors.New("gateway must not configure storage")
+		}
+		if file.Gateway == nil {
+			return loaded, errors.New("gateway configuration is required")
+		}
+		loaded.Gateway = resolveGateway(*file.Gateway, &v)
+		return loaded, v.err
+	}
+	if file.Gateway != nil {
+		return loaded, errors.New("gateway configuration requires gateway mode")
+	}
+	if file.Storage == nil {
+		return loaded, errors.New("engine and worker require singular storage with database_id")
+	}
+	for _, identity := range []string{file.Storage.Name, file.Storage.DatabaseID} {
+		if identity == "" || len(identity) > 256 || !utf8.ValidString(identity) || strings.TrimSpace(identity) != identity || strings.ContainsAny(identity, "\x00\r\n\t") {
+			return loaded, errors.New("storage.name and database_id must be nonempty valid identities of at most 256 bytes")
+		}
+	}
+	configured, err := resolveStorage("storage", *file.Storage)
 	if err != nil {
 		return loaded, err
 	}
-	loaded.Storages = storages
+	loaded.Storage = configured
 	if err := validateKafkaResources(loaded); err != nil {
 		return loaded, err
 	}

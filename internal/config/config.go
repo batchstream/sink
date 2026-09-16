@@ -6,9 +6,9 @@ import "time"
 type Mode string
 
 const (
-	ModeServer Mode = "server"
-	ModeWorker Mode = "worker"
-	ModeAll    Mode = "all"
+	ModeGateway Mode = "gateway"
+	ModeEngine  Mode = "engine"
+	ModeWorker  Mode = "worker"
 )
 
 type Driver string
@@ -21,10 +21,11 @@ const (
 
 // Config contains resolved runtime values. Construct it with Load or Decode.
 type Config struct {
+	Gateway         Gateway
 	Mode            Mode
 	GRPC            GRPC
 	Prometheus      Prometheus
-	Storages        []Storage
+	Storage         Storage
 	Service         Service
 	ShutdownTimeout time.Duration
 }
@@ -54,31 +55,27 @@ type Request struct {
 }
 
 type Execution struct {
-	MaxRequests         int
-	MaxBytes            int
-	MaxRequestsPerStore int
-	Queue               AdmissionQueue
-	Scan                Scan
+	MaxRequests int
+	MaxBytes    int
+	Queue       AdmissionQueue
+	Scan        Scan
 }
 
 type AdmissionQueue struct {
-	MaxRequests         int
-	MaxBytes            int
-	MaxRequestsPerStore int
-	MaxWait             time.Duration
+	MaxRequests int
+	MaxBytes    int
+	MaxWait     time.Duration
 }
 
 type Scan struct {
-	MaxRequests         int
-	MaxBytes            int
-	MaxRequestsPerStore int
-	AdmissionWait       time.Duration
+	MaxRequests   int
+	MaxBytes      int
+	AdmissionWait time.Duration
 }
 
 type Publish struct {
-	MaxRequestsPerStore int
-	MaxRequests         int
-	MaxBytes            int
+	MaxRequests int
+	MaxBytes    int
 }
 
 type Batching struct {
@@ -107,12 +104,12 @@ type Lua struct {
 }
 
 type Storage struct {
-	Name    string
-	Driver  Driver
-	MongoDB MongoDB
-	Search  Search
-	Limits  StoreLimits
-	Kafka   Kafka
+	DatabaseID string
+	Name       string
+	Driver     Driver
+	MongoDB    MongoDB
+	Search     Search
+	Kafka      Kafka
 }
 
 type MongoDB struct {
@@ -127,11 +124,6 @@ type Search struct {
 	Username  string
 	Password  string
 	APIKey    string
-}
-
-type StoreLimits struct {
-	// Zero means this store shares the global execution byte limit.
-	MaxExecutionBytes int
 }
 
 type Kafka struct {
@@ -172,4 +164,17 @@ type Retry struct {
 type DeadLetter struct {
 	Topic     string
 	Retention time.Duration
+}
+
+// Gateway owns only routing and bounded forwarding resources.
+type Gateway struct {
+	MaxRequestsPerStore int
+	RoutesFile          string
+	ReloadInterval      time.Duration
+	DNSRefreshInterval  time.Duration
+	IdleTimeout         time.Duration
+	MaxConnections      int
+	MaxRequests         int
+	MaxBytes            int
+	MaxFanout           int
 }

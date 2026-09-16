@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"testing"
 	"time"
 
@@ -205,7 +207,7 @@ func TestReadFoldingRetainsResponseBudgetAndOriginalOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := service.Options{Storage: observed, Lua: lua, MaxReadBytes: 280}
+	opts := service.Options{BoundStore: "primary", Storage: observed, Lua: lua, MaxReadBytes: 280}
 	server, err := service.New(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -232,7 +234,7 @@ func TestMicrobatchFoldsPutsReadsAndDeletesAcrossRPCs(t *testing.T) {
 		t.Run(method, func(t *testing.T) {
 			observed := &countingStorage{backend: memory.New()}
 			core := newTestServer(t, observed, nil)
-			opts := service.BatchingOptions{StoreNames: []string{"primary"}, MaxOperations: 16, MaxWait: time.Second}
+			opts := service.BatchingOptions{MaxOperations: 16, MaxWait: time.Second}
 			server, err := service.NewBatchingServer(core, opts)
 			if err != nil {
 				t.Fatal(err)
@@ -298,7 +300,7 @@ func TestConditionalPutFoldingBoundsOutputAndConflicts(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			opts := service.Options{Storage: observed, Lua: lua, MaxMergeAttempts: 2, MaxReadBytes: 256}
+			opts := service.Options{BoundStore: "primary", Storage: observed, Lua: lua, MaxMergeAttempts: 2, MaxReadBytes: 256}
 			if scenario == "output" {
 				opts.MaxReadBytes = 130
 			}
@@ -356,6 +358,18 @@ func TestReadAndDeleteFoldingKeepFullAddressesSeparate(t *testing.T) {
 				deleteOperation := &sink.DeleteOperation{Address: address}
 				read.Operations = append(read.Operations, readOperation)
 				remove.Operations = append(remove.Operations, deleteOperation)
+			}
+			if difference == "store" {
+				if _, err := server.Read(t.Context(), read); status.Code(err) != codes.InvalidArgument {
+					t.Fatalf("cross-Store read accepted: %v", err)
+				}
+				if _, err := server.Delete(t.Context(), remove); status.Code(err) != codes.InvalidArgument {
+					t.Fatalf("cross-Store delete accepted: %v", err)
+				}
+				if observed.maxReadOperations.Load() != 0 || observed.maxDeleteOperations.Load() != 0 {
+					t.Fatal("misrouted request reached storage")
+				}
+				return
 			}
 			if _, err := server.Read(t.Context(), read); err != nil {
 				t.Fatal(err)

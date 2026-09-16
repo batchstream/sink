@@ -8,14 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	queuekafka "github.com/liran/sink/internal/queue/kafka"
 	"google.golang.org/grpc"
 )
-
-type configuredWorker struct {
-	store  string
-	worker *queuekafka.Worker
-}
 
 func (app *Application) Run(ctx context.Context) error {
 	runContext, cancel := context.WithCancel(ctx)
@@ -23,10 +17,13 @@ func (app *Application) Run(ctx context.Context) error {
 		cancel()
 		app.background.Wait()
 	}()
-	for _, manager := range app.topics {
-		app.background.Go(func() { manager.Run(runContext) })
+	if app.gateway != nil {
+		app.background.Go(func() { app.gateway.Run(runContext) })
 	}
-	runErrors := make(chan error, 2+len(app.workers))
+	if app.topics != nil {
+		app.background.Go(func() { app.topics.Run(runContext) })
+	}
+	runErrors := make(chan error, 3)
 	if app.grpcServer != nil {
 		go func() {
 			err := app.grpcServer.Serve(app.listener)
@@ -43,10 +40,10 @@ func (app *Application) Run(ctx context.Context) error {
 			}
 		}()
 	}
-	for _, configured := range app.workers {
+	if app.worker != nil {
 		app.background.Go(func() {
-			if err := configured.worker.Run(runContext); err != nil {
-				runErrors <- fmt.Errorf("run Kafka worker for store %q: %w", configured.store, err)
+			if err := app.worker.Run(runContext); err != nil {
+				runErrors <- fmt.Errorf("run Kafka worker for store %q: %w", app.config.Storage.Name, err)
 			}
 		})
 	}
@@ -84,6 +81,9 @@ func (app *Application) Close() {
 	if app.listener != nil {
 		_ = app.listener.Close()
 	}
+	if app.gateway != nil {
+		app.gateway.Close()
+	}
 	if app.batchingServer != nil {
 		app.batchingServer.Close()
 	}
@@ -98,11 +98,11 @@ func (app *Application) Close() {
 	if app.metricsListener != nil {
 		_ = app.metricsListener.Close()
 	}
-	for _, configured := range app.workers {
-		configured.worker.Close()
+	if app.worker != nil {
+		app.worker.Close()
 	}
-	for _, publisher := range app.kafkaPublishers {
-		publisher.Close()
+	if app.kafkaPublisher != nil {
+		app.kafkaPublisher.Close()
 	}
-	disconnectMongoClients(app.mongoClients, app.config.ShutdownTimeout)
+	disconnectMongoClient(app.mongoClient, app.config.ShutdownTimeout)
 }

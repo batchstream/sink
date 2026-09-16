@@ -48,7 +48,7 @@ func BenchmarkSynchronousMergeMicrobatch(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				options := Options{Storage: backend, Lua: engine, StoreNames: []string{"primary"}}
+				options := Options{BoundStore: "primary", Storage: backend, Lua: engine}
 				core, err := New(options)
 				if err != nil {
 					b.Fatal(err)
@@ -92,7 +92,7 @@ func BenchmarkReadMicrobatch(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			opts := Options{Storage: backend, Lua: engine, StoreNames: []string{"primary"}}
+			opts := Options{BoundStore: "primary", Storage: backend, Lua: engine}
 			core, err := New(opts)
 			if err != nil {
 				b.Fatal(err)

@@ -17,36 +17,21 @@ import (
 
 type openedStorage struct {
 	value        storagecontract.Storage
-	mongoClients map[string]*mongo.Client
+	mongoClient  *mongo.Client
 	healthChecks []*configuredHealthCheck
 }
 
 func openConfiguredStorage(ctx context.Context, loaded config.Config) (openedStorage, error) {
 	var opened openedStorage
-	opened.mongoClients = make(map[string]*mongo.Client)
-	backends := make(map[string]storagecontract.Storage, len(loaded.Storages))
-	for _, configured := range loaded.Storages {
-		backend, err := openStorageBackend(ctx, configured, loaded.ShutdownTimeout)
-		if err != nil {
-			disconnectMongoClients(opened.mongoClients, loaded.ShutdownTimeout)
-			return opened, fmt.Errorf("open storage %q: %w", configured.Name, err)
-		}
-		backends[configured.Name] = backend.value
-		healthCheck := &configuredHealthCheck{
-			service: storageHealthService(configured.Name),
-			pinger:  backend.value,
-		}
-		opened.healthChecks = append(opened.healthChecks, healthCheck)
-		if backend.mongoClient != nil {
-			opened.mongoClients[configured.Name] = backend.mongoClient
-		}
-	}
-	router, err := storagecontract.NewRouter(backends)
+	configured := loaded.Storage
+	backend, err := openStorageBackend(ctx, configured, loaded.ShutdownTimeout)
 	if err != nil {
-		disconnectMongoClients(opened.mongoClients, loaded.ShutdownTimeout)
-		return opened, err
+		return opened, fmt.Errorf("open storage %q: %w", configured.Name, err)
 	}
-	opened.value = router
+	opened.value = backend.value
+	opened.mongoClient = backend.mongoClient
+	healthCheck := &configuredHealthCheck{service: storageHealthService(configured.Name), pinger: backend.value}
+	opened.healthChecks = []*configuredHealthCheck{healthCheck}
 	return opened, nil
 }
 
@@ -113,15 +98,13 @@ func openSearchStorage(ctx context.Context, configured config.Storage) (openedBa
 	return opened, nil
 }
 
-func disconnectMongoClients(clients map[string]*mongo.Client, timeout time.Duration) {
-	if len(clients) == 0 {
+func disconnectMongoClient(client *mongo.Client, timeout time.Duration) {
+	if client == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	for name, client := range clients {
-		if err := client.Disconnect(ctx); err != nil {
-			slog.Error("disconnect MongoDB", "storage", name, "error", err)
-		}
+	if err := client.Disconnect(ctx); err != nil {
+		slog.Error("disconnect MongoDB", "error", err)
 	}
 }

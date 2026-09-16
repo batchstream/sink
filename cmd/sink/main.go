@@ -14,6 +14,7 @@ import (
 
 	"github.com/liran/sink/internal/app"
 	"github.com/liran/sink/internal/config"
+	"github.com/liran/sink/internal/gateway"
 )
 
 var version = "dev"
@@ -58,8 +59,14 @@ func runConfigCommand(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if _, err := config.Load(configPath); err != nil {
+	loaded, err := config.Load(configPath)
+	if err != nil {
 		return err
+	}
+	if loaded.Mode == config.ModeGateway {
+		if err := gateway.ValidateRoutes(loaded.Gateway.RoutesFile); err != nil {
+			return err
+		}
 	}
 	_, err = fmt.Fprintln(stdout, "Configuration schema and limits are valid.")
 	return err

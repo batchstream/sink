@@ -7,19 +7,20 @@ import (
 )
 
 func TestConfigCheckDoesNotOpenDependenciesOrPrintValues(t *testing.T) {
-	path := writeConfig(t, `mode: all
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://127.0.0.1:1
-    kafka:
-      enabled: true
-      brokers: [127.0.0.1:1]
-      topic:
-        name: mutations
-      consumer:
-        group_id: workers
+	path := writeConfig(t, `mode: engine
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://127.0.0.1:1
+  kafka:
+    enabled: true
+    brokers: [127.0.0.1:1]
+    topic:
+      name: mutations
+    consumer:
+      group_id: workers
 `)
 	args := []string{"config", "check", "--config", path}
 	var stdout, stderr bytes.Buffer

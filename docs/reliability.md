@@ -217,8 +217,9 @@ Changing only a Sink config is refused to protect ordering.
 
 ## Capacity, isolation and health
 
-All core calls, including async, batching bypass, and cross-store calls, share
-process and per-store request limits plus byte reservations. Reads and synchronous
+Each Engine or Worker owns process-wide execution limits and byte reservations
+for its bound Store. Engine publication has an independent admission pool.
+Gateway splits cross-Store calls and enforces its own forwarding limits. Reads and synchronous
 merges and folded conditional Put chains reserve snapshot/output space before
 execution. Coalesced conditional writes share a bounded snapshot/output working
 set and stream larger records through chunks. Each original RPC retains its
@@ -233,11 +234,12 @@ per original RPC, retaining at least one byte to satisfy the client contract.
 Codes, retryability, and operation indexes remain intact.
 This error allowance is separate from the returned-document quota.
 Micro-batches split when their input, working-set, and response reservations
-exceed the process limit. Dispatched batches wait for admission within their deadlines; direct calls still fail fast.
+exceed the process limit. Dispatched batches wait within their deadlines; direct
+synchronous calls use a bounded admission queue, and publication fails fast.
 Write/Delete dispatchers have bounded concurrency and preserve record dependencies
 across batches, allowing independent calls to pass a refresh wait.
 MongoDB group/write limits are shared across requests. Kafka producers have bounded byte buffers and fail fast
-when full. Size these budgets alongside per-store/method waiting queues,
+when full. Size these budgets alongside per-method waiting queues,
 transport buffers, Go object/driver overhead, VM working sets, and replica count.
 The admission byte gauge is not process RSS.
 
@@ -246,17 +248,19 @@ that exceeds their transport budget before treating an individual document as
 oversized. Lua output traversal bounds alias expansion, depth and node count
 before constructing Go output values. The current embedded Lua VM does not
 provide a strict execution heap quota. Reviewed scripts and container memory
-limits are still required; independent server/worker and store deployments limit
+limits are still required; independent Engine/Worker and Store deployments limit
 the impact of a process OOM. Untrusted-script isolation requires a VM with an
 enforced allocation quota or a separate execution process; this is not claimed
 by the current implementation.
 
-Dependency failures do not prevent unrelated stores starting. Kafka acceptance
+Dependency failures do not prevent unrelated Stores starting. Kafka acceptance
 and consumption remain gated until their Topic policy is established. gRPC
 dependency health begins `NOT_SERVING`; the default health service describes
-the serving process, not all stores. With Prometheus enabled, use `/livez` for
-liveness and `/readyz` for dependency readiness; a `service` query selects one
-`sink.storage.<store>`, `sink.kafka.<store>`, or `sink.worker.<store>` check.
+the serving process. With Prometheus enabled, use `/livez` for liveness. Gateway
+and Engine `/readyz` report process readiness; Engine capability checks use
+`/readyz?service=sink.storage.<store>` or `sink.kafka.<store>`. Worker `/readyz`
+checks its dependencies and consumer; `sink.worker.<store>` selects the consumer.
+Gateway does not proxy dependency health.
 Readiness failure during an outage should not trigger liveness restart loops.
 
 Protect gRPC and metrics with an authenticated TLS ingress/service mesh and

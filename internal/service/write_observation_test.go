@@ -138,27 +138,33 @@ func TestBatchedWritesKeepQueueAndPhaseMetricsSeparateByStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	coreOptions := Options{Storage: memory.New(), Lua: lua, StoreNames: stores, Metrics: observed}
-	core, err := New(coreOptions)
-	if err != nil {
-		t.Fatal(err)
+	batchers := make(map[string]*BatchingServer)
+	for _, store := range stores {
+		coreOptions := Options{BoundStore: store, Storage: memory.New(), Lua: lua, Metrics: observed}
+		core, err := New(coreOptions)
+		if err != nil {
+			t.Fatal(err)
+		}
+		batchOptions := BatchingOptions{Metrics: observed, MaxOperations: 1}
+		batching, err := NewBatchingServer(core, batchOptions)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(batching.Close)
+		batchers[store] = batching
 	}
-	batchOptions := BatchingOptions{StoreNames: stores, Metrics: observed, MaxOperations: 1}
-	batching, err := NewBatchingServer(core, batchOptions)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(batching.Close)
 	for _, store := range []string{"alpha", "beta", "alpha"} {
 		operation := completionPut("key", 1)
 		operation.Address.Store = store
 		request := &sink.WriteRequest{CompletionMode: sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, Operations: []*sink.WriteOperation{operation}}
-		response, err := batching.Write(t.Context(), request)
+		response, err := batchers[store].Write(t.Context(), request)
 		if err != nil || len(response.GetResults()) != 1 || response.Results[0].GetStatus() != sink.WriteStatus_WRITE_STATUS_APPLIED {
 			t.Fatalf("%s: response %v, error %v", store, response, err)
 		}
 	}
-	batching.Close()
+	for _, batching := range batchers {
+		batching.Close()
+	}
 	request := httptest.NewRequest("GET", "/metrics", nil)
 	recorder := httptest.NewRecorder()
 	observed.Handler().ServeHTTP(recorder, request)

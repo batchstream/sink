@@ -46,7 +46,7 @@ func TestEmptySearchKeyIsPermanentWithoutBackendAccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverOptions := service.Options{Storage: store, Lua: lua}
+	serverOptions := service.Options{BoundStore: "search", Storage: store, Lua: lua}
 	server, err := service.New(serverOptions)
 	if err != nil {
 		t.Fatal(err)

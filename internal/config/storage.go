@@ -1,42 +1,18 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 )
 
-func resolveStorages(files []storageFile, maxExecutionBytes int) ([]Storage, error) {
-	if len(files) == 0 {
-		return nil, errors.New("storages must contain at least one storage")
-	}
-	loaded := make([]Storage, 0, len(files))
-	names := make(map[string]struct{}, len(files))
-	for index, file := range files {
-		prefix := fmt.Sprintf("storages[%d]", index)
-		configured, err := resolveStorage(prefix, file, maxExecutionBytes)
-		if err != nil {
-			return nil, err
-		}
-		if _, exists := names[configured.Name]; exists {
-			return nil, fmt.Errorf("storages contains duplicate name %q", configured.Name)
-		}
-		names[configured.Name] = struct{}{}
-		loaded = append(loaded, configured)
-	}
-	return loaded, nil
-}
-
-func resolveStorage(prefix string, file storageFile, maxExecutionBytes int) (Storage, error) {
+func resolveStorage(prefix string, file storageFile) (Storage, error) {
 	var loaded Storage
+	loaded.DatabaseID = strings.TrimSpace(file.DatabaseID)
 	loaded.Name = strings.TrimSpace(file.Name)
 	if loaded.Name == "" {
 		return loaded, fmt.Errorf("%s.name is required", prefix)
 	}
 	v := validator{}
-	if file.Limits.MaxExecutionBytes != nil {
-		loaded.Limits.MaxExecutionBytes = v.bytes(prefix+".limits.max_execution_bytes", file.Limits.MaxExecutionBytes, maxExecutionBytes, maxExecutionBytes)
-	}
 	loaded.Driver = Driver(strings.TrimSpace(string(file.Driver)))
 	switch loaded.Driver {
 	case DriverMongoDB:

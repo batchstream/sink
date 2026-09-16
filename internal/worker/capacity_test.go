@@ -47,7 +47,7 @@ func TestProcessorSplitsRejectedWritesAndDeletesWithoutReplayingSuccess(t *testi
 		t.Fatal(err)
 	}
 	// Include room for one bounded failure response, while still forcing splits.
-	opts := service.Options{Storage: store, Lua: engine, MaxInFlightBytes: 2048}
+	opts := service.Options{BoundStore: "primary", Storage: store, Lua: engine, MaxInFlightBytes: 2048}
 	core, err := service.New(opts)
 	if err != nil {
 		t.Fatal(err)

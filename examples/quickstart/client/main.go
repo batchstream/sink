@@ -59,7 +59,7 @@ func run() error {
 	if err := waitForSink(ctx, healthClient); err != nil {
 		return err
 	}
-	fmt.Println("PASS Sink and its storage, Kafka, and worker dependencies are ready")
+	fmt.Println("PASS Gateway is ready")
 
 	client := sink.NewSinkClient(connection)
 	return runScenario(ctx, client)
@@ -68,7 +68,7 @@ func run() error {
 func waitForSink(ctx context.Context, client healthpb.HealthClient) error {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
-	services := []string{"", "sink.storage.primary", "sink.kafka.primary", "sink.worker.primary"}
+	services := []string{""}
 	for _, name := range services {
 		request := &healthpb.HealthCheckRequest{Service: name}
 		var lastErr error

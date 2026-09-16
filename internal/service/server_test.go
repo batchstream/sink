@@ -261,7 +261,7 @@ func TestMergeConflictMetricsRecordRetriesAndExhaustion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("merge.NewLuaEngine() error = %v", err)
 	}
-	options := service.Options{
+	options := service.Options{BoundStore: "primary",
 		Storage:          conflictStorage{},
 		Lua:              luaEngine,
 		MaxMergeAttempts: 2,
@@ -301,7 +301,7 @@ func TestMergeTimeIsStableAcrossRevisionConflictRetries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("merge.NewLuaEngine() error = %v", err)
 	}
-	options := service.Options{Storage: store, Lua: luaEngine, MaxMergeAttempts: 2}
+	options := service.Options{BoundStore: "primary", Storage: store, Lua: luaEngine, MaxMergeAttempts: 2}
 	server, err := service.New(options)
 	if err != nil {
 		t.Fatalf("service.New() error = %v", err)
@@ -328,14 +328,9 @@ func TestMergeTimeIsStableAcrossRevisionConflictRetries(t *testing.T) {
 	}
 }
 
-func TestWaitUntilVisiblePropagatesThroughRouter(t *testing.T) {
+func TestWaitUntilVisiblePropagatesToStorage(t *testing.T) {
 	backend := &visibilityStorage{backend: memory.New()}
-	backends := map[string]storage.Storage{"primary": backend}
-	router, err := storage.NewRouter(backends)
-	if err != nil {
-		t.Fatalf("NewRouter() error = %v", err)
-	}
-	server := newTestServer(t, router, nil)
+	server := newTestServer(t, backend, nil)
 
 	writeRequest := &sink.WriteRequest{
 		CompletionMode: sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE,
@@ -379,7 +374,8 @@ func TestWaitUntilVisiblePropagatesThroughRouter(t *testing.T) {
 }
 
 func TestReadPreservesRetryableBackendFailureClassification(t *testing.T) {
-	server := newTestServer(t, unavailableStorage{}, nil)
+	backend := unavailableStorage{}
+	server := newTestServer(t, backend, nil)
 	response, err := server.Read(t.Context(), readRequest("record"))
 	if err != nil {
 		t.Fatalf("Read() error = %v", err)
@@ -454,38 +450,21 @@ func TestAsyncWritePublishesOriginalMergeIntent(t *testing.T) {
 	}
 }
 
-func TestAsyncWriteReturnsPerStoreKafkaAvailability(t *testing.T) {
-	ctx := context.Background()
-	store := memory.New()
-	primaryPublisher := &recordingPublisher{}
-	publishers := map[string]queue.Publisher{"primary": primaryPublisher}
-	router, err := queue.NewRoutingPublisher(publishers)
-	if err != nil {
-		t.Fatalf("NewRoutingPublisher() error = %v", err)
-	}
-	server := newTestServer(t, store, router)
+func TestEngineRejectsCrossStoreAsyncWriteBeforePublishing(t *testing.T) {
+	publisher := &recordingPublisher{}
+	server := newTestServer(t, memory.New(), publisher)
 	primary := putWriteOperation("primary-async", "accepted")
-	synchronousOnly := putWriteOperation("sync-only-async", "unavailable")
-	synchronousOnly.Address.Store = "sync-only"
+	foreign := putWriteOperation("foreign-async", "rejected")
+	foreign.Address.Store = "other"
 	request := &sink.WriteRequest{
 		CompletionMode: sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED,
-		Operations:     []*sink.WriteOperation{primary, synchronousOnly},
+		Operations:     []*sink.WriteOperation{primary, foreign},
 	}
-	response, err := server.Write(ctx, request)
-	if err != nil {
-		t.Fatalf("Write(async) error = %v", err)
+	if _, err := server.Write(t.Context(), request); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("cross-Store request was not rejected: %v", err)
 	}
-	if response.GetResults()[0].GetStatus() != sink.WriteStatus_WRITE_STATUS_ACCEPTED {
-		t.Fatalf("configured store result = %+v", response.GetResults()[0])
-	}
-	unavailable := response.GetResults()[1]
-	if unavailable.GetStatus() != sink.WriteStatus_WRITE_STATUS_FAILED ||
-		unavailable.GetFailure().GetCode() != sink.FailureCode_FAILURE_CODE_UNAVAILABLE ||
-		!unavailable.GetFailure().GetRetryable() {
-		t.Fatalf("synchronous-only store result = %+v", unavailable)
-	}
-	if primaryPublisher.mutationCount() != 1 {
-		t.Fatalf("published mutations = %d, want 1", primaryPublisher.mutationCount())
+	if publisher.mutationCount() != 0 {
+		t.Fatal("rejected request published mutations")
 	}
 }
 
@@ -641,7 +620,7 @@ func newTestServer(t testing.TB, store storage.Storage, publisher queue.Publishe
 	if err != nil {
 		t.Fatalf("NewLuaEngine() error = %v", err)
 	}
-	options := service.Options{
+	options := service.Options{BoundStore: "primary",
 		Storage:          store,
 		Lua:              luaEngine,
 		Publisher:        publisher,

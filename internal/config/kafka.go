@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 )
@@ -52,71 +51,22 @@ func resolveKafka(prefix string, file kafkaFile, v *validator) Kafka {
 	return loaded
 }
 
-type kafkaResourceKey struct {
-	cluster string
-	name    string
-}
-
 func validateKafkaResources(loaded Config) error {
-	enabledStores := 0
-	topics := make(map[kafkaResourceKey]string)
-	groups := make(map[kafkaResourceKey]string)
-	deadLetterTopics := make(map[kafkaResourceKey]string)
-	for index, configured := range loaded.Storages {
-		prefix := fmt.Sprintf("storages[%d].kafka", index)
-		kafka := configured.Kafka
-		if !kafka.Enabled {
-			continue
+	kafka := loaded.Storage.Kafka
+	if !kafka.Enabled {
+		if loaded.Mode == ModeWorker {
+			return errors.New("worker requires storage.kafka.enabled")
 		}
-		if len(kafka.Brokers) == 0 || kafka.Topic.Name == "" {
-			return fmt.Errorf("%s.brokers and %s.topic.name are required", prefix, prefix)
-		}
-		if (loaded.Mode == ModeWorker || loaded.Mode == ModeAll) && kafka.Consumer.GroupID == "" {
-			return fmt.Errorf("%s.consumer.group_id is required in worker and all modes", prefix)
-		}
-		if kafka.DeadLetter.Topic == kafka.Topic.Name {
-			return fmt.Errorf("%s.dead_letter.topic must differ from topic.name", prefix)
-		}
-		cluster := kafkaClusterKey(kafka.Brokers)
-		topicKey := kafkaResourceKey{cluster: cluster, name: kafka.Topic.Name}
-		if otherStore, exists := topics[topicKey]; exists {
-			return fmt.Errorf("stores %q and %q configure duplicate Kafka topic %q on the same cluster", otherStore, configured.Name, kafka.Topic.Name)
-		}
-		topics[topicKey] = configured.Name
-		if kafka.Consumer.GroupID != "" {
-			groupKey := kafkaResourceKey{cluster: cluster, name: kafka.Consumer.GroupID}
-			if otherStore, exists := groups[groupKey]; exists {
-				return fmt.Errorf("stores %q and %q configure duplicate Kafka group ID %q on the same cluster", otherStore, configured.Name, kafka.Consumer.GroupID)
-			}
-			groups[groupKey] = configured.Name
-		}
-		deadLetterKey := kafkaResourceKey{cluster: cluster, name: kafka.DeadLetter.Topic}
-		if otherStore, exists := deadLetterTopics[deadLetterKey]; exists {
-			return fmt.Errorf("stores %q and %q configure duplicate Kafka dead-letter topic %q on the same cluster", otherStore, configured.Name, kafka.DeadLetter.Topic)
-		}
-		deadLetterTopics[deadLetterKey] = configured.Name
-		enabledStores++
+		return nil
 	}
-	if (loaded.Mode == ModeWorker || loaded.Mode == ModeAll) && enabledStores == 0 {
-		return errors.New("worker and all modes require Kafka to be enabled on at least one store")
+	if len(kafka.Brokers) == 0 || kafka.Topic.Name == "" {
+		return errors.New("storage.kafka.brokers and storage.kafka.topic.name are required")
 	}
-	for topicKey, store := range topics {
-		if deadLetterStore, exists := deadLetterTopics[topicKey]; exists {
-			return fmt.Errorf("store %q Kafka topic %q conflicts with store %q dead-letter topic on the same cluster", store, topicKey.name, deadLetterStore)
-		}
+	if loaded.Mode == ModeWorker && kafka.Consumer.GroupID == "" {
+		return errors.New("storage.kafka.consumer.group_id is required in worker mode")
+	}
+	if kafka.DeadLetter.Topic == kafka.Topic.Name {
+		return errors.New("storage.kafka.dead_letter.topic must differ from topic.name")
 	}
 	return nil
-}
-
-func kafkaClusterKey(brokers []string) string {
-	unique := make(map[string]struct{}, len(brokers))
-	for _, broker := range brokers {
-		unique[broker] = struct{}{}
-	}
-	ordered := make([]string, 0, len(unique))
-	for broker := range unique {
-		ordered = append(ordered, broker)
-	}
-	sort.Strings(ordered)
-	return strings.Join(ordered, "\x00")
 }

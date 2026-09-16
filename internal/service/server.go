@@ -11,6 +11,7 @@ import (
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
+	"github.com/liran/sink/internal/protocol"
 	"github.com/liran/sink/internal/queue"
 	"github.com/liran/sink/internal/storage"
 	"google.golang.org/grpc/codes"
@@ -19,6 +20,7 @@ import (
 )
 
 type Server struct {
+	boundStore string
 	sink.UnimplementedSinkServer
 	*admissionPool
 
@@ -33,7 +35,10 @@ type Server struct {
 }
 
 func (s *Server) Write(ctx context.Context, req *sink.WriteRequest) (*sink.WriteResponse, error) {
-	return s.write(ctx, req, nil, nil)
+	if err := protocol.CheckStore(req, s.boundStore); err != nil {
+		return nil, err
+	}
+	return s.write(ctx, req, contextBudgets(ctx, len(req.GetOperations())), nil)
 }
 
 func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *requestBudgets, completion *writeCompletion) (*sink.WriteResponse, error) {
@@ -128,26 +133,23 @@ func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *req
 type luaPrograms map[[sha256.Size]byte]merge.Program
 
 func parseLuaPrograms(programs []*sink.LuaProgram) (luaPrograms, error) {
-	parsed := make(luaPrograms, len(programs))
-	for index, program := range programs {
-		if program == nil || len(program.GetSource()) == 0 {
-			return nil, fmt.Errorf("program %d source is required", index)
-		}
-		digest := sha256.Sum256(program.GetSource())
-		if len(program.GetSha256()) != 0 {
-			if len(program.GetSha256()) != sha256.Size || !bytes.Equal(program.GetSha256(), digest[:]) {
-				return nil, fmt.Errorf("program %d SHA-256 digest does not match source", index)
-			}
-		}
-		if existing, ok := parsed[digest]; ok && !bytes.Equal(existing.Source, program.GetSource()) {
-			return nil, fmt.Errorf("program %d has a duplicate SHA-256 digest", index)
-		}
-		parsed[digest] = merge.Program{Source: bytes.Clone(program.GetSource()), SHA256: bytes.Clone(digest[:])}
+	if err := protocol.ValidateLuaDeclarations(programs); err != nil {
+		return nil, err
 	}
+	parsed := make(luaPrograms, len(programs))
+	for _, program := range programs {
+		digest := sha256.Sum256(program.GetSource())
+		declared := merge.Program{Source: bytes.Clone(program.GetSource()), SHA256: bytes.Clone(digest[:])}
+		parsed[digest] = declared
+	}
+
 	return parsed, nil
 }
 
 func (s *Server) Delete(ctx context.Context, req *sink.DeleteRequest) (*sink.DeleteResponse, error) {
+	if err := protocol.CheckStore(req, s.boundStore); err != nil {
+		return nil, err
+	}
 	return s.delete(ctx, req, nil)
 }
 

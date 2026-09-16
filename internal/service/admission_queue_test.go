@@ -11,11 +11,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func TestDirectAdmissionQueuesBurstAndKeepsOtherStoreRunning(t *testing.T) {
+func TestDirectAdmissionQueuesBurst(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		core := completionServer(t, memory.New()).server
-		core.maxStoreRequests = 1
-		core.storeRequests = map[string]int{"a": 0, "b": 0}
+		core.maxInFlightRequests = 1
 		request := admissionRequest{encodedBytes: 64 << 20, inputBytes: 100, stores: []string{"a"}}
 		_, release, err := core.admitRequest(t.Context(), request)
 		if err != nil {
@@ -33,26 +32,19 @@ func TestDirectAdmissionQueuesBurstAndKeepsOtherStoreRunning(t *testing.T) {
 		if len(admitted) != 0 || core.queuedBytes >= 1024 || core.queuedRequests != 1 || core.inFlightRequests != 1 {
 			t.Fatal("waiting request executed or reserved hypothetical output buffers")
 		}
-		other := request
-		other.stores = []string{"b"}
-		_, releaseOther, err := core.admitRequest(t.Context(), other)
-		if err != nil {
-			t.Fatalf("busy store blocked independent work: %v", err)
-		}
-		releaseOther()
 		release()
 		done := <-admitted
 		if done != nil {
 			done()
 		}
-		if core.queuedRequests != 0 || core.queuedBytes != 0 || len(core.storeQueuedRequests) != 0 || core.inFlightBytes != 0 {
+		if core.queuedRequests != 0 || core.queuedBytes != 0 || core.inFlightBytes != 0 {
 			t.Fatal("admitted burst leaked queue or execution capacity")
 		}
 	})
 }
 
-func TestDirectAdmissionBoundsQueuedCountBytesAndStores(t *testing.T) {
-	for _, bound := range []string{"requests", "bytes", "store"} {
+func TestDirectAdmissionBoundsQueuedCountAndBytes(t *testing.T) {
+	for _, bound := range []string{"requests", "bytes"} {
 		t.Run(bound, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				core := completionServer(t, memory.New()).server
@@ -62,8 +54,6 @@ func TestDirectAdmissionBoundsQueuedCountBytesAndStores(t *testing.T) {
 					core.maxQueuedRequests = 1
 				case "bytes":
 					core.maxQueuedBytes = 500
-				case "store":
-					core.maxStoreQueuedRequests = 1
 				}
 				request := admissionRequest{encodedBytes: 1, inputBytes: 100, stores: []string{"primary"}}
 				_, release, err := core.admitRequest(t.Context(), request)

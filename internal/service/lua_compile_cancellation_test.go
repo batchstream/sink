@@ -31,7 +31,7 @@ func TestWriteCancellationInterruptsLuaCompilation(t *testing.T) {
 						t.Fatal(err)
 					}
 					publisher := &recordingPublisher{}
-					options := service.Options{Storage: memory.New(), Lua: engine, Publisher: publisher, RequestTimeout: 20 * time.Millisecond}
+					options := service.Options{BoundStore: "primary", Storage: memory.New(), Lua: engine, Publisher: publisher, RequestTimeout: 20 * time.Millisecond}
 					if canceled {
 						options.RequestTimeout = 5 * time.Second
 					}
@@ -71,7 +71,7 @@ func TestLuaCompileLimitDoesNotCancelSiblingWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := service.Options{Storage: memory.New(), Lua: engine, RequestTimeout: 5 * time.Second}
+	options := service.Options{BoundStore: "primary", Storage: memory.New(), Lua: engine, RequestTimeout: 5 * time.Second}
 	server, err := service.New(options)
 	if err != nil {
 		t.Fatal(err)

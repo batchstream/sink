@@ -17,7 +17,7 @@ func TestPublishAndExecutionEnforceIndependentStoreRequestLimits(t *testing.T) {
 	}
 	for _, executionLimit := range []int{1, 2} {
 		publishLimit := 3 - executionLimit
-		opts := Options{Storage: memory.New(), Lua: lua, StoreNames: []string{"primary"}, MaxStoreRequests: executionLimit, MaxPublishStoreRequests: publishLimit}
+		opts := Options{BoundStore: "primary", Storage: memory.New(), Lua: lua, MaxInFlightRequests: executionLimit, MaxPublishRequests: publishLimit}
 		server, err := New(opts)
 		if err != nil {
 			t.Fatal(err)

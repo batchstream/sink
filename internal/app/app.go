@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/liran/sink/internal/config"
+	"github.com/liran/sink/internal/gateway"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
 	"github.com/liran/sink/internal/queue"
 	queuekafka "github.com/liran/sink/internal/queue/kafka"
@@ -19,15 +20,16 @@ import (
 )
 
 type Application struct {
-	topics          map[string]*queuekafka.TopicManager
+	gateway         *gateway.Server
+	topics          *queuekafka.TopicManager
 	background      sync.WaitGroup
 	config          config.Config
-	mongoClients    map[string]*mongo.Client
+	mongoClient     *mongo.Client
 	storage         storagecontract.Storage
 	publisher       queue.Publisher
-	kafkaPublishers []*queuekafka.Publisher
+	kafkaPublisher  *queuekafka.Publisher
 	healthChecks    []*configuredHealthCheck
-	workers         []configuredWorker
+	worker          *queuekafka.Worker
 	batchingServer  *service.BatchingServer
 	grpcServer      *grpc.Server
 	health          *health.Server
@@ -46,14 +48,16 @@ type Options struct {
 // every resource opened by this call is closed before returning.
 func New(ctx context.Context, opts Options) (*Application, error) {
 	loaded := opts.Config
+	if loaded.Mode == config.ModeGateway {
+		return newGateway(opts)
+	}
 	opened, err := openConfiguredStorage(ctx, loaded)
 	if err != nil {
 		return nil, err
 	}
 	app := &Application{
 		config:       loaded,
-		topics:       make(map[string]*queuekafka.TopicManager),
-		mongoClients: opened.mongoClients,
+		mongoClient:  opened.mongoClient,
 		storage:      opened.value,
 		healthChecks: opened.healthChecks,
 	}
@@ -65,11 +69,7 @@ func New(ctx context.Context, opts Options) (*Application, error) {
 	}()
 	var observed *sinkmetrics.Metrics
 	if loaded.Prometheus.Address != "" {
-		names := make([]string, len(loaded.Storages))
-		for index, storage := range loaded.Storages {
-			names[index] = storage.Name
-		}
-		observed, err = sinkmetrics.New(opts.Version, names...)
+		observed, err = sinkmetrics.New(opts.Version, loaded.Storage.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -84,13 +84,13 @@ func New(ctx context.Context, opts Options) (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	if loaded.Mode == config.ModeServer || loaded.Mode == config.ModeAll {
+	if loaded.Mode == config.ModeEngine {
 		if err := app.configureServer(server, observed); err != nil {
 			return nil, err
 		}
 	}
-	if loaded.Mode == config.ModeWorker || loaded.Mode == config.ModeAll {
-		if err := app.configureWorkers(server, observed); err != nil {
+	if loaded.Mode == config.ModeWorker {
+		if err := app.configureWorker(server, observed); err != nil {
 			return nil, err
 		}
 	}

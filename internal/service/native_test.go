@@ -76,11 +76,6 @@ func (s *nativeFixtureStorage) Scan(ctx context.Context, req storage.ScanRequest
 func nativeRPCFixture(t *testing.T, silent bool) (sink.SinkClient, *nativeFixtureStorage) {
 	t.Helper()
 	backend := &nativeFixtureStorage{Store: memory.New(), stopped: make(chan struct{}), started: make(chan struct{}), silent: silent}
-	backends := map[string]storage.Storage{"primary": backend}
-	router, err := storage.NewRouter(backends)
-	if err != nil {
-		t.Fatal(err)
-	}
 	luaOptions := merge.LuaOptions{}
 	lua, err := merge.NewLuaEngine(luaOptions)
 	if err != nil {
@@ -90,13 +85,13 @@ func nativeRPCFixture(t *testing.T, silent bool) (sink.SinkClient, *nativeFixtur
 	if silent {
 		idle = 200 * time.Millisecond
 	}
-	options := service.Options{Storage: router, Lua: lua, MaxInFlightRequests: 1, MaxReadBytes: 4096,
-		RequestTimeout: idle, AdmissionWait: 10 * time.Millisecond, StoreNames: []string{"primary"}}
+	options := service.Options{BoundStore: "primary", Storage: backend, Lua: lua, MaxInFlightRequests: 1, MaxReadBytes: 4096,
+		RequestTimeout: idle, AdmissionWait: 10 * time.Millisecond}
 	core, err := service.New(options)
 	if err != nil {
 		t.Fatal(err)
 	}
-	batchOptions := service.BatchingOptions{StoreNames: []string{"primary"}}
+	batchOptions := service.BatchingOptions{}
 	server, err := service.NewBatchingServer(core, batchOptions)
 	if err != nil {
 		t.Fatal(err)

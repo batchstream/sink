@@ -8,25 +8,26 @@ import (
 	"time"
 )
 
-func TestLoadConfigDefaultsToSynchronousServer(t *testing.T) {
-	path := writeConfig(t, `
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
+func TestLoadConfigEngineDefaults(t *testing.T) {
+	path := writeConfig(t, `mode: engine
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
 `)
 	loaded, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if loaded.Mode != ModeServer || loaded.GRPC.Address != ":8080" || len(loaded.Storages) != 1 {
+	if loaded.Mode != ModeEngine || loaded.GRPC.Address != ":8080" {
 		t.Fatalf("Load() = %#v", loaded)
 	}
 	if loaded.Prometheus.Address != "" {
 		t.Fatalf("Load() Prometheus address = %q", loaded.Prometheus.Address)
 	}
-	configured := loaded.Storages[0]
+	configured := loaded.Storage
 	if configured.Name != "primary" || configured.Driver != DriverMongoDB || configured.MongoDB.URI != "mongodb://mongodb:27017" {
 		t.Fatalf("Load() storage = %#v", configured)
 	}
@@ -52,36 +53,38 @@ storages:
 }
 
 func TestLoadConfigDisablesKafkaByDefault(t *testing.T) {
-	path := writeConfig(t, `
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
-    kafka:
-      brokers: [kafka:9092]
-      topic:
-        name: sink-mutations
+	path := writeConfig(t, `mode: engine
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
+  kafka:
+    brokers: [kafka:9092]
+    topic:
+      name: sink-mutations
 `)
 	loaded, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	configured := loaded.Storages[0].Kafka
+	configured := loaded.Storage.Kafka
 	if configured.Enabled {
 		t.Fatalf("Load() Kafka = %#v", configured)
 	}
 }
 
 func TestLoadConfigBatchingSettings(t *testing.T) {
-	path := writeConfig(t, `
+	path := writeConfig(t, `mode: engine
 grpc:
   max_receive_message_bytes: 1048576
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
 service:
   request:
     max_operations: 2000
@@ -107,12 +110,13 @@ service:
 func TestLoadConfigRejectsBatchingSwitch(t *testing.T) {
 	for _, enabled := range []string{"true", "false"} {
 		t.Run(enabled, func(t *testing.T) {
-			contents := `
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
+			contents := `mode: engine
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
 service:
   batching:
     enabled: ` + enabled + "\n"
@@ -149,12 +153,13 @@ func TestLoadConfigRejectsUnsafeBatchingLimits(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			contents := `
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
+			contents := `mode: engine
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
 service:
   batching:
     ` + test.batching + "\n"
@@ -167,7 +172,7 @@ service:
 	}
 }
 
-func TestLoadConfigMultipleStorages(t *testing.T) {
+func TestLoadConfigRejectsMultipleStorages(t *testing.T) {
 	path := writeConfig(t, `
 prometheus:
   address: ":9090"
@@ -189,56 +194,45 @@ storages:
         - http://search-2:9200
       api_key: test-api-key
 `)
-	loaded, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if len(loaded.Storages) != 3 {
-		t.Fatalf("Load() storages = %#v", loaded.Storages)
-	}
-	if loaded.Prometheus.Address != ":9090" {
-		t.Fatalf("Load() Prometheus address = %q", loaded.Prometheus.Address)
-	}
-	if loaded.Storages[0].Name != "mongo-main" || loaded.Storages[0].MongoDB.MetadataField != "__revision" {
-		t.Fatalf("Load() first storage = %#v", loaded.Storages[0])
-	}
-	search := loaded.Storages[2]
-	if search.Driver != DriverElasticsearch || len(search.Search.Endpoints) != 2 || search.Search.APIKey != "test-api-key" {
-		t.Fatalf("Load() search storage = %#v", search)
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), "field storages not found") {
+		t.Fatalf("plural storage configuration was accepted: %v", err)
 	}
 }
 
 func TestLoadConfigOpenSearchBasicAuthentication(t *testing.T) {
-	path := writeConfig(t, `
-storages:
-  - name: search-main
-    driver: opensearch
-    search:
-      endpoints:
-        - https://search:9200
-      username: sink
-      password: test-password
+	path := writeConfig(t, `mode: engine
+storage:
+  name: search-main
+  database_id: test-database
+  driver: opensearch
+  search:
+    endpoints:
+      - https://search:9200
+    username: sink
+    password: test-password
 `)
 	loaded, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	configured := loaded.Storages[0]
+	configured := loaded.Storage
 	if configured.Driver != DriverOpenSearch || configured.Search.Username != "sink" || configured.Search.Password != "test-password" {
 		t.Fatalf("Load() storage = %#v", configured)
 	}
 }
 
 func TestLoadConfigRejectsConflictingSearchAuthentication(t *testing.T) {
-	path := writeConfig(t, `
-storages:
-  - name: search-main
-    driver: elasticsearch
-    search:
-      endpoints: [http://search:9200]
-      username: sink
-      password: test-password
-      api_key: test-api-key
+	path := writeConfig(t, `mode: engine
+storage:
+  name: search-main
+  database_id: test-database
+  driver: elasticsearch
+  search:
+    endpoints: [http://search:9200]
+    username: sink
+    password: test-password
+    api_key: test-api-key
 `)
 	_, err := Load(path)
 	if err == nil {
@@ -249,30 +243,31 @@ storages:
 func TestLoadConfigWorkerSettings(t *testing.T) {
 	path := writeConfig(t, `
 mode: worker
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
-    kafka:
-      enabled: true
-      brokers:
-        - kafka-1:9092
-        - kafka-2:9092
-      topic:
-        name: sink-mutations
-        partitions: 12
-        replication_factor: 3
-        retention: 48h
-      consumer:
-        group_id: sink-workers
-        max_poll_records: 250
-        retry:
-          max_attempts: 4
-          backoff: 20ms
-          max_backoff: 200ms
-      dead_letter:
-        topic: sink-dead-letters
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
+  kafka:
+    enabled: true
+    brokers:
+      - kafka-1:9092
+      - kafka-2:9092
+    topic:
+      name: sink-mutations
+      partitions: 12
+      replication_factor: 3
+      retention: 48h
+    consumer:
+      group_id: sink-workers
+      max_poll_records: 250
+      retry:
+        max_attempts: 4
+        backoff: 20ms
+        max_backoff: 200ms
+    dead_letter:
+      topic: sink-dead-letters
 service:
   request:
     max_operations: 2000
@@ -290,7 +285,7 @@ shutdown_timeout: 30s
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	configured := loaded.Storages[0]
+	configured := loaded.Storage
 	if loaded.Mode != ModeWorker || len(configured.Kafka.Brokers) != 2 || configured.Kafka.Consumer.MaxPollRecords != 250 {
 		t.Fatalf("Load() = %#v", loaded)
 	}
@@ -311,111 +306,39 @@ shutdown_timeout: 30s
 	}
 }
 
-func TestLoadConfigSupportsIndependentStoreKafkaClusters(t *testing.T) {
+func TestLoadConfigEngineAllowsKafkaWithoutConsumerGroup(t *testing.T) {
 	path := writeConfig(t, `
-mode: worker
-storages:
-  - name: catalog
-    driver: mongodb
-    mongodb:
-      uri: mongodb://catalog:27017
-    kafka:
-      enabled: true
-      brokers: [catalog-kafka:9092]
-      topic:
-        name: mutations
-      consumer:
-        group_id: workers
-  - name: search
-    driver: opensearch
-    search:
-      endpoints: [https://search:9200]
-    kafka:
-      enabled: true
-      brokers: [search-kafka:9092]
-      topic:
-        name: mutations
-      consumer:
-        group_id: workers
+mode: engine
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
+  kafka:
+    enabled: true
+    brokers: [kafka:9092]
+    topic:
+      name: sink-mutations
 `)
 	loaded, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if len(loaded.Storages) != 2 {
-		t.Fatalf("Load() storages = %#v", loaded.Storages)
-	}
-	for _, configured := range loaded.Storages {
-		if !configured.Kafka.Enabled || configured.Kafka.Topic.Name != "mutations" || configured.Kafka.Consumer.GroupID != "workers" {
-			t.Fatalf("Load() storage Kafka = %#v", configured.Kafka)
-		}
-	}
-}
-
-func TestLoadConfigRejectsDuplicateKafkaResourcesOnSameCluster(t *testing.T) {
-	path := writeConfig(t, `
-mode: worker
-storages:
-  - name: first
-    driver: mongodb
-    mongodb:
-      uri: mongodb://first:27017
-    kafka:
-      enabled: true
-      brokers: [kafka-1:9092, kafka-2:9092]
-      topic:
-        name: shared-mutations
-      consumer:
-        group_id: first-workers
-  - name: second
-    driver: mongodb
-    mongodb:
-      uri: mongodb://second:27017
-    kafka:
-      enabled: true
-      brokers: [kafka-2:9092, kafka-1:9092]
-      topic:
-        name: shared-mutations
-      consumer:
-        group_id: second-workers
-`)
-	_, err := Load(path)
-	if err == nil || !strings.Contains(err.Error(), "duplicate Kafka topic") {
-		t.Fatalf("Load() error = %v", err)
-	}
-}
-
-func TestLoadConfigServerAllowsStoreKafkaWithoutConsumerGroup(t *testing.T) {
-	path := writeConfig(t, `
-mode: server
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
-    kafka:
-      enabled: true
-      brokers: [kafka:9092]
-      topic:
-        name: sink-mutations
-`)
-	loaded, err := Load(path)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	configured := loaded.Storages[0].Kafka
+	configured := loaded.Storage.Kafka
 	if configured.Consumer.GroupID != "" || configured.DeadLetter.Topic != "sink-mutations.dlq" {
 		t.Fatalf("Load() Kafka = %#v", configured)
 	}
 }
 
 func TestLoadConfigRejectsNonPositiveLuaLimits(t *testing.T) {
-	path := writeConfig(t, `
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
+	path := writeConfig(t, `mode: engine
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
 service:
   merge:
     lua:
@@ -440,54 +363,58 @@ storages:
       uri: mongodb://mongo-2:27017
 `)
 	_, err := Load(path)
-	if err == nil || !strings.Contains(err.Error(), `duplicate name "primary"`) {
+	if err == nil || !strings.Contains(err.Error(), "field storages not found") {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
 
 func TestLoadConfigRequiresAtLeastOneStorage(t *testing.T) {
 	path := writeConfig(t, `
-storages: []
+mode: engine
+
 `)
 	_, err := Load(path)
-	if err == nil || !strings.Contains(err.Error(), "storages must contain at least one storage") {
+	if err == nil || !strings.Contains(err.Error(), "require singular storage") {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
 
 func TestLoadConfigRequiresStorageNameAndDriver(t *testing.T) {
-	path := writeConfig(t, `
-storages:
-  - name: ""
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
+	path := writeConfig(t, `mode: engine
+storage:
+  name: ""
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
 `)
 	_, err := Load(path)
-	if err == nil || !strings.Contains(err.Error(), "storages[0].name is required") {
+	if err == nil || !strings.Contains(err.Error(), "storage.name and database_id") {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	path = writeConfig(t, `
-storages:
-  - name: primary
-    mongodb:
-      uri: mongodb://mongodb:27017
+	path = writeConfig(t, `mode: engine
+storage:
+  name: primary
+  database_id: test-database
+  mongodb:
+    uri: mongodb://mongodb:27017
 `)
 	_, err = Load(path)
-	if err == nil || !strings.Contains(err.Error(), "storages[0].driver must be") {
+	if err == nil || !strings.Contains(err.Error(), "storage.driver must be") {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
 
 func TestLoadConfigRejectsBindings(t *testing.T) {
-	path := writeConfig(t, `
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
-      bindings: []
+	path := writeConfig(t, `mode: engine
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
+    bindings: []
 `)
 	_, err := Load(path)
 	if err == nil || !strings.Contains(err.Error(), "field bindings not found") {
@@ -496,18 +423,19 @@ storages:
 }
 
 func TestLoadConfigRejectsPartialKafkaConfiguration(t *testing.T) {
-	path := writeConfig(t, `
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
-    kafka:
-      enabled: true
-      brokers: [kafka:9092]
+	path := writeConfig(t, `mode: engine
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
+  kafka:
+    enabled: true
+    brokers: [kafka:9092]
 `)
 	_, err := Load(path)
-	if err == nil || !strings.Contains(err.Error(), "storages[0].kafka") {
+	if err == nil || !strings.Contains(err.Error(), "storage.kafka") {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
@@ -515,30 +443,32 @@ storages:
 func TestLoadConfigWorkerRequiresGroupForEveryKafkaStore(t *testing.T) {
 	path := writeConfig(t, `
 mode: worker
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
-    kafka:
-      enabled: true
-      brokers: [kafka:9092]
-      topic:
-        name: sink-mutations
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
+  kafka:
+    enabled: true
+    brokers: [kafka:9092]
+    topic:
+      name: sink-mutations
 `)
 	_, err := Load(path)
-	if err == nil || !strings.Contains(err.Error(), "storages[0].kafka.consumer.group_id") {
+	if err == nil || !strings.Contains(err.Error(), "storage.kafka.consumer.group_id") {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
 
 func TestLoadConfigRejectsTopLevelKafkaConfiguration(t *testing.T) {
-	path := writeConfig(t, `
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
+	path := writeConfig(t, `mode: engine
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
 kafka:
   brokers: [kafka:9092]
   topic:
@@ -553,25 +483,27 @@ kafka:
 func TestLoadConfigWorkerRequiresAtLeastOneKafkaStore(t *testing.T) {
 	path := writeConfig(t, `
 mode: worker
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
 `)
 	_, err := Load(path)
-	if err == nil || !strings.Contains(err.Error(), "worker and all modes require Kafka to be enabled") {
+	if err == nil || !strings.Contains(err.Error(), "worker requires storage.kafka.enabled") {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
 
 func TestLoadConfigRejectsUnknownFields(t *testing.T) {
-	path := writeConfig(t, `
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
+	path := writeConfig(t, `mode: engine
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
 unexpected: true
 `)
 	_, err := Load(path)
@@ -581,12 +513,13 @@ unexpected: true
 }
 
 func TestLoadConfigRejectsNonPositiveValues(t *testing.T) {
-	path := writeConfig(t, `
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
+	path := writeConfig(t, `mode: engine
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
 service:
   request:
     max_operations: 0
@@ -600,24 +533,25 @@ service:
 func TestLoadConfigDefaultsWorkerDeadLetterTopic(t *testing.T) {
 	path := writeConfig(t, `
 mode: worker
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
-    kafka:
-      enabled: true
-      brokers: [kafka:9092]
-      topic:
-        name: sink-mutations
-      consumer:
-        group_id: sink-workers
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
+  kafka:
+    enabled: true
+    brokers: [kafka:9092]
+    topic:
+      name: sink-mutations
+    consumer:
+      group_id: sink-workers
 `)
 	loaded, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	configured := loaded.Storages[0].Kafka
+	configured := loaded.Storage.Kafka
 	if configured.DeadLetter.Topic != "sink-mutations.dlq" || configured.Consumer.MaxPollRecords != 500 ||
 		configured.Consumer.Retry.MaxAttempts != 10 || configured.Consumer.Retry.Backoff != 100*time.Millisecond ||
 		configured.Consumer.Retry.MaxBackoff != 10*time.Second ||
@@ -636,33 +570,34 @@ func TestLoadConfigRejectsInvalidKafkaTopicSettings(t *testing.T) {
 		{
 			name:      "zero partitions",
 			setting:   "partitions: 0",
-			wantError: "storages[0].kafka.topic.partitions must be a positive integer",
+			wantError: "storage.kafka.topic.partitions must be a positive integer",
 		},
 		{
 			name:      "zero replication factor",
 			setting:   "replication_factor: 0",
-			wantError: "storages[0].kafka.topic.replication_factor must be a positive integer",
+			wantError: "storage.kafka.topic.replication_factor must be a positive integer",
 		},
 		{
 			name:      "zero retention",
 			setting:   "retention: 0s",
-			wantError: "storages[0].kafka.topic.retention must be a positive duration",
+			wantError: "storage.kafka.topic.retention must be a positive duration",
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			contents := `
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
-    kafka:
-      enabled: true
-      brokers: [kafka:9092]
-      topic:
-        name: sink-mutations
-        ` + test.setting + "\n"
+			contents := `mode: engine
+storage:
+  name: primary
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
+  kafka:
+    enabled: true
+    brokers: [kafka:9092]
+    topic:
+      name: sink-mutations
+      ` + test.setting + "\n"
 			path := writeConfig(t, contents)
 			_, err := Load(path)
 			if err == nil || !strings.Contains(err.Error(), test.wantError) {
@@ -676,18 +611,19 @@ func TestLoadConfigDoesNotReadLegacyEnvironmentVariables(t *testing.T) {
 	t.Setenv("SINK_MODE", "worker")
 	t.Setenv("SINK_MONGODB_URI", "mongodb://legacy-environment:27017")
 	path := writeConfig(t, `
-mode: server
-storages:
-  - name: configured
-    driver: mongodb
-    mongodb:
-      uri: mongodb://configured:27017
+mode: engine
+storage:
+  name: configured
+  database_id: test-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://configured:27017
 `)
 	loaded, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if loaded.Mode != ModeServer || loaded.Storages[0].MongoDB.URI != "mongodb://configured:27017" {
+	if loaded.Mode != ModeEngine || loaded.Storage.MongoDB.URI != "mongodb://configured:27017" {
 		t.Fatalf("Load() = %#v", loaded)
 	}
 }
@@ -695,7 +631,7 @@ storages:
 func TestExampleConfigurationFilesLoad(t *testing.T) {
 	paths := []string{
 		"../../config.example.yaml",
-		"../../examples/quickstart/sink.yaml",
+		"../../examples/quickstart/engine.yaml", "../../examples/quickstart/worker.yaml", "../../examples/quickstart/gateway.yaml",
 		"../../examples/kubernetes/sink.yaml",
 	}
 	for _, path := range paths {

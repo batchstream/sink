@@ -20,7 +20,7 @@ func TestMongoDBFoldedMergesPreserveBSONAndFinalRevision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := service.Options{Storage: fixture.store, Lua: engine}
+	options := service.Options{BoundStore: "primary", Storage: fixture.store, Lua: engine}
 	server, err := service.New(options)
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestMongoDBMergePreservesBSONTypesAndReplacesDateWithString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := service.Options{Storage: fixture.store, Lua: engine}
+	options := service.Options{BoundStore: "primary", Storage: fixture.store, Lua: engine}
 	server, err := service.New(options)
 	if err != nil {
 		t.Fatal(err)

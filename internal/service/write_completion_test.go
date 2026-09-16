@@ -173,7 +173,7 @@ func TestWriteCompletionReturnsSuccessfulMergeBeforeSiblingRetry(t *testing.T) {
 func TestWriteCompletionReleasesDocumentBeforeWholeRPC(t *testing.T) {
 	backend := newHeldReadStorage(t)
 	core := completionServer(t, backend).server
-	opts := BatchingOptions{StoreNames: []string{"primary"}, MaxOperations: 2, MaxWait: time.Millisecond}
+	opts := BatchingOptions{MaxOperations: 2, MaxWait: time.Millisecond}
 	server, err := NewBatchingServer(core, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -248,7 +248,7 @@ func TestWriteCompletionKeepsSpeculativeFailuresPrivate(t *testing.T) {
 func TestWriteBatchingIsolatesDatasetRefreshWait(t *testing.T) {
 	backend := &completionStorage{Storage: memory.New(), events: make(chan completionEvent, 4), blocked: "product", release: make(chan struct{})}
 	core := completionServer(t, backend).server
-	opts := BatchingOptions{StoreNames: []string{"primary"}, MaxOperations: 2, MaxWait: 100 * time.Millisecond}
+	opts := BatchingOptions{MaxOperations: 2, MaxWait: 100 * time.Millisecond}
 	server, err := NewBatchingServer(core, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -261,7 +261,7 @@ func TestWriteBatchingIsolatesDatasetRefreshWait(t *testing.T) {
 	fast.request.Operations[0].Address.Dataset = "another-index"
 	done := make(chan error, 1)
 	go func() { _, err := server.Write(t.Context(), slow.request); done <- err }()
-	waitForQueuedCalls(t, server.writes["primary"], 1)
+	waitForQueuedCalls(t, server.writes, 1)
 	result := make(chan batchResult[*sink.WriteResponse], 1)
 	go func() {
 		response, err := server.Write(t.Context(), fast.request)

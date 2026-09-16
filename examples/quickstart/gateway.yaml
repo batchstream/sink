@@ -1,0 +1,19 @@
+mode: gateway
+grpc:
+  address: ":8080"
+prometheus:
+  address: ":9090"
+gateway:
+  routes_file: routing/routes.yaml
+  reload_interval: 5s
+  dns_refresh_interval: 30s
+  idle_timeout: 5m
+  max_connections: 256
+  max_requests: 128
+  max_bytes: 256MiB
+  max_fanout: 8
+service:
+  request:
+    timeout: 30s
+    max_operations: 1000
+    max_read_bytes: 32MiB

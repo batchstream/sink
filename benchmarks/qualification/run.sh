@@ -72,6 +72,8 @@ upsert-batch upsert 16 16 1024 false 0
 merge-32 merge 32 1 1024 false 0
 merge-batch merge 16 16 1024 false 0
 mixed-32 mixed 32 1 1024 false 0
+mixed-8 mixed 8 1 1024 false 0
+read-8 read 8 16 1024 false 0
 read-32 read 32 16 1024 false 0
 count-32 count 32 1 1024 false 0
 returned-large merge 8 1 65536 true 0

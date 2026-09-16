@@ -72,6 +72,14 @@ lag is intentional: Engine can keep acknowledging Kafka acceptance, while no
 document will be applied until a Worker receives the partitions. Consumer-group
 partitions limit useful parallelism; more Workers do not add partition capacity.
 
+Process readiness does not mean every dependency is ready. Before removing old
+replicas, explicitly check the new Engines' required capabilities with
+`/readyz?service=sink.storage.STORE` and, for acceptance workloads,
+`/readyz?service=sink.kafka.STORE`. A sync-only Deployment can use storage
+capability readiness directly. A mixed sync/async role intentionally remains
+process-ready when just one dependency fails; gate its rollout on the required
+capabilities without turning every temporary dependency outage into a restart.
+
 Transient membership differences between Gateways can send the same record to
 different Engines. Shared storage revisions still arbitrate conditional writes;
 record affinity reduces contention but is not distributed ownership or fencing.

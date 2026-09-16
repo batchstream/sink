@@ -20,9 +20,9 @@ env:
 jobs:
   qualify:
     name: Public production qualification
-    uses: liran/sink-production-suite/.github/workflows/release-qualification.yml@9a8d66b3bf6f7298004be440b7eab2e3e0ffe783
+    uses: liran/sink-production-suite/.github/workflows/release-qualification.yml@14be11bfaa708178e98345fe3a466a2f8ca5baaa
     with:
-      suite_ref: 9a8d66b3bf6f7298004be440b7eab2e3e0ffe783
+      suite_ref: 14be11bfaa708178e98345fe3a466a2f8ca5baaa
       sink_ref: ${{ github.event.release.tag_name }}
 
   binaries:

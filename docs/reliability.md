@@ -253,12 +253,19 @@ by the current implementation.
 Dependency failures do not prevent unrelated Stores starting. Kafka acceptance
 and consumption remain gated until their Topic policy is established. gRPC
 dependency health begins `NOT_SERVING`; the default health service describes
-the serving process. With Prometheus enabled, use `/livez` for liveness. Gateway
+the serving process. HTTP health runs independently of Prometheus; use `/livez`
+on the health port for liveness. Gateway
 and Engine `/readyz` report process readiness; Engine capability checks use
 `/readyz?service=sink.storage.<store>` or `sink.kafka.<store>`. Worker `/readyz`
 checks its dependencies and consumer; `sink.worker.<store>` selects the consumer.
 Gateway does not proxy dependency health.
 Readiness failure during an outage should not trigger liveness restart loops.
+
+Storage capability readiness probes backend connectivity. MongoDB uses a Ping,
+which does not exercise majority/journal acknowledgement. A successful probe is
+not proof of write availability, spare capacity or a latency SLO. Qualify the
+required acknowledgement mode with actual traffic and reconciliation, including
+elections and majority loss; monitor those outcomes alongside health probes.
 
 Protect gRPC and metrics with an authenticated TLS ingress/service mesh and
 network policy. Restrict who can submit Lua and which storage credentials Sink

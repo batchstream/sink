@@ -79,6 +79,10 @@ replicas, explicitly check the new Engines' required capabilities with
 capability readiness directly. A mixed sync/async role intentionally remains
 process-ready when just one dependency fails; gate its rollout on the required
 capabilities without turning every temporary dependency outage into a restart.
+These probes establish dependency connectivity, not durable-write availability
+or spare capacity. In particular, MongoDB Ping does not verify majority/journal
+confirmation. Include representative acknowledged writes and their outcomes in
+rollout acceptance.
 
 Transient membership differences between Gateways can send the same record to
 different Engines. Shared storage revisions still arbitrate conditional writes;

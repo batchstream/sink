@@ -22,7 +22,12 @@ asynchronous completion modes. They are not automatically retried or deduplicate
 All four native RPCs share `Command`: `uri`, `method`, `path`,
 `query`, `headers`, `content_type`, and `payload`. The URI authority selects
 the configured Store; only the adapter interprets its resource path. MongoDB
-uses `sink://store/database` and the BSON payload. Search uses
+uses `sink://store/database` for database commands and
+`sink://store/database/collection` for collection commands, with a BSON payload.
+For a collection URI, the adapter binds an empty first command value to that
+collection and rejects conflicting targets. Empty Query/Count/Scan commands
+default to a find on the URI collection. The SDK forwards the complete URI and
+payload without interpreting or rewriting them. Search uses
 `sink://store/index` with a separate relative operation path such as `/_search`
 or `/_mapping`, plus method/query/headers and the original body. A Store-level
 resource is `sink://store`; the URI never embeds an operation suffix. Unused fields must be empty.

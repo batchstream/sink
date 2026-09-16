@@ -22,7 +22,9 @@ spec:
         app.kubernetes.io/name: sink-catalog-engine
     spec:
       automountServiceAccountToken: false
-      terminationGracePeriodSeconds: 90
+      # Illustrative budget; size against measured DNS/cache/request drain.
+      # See docs/rolling-upgrades.md, including sequential shutdown phases.
+      terminationGracePeriodSeconds: 180
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -81,7 +83,7 @@ spec:
           lifecycle:
             preStop:
               sleep:
-                seconds: 40
+                seconds: 110
           securityContext:
             runAsNonRoot: true
             runAsUser: 65532

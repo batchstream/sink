@@ -72,6 +72,23 @@ func (app *Application) configureGRPC(server sink.SinkServer, observed *sinkmetr
 	return nil
 }
 
+func (app *Application) configureHealth() error {
+	listener, err := net.Listen("tcp", app.config.Health.Address)
+	if err != nil {
+		return fmt.Errorf("listen for health endpoints: %w", err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("/readyz", app.serveReadiness)
+	server := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	app.healthListener = listener
+	app.healthServer = server
+	return nil
+}
+
 func (app *Application) configurePrometheus(handler http.Handler) error {
 	listener, err := net.Listen("tcp", app.config.Prometheus.Address)
 	if err != nil {
@@ -79,12 +96,7 @@ func (app *Application) configurePrometheus(handler http.Handler) error {
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", handler)
-	mux.HandleFunc("/livez", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	mux.HandleFunc("/readyz", app.serveReadiness)
-	server := &http.Server{
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	server := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	app.metricsListener = listener
 	app.metricsServer = server
 	return nil

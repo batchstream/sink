@@ -4,7 +4,7 @@
 # Byte sizes accept KiB/MiB/GiB or integer bytes; durations accept ms/s/m/h.
 # Positive limits cannot be disabled with 0. Unknown fields are rejected.
 # Validate offline: sink config check --config configs/gateway.yaml
-# Keep routes.yaml alongside this file, or change gateway.routes_file.
+# Restart Gateway after changing any settings, including Store routes.
 mode: gateway # Required process role.
 
 # Public RPC and gRPC health listener.
@@ -13,10 +13,14 @@ grpc:
   max_receive_message_bytes: 64MiB # Maximum encoded inbound gRPC message.
   max_send_message_bytes: 64MiB # Maximum encoded outbound gRPC message.
 
-# Optional HTTP metrics and health listener.
+# Dedicated health listener; always available independently of Prometheus.
+health:
+  address: ":8081" # Listen address for /livez and /readyz; default :8081.
+
+# Separate optional Prometheus listener.
 prometheus:
-  enabled: false # Opt in to the HTTP /metrics, /livez, and /readyz endpoints; default false.
-  address: ":9090" # HTTP listen address, used only when enabled; default :9090.
+  enabled: false # Start /metrics on its own port; does not affect health; default false.
+  address: ":9090" # Metrics-only listen address, used only when enabled; default :9090.
 
 # Per-public-request limits, retained across all forwarded Store groups.
 service:
@@ -27,8 +31,12 @@ service:
     max_operations: 1000 # Maximum operations in one Read, Write, or Delete request.
 
 gateway: # Stateless routing, bounded forwarding, and lazy downstream connections.
-  routes_file: routes.yaml # Required; relative to this config file's directory.
-  reload_interval: 5s # Poll interval for atomic route-file replacements.
+  routes: # Store routes are loaded only at startup; restart after changes.
+    - store: primary # Must match the Engine/Worker storage.name and public request Store.
+      target: dns:///engine-primary:8080 # Required gRPC target for this Store's Engines.
+      tls: # Downstream transport; identity checks do not replace authentication.
+        insecure: true # Example: trusted plaintext network. Default false requires a TLS endpoint/proxy.
+        server_name: "" # Optional TLS name override; leave empty when insecure is true.
   dns_refresh_interval: 30s # Refresh DNS-backed Engine replica addresses.
   idle_timeout: 5m # Evict unused downstream channels after this idle duration.
   max_connections: 256 # Cached endpoint channels and discovery views; <=10000; active calls protected.

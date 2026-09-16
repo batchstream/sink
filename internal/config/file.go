@@ -9,6 +9,7 @@ type configFile struct {
 	Gateway         *gatewayFile   `yaml:"gateway"`
 	Mode            Mode           `yaml:"mode"`
 	GRPC            gRPCFile       `yaml:"grpc"`
+	Health          healthFile     `yaml:"health"`
 	Prometheus      prometheusFile `yaml:"prometheus"`
 	Service         serviceFile    `yaml:"service"`
 	ShutdownTimeout *time.Duration `yaml:"shutdown_timeout"`
@@ -18,6 +19,10 @@ type gRPCFile struct {
 	Address                string    `yaml:"address"`
 	MaxReceiveMessageBytes *byteSize `yaml:"max_receive_message_bytes"`
 	MaxSendMessageBytes    *byteSize `yaml:"max_send_message_bytes"`
+}
+
+type healthFile struct {
+	Address string `yaml:"address"`
 }
 
 type prometheusFile struct {
@@ -153,8 +158,7 @@ type deadLetterFile struct {
 type gatewayFile struct {
 	MaxRequestsPerStore *int           `yaml:"max_requests_per_store"`
 	DNSRefreshInterval  *time.Duration `yaml:"dns_refresh_interval"`
-	RoutesFile          string         `yaml:"routes_file"`
-	ReloadInterval      *time.Duration `yaml:"reload_interval"`
+	Routes              []Route        `yaml:"routes"`
 	IdleTimeout         *time.Duration `yaml:"idle_timeout"`
 	MaxConnections      *int           `yaml:"max_connections"`
 	MaxRequests         *int           `yaml:"max_requests"`

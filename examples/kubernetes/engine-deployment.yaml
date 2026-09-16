@@ -56,24 +56,26 @@ spec:
           ports:
             - name: grpc
               containerPort: 8080
+            - name: health
+              containerPort: 8081
             - name: metrics
               containerPort: 9090
           startupProbe:
             httpGet:
               path: /livez
-              port: metrics
+              port: health
             periodSeconds: 2
             failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /readyz
-              port: metrics
+              port: health
             periodSeconds: 2
             timeoutSeconds: 2
           livenessProbe:
             httpGet:
               path: /livez
-              port: metrics
+              port: health
             periodSeconds: 10
             timeoutSeconds: 2
           lifecycle:

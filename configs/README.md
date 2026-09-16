@@ -6,14 +6,16 @@ Engine and Worker files.
 
 | File | Component |
 | --- | --- |
-| [gateway.yaml](gateway.yaml) | Public request limits, routing, and forwarding capacity. |
+| [gateway.yaml](gateway.yaml) | Public request limits, inline Store routes, and forwarding capacity. |
 | [engine.yaml](engine.yaml) | One Store's database, execution, batching, Lua, and optional Kafka publishing. |
 | [worker.yaml](worker.yaml) | One Store's database, Kafka consumption, execution, and Lua. |
-| [routes.yaml](routes.yaml) | Gateway's separate routing table; keep it alongside `gateway.yaml`. |
 
-Prometheus HTTP serving is disabled by default. Set `prometheus.enabled: true` to
-start `/metrics`, `/livez`, and `/readyz` at `prometheus.address` (default `:9090`).
-Deployments that use HTTP health probes must enable it explicitly.
+Every role serves `/livez` and `/readyz` on `health.address` (default `:8081`).
+Prometheus uses its own `prometheus.address` (default `:9090`) and is disabled
+unless `prometheus.enabled: true`. Disabling metrics never disables health checks.
+
+Gateway routes live under `gateway.routes` and all configured routes are active.
+Configuration is loaded at startup; restart the component after changes.
 
 Validate without connecting to databases or Kafka, from the repository root:
 

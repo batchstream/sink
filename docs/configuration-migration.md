@@ -9,9 +9,15 @@ blue/green deployment after validating the new cluster.
 Use the current [configuration reference](configuration.md),
 [component examples](../configs/README.md), and [runtime guide](store-isolation.md).
 Only `gateway`, `engine` and `worker` modes are supported. Engine and Worker use
-one `storage` object. Gateway uses a route file and has no database configuration.
+one `storage` object. Gateway uses inline `gateway.routes` and has no database configuration.
 Store names use the lowercase syntax in [record addresses](record-addresses.md).
-Prometheus endpoints require `prometheus.enabled: true`.
+HTTP health endpoints always run at `health.address` (default `:8081`).
+Prometheus `/metrics` uses its own `prometheus.address` (default `:9090`) and
+requires `prometheus.enabled: true`. Move HTTP probes to the health port.
+
+Move the old route file entries into `gateway.routes` and remove `routes_file`,
+`reload_interval`, and each route's `state`. All listed routes are active. Restart
+Gateway after changing configuration; there is no route hot reload.
 
 Validate configurations offline with `sink config check --config FILE`, then
 verify the seven public RPCs, key affinity and asynchronous processing against

@@ -24,17 +24,17 @@ values, and incompatible option combinations prevent the process from
 starting. Backend connections are lazy and dependency recovery is independent
 within each Engine or Worker. Kafka publication/consumption remains unavailable
 until topic policy has been reconciled and verified. Other Store processes are
-independent. Restart after changing process configuration; Gateway reloads its
-separate routes file atomically.
+independent. All configuration, including `gateway.routes`, is loaded only at
+startup. Restart after changes. Configuration files are limited to 4 MiB.
 
 ## Configuration layout
 
 | Section | Responsibility |
 | --- | --- |
 | `mode`, `shutdown_timeout` | Process role and shutdown |
-| `grpc`, `prometheus` | Transport and observability listeners |
+| `grpc`, `health`, `prometheus` | Transport and observability listeners |
 | `storage` | Engine/Worker Store identity, backend and Kafka path |
-| `gateway` | Gateway route file, forwarding capacity, connection cache and discovery |
+| `gateway` | Inline Store routes, forwarding capacity, connection cache and discovery |
 | `service.request` | Request deadline, operation count, and returned document budget |
 | `service.execution` | Storage execution capacity, with Scan sublimits |
 | `service.publish` | Independent Kafka publication capacity |
@@ -76,6 +76,8 @@ A request's Store must match the process binding before any side effect.
 mode: engine
 grpc:
   address: ":8080"
+health:
+  address: ":8081"
 prometheus:
   enabled: false
   address: ":9090"
@@ -116,7 +118,6 @@ Use the annotated example for the role you are configuring:
 - [Gateway](../configs/gateway.yaml): public request limits, forwarding, and connection discovery.
 - [Engine](../configs/engine.yaml): one Store's backend, execution, batching, Lua, and optional Kafka publication.
 - [Worker](../configs/worker.yaml): one Store's backend, consumption, execution, and Lua; no RPC listener or RPC batching.
-- [Gateway routes](../configs/routes.yaml): a separate routing table referenced by the Gateway configuration.
 
 Each component file loads directly without uncommenting another role's settings.
 Engine and Worker include a small commented search-driver alternative to MongoDB.
@@ -140,9 +141,9 @@ for queue admission, ordering, execution budgets, and completion boundaries.
 
 ## Prometheus metrics
 
-`prometheus.enabled: true` starts `/metrics`, `/livez`, and `/readyz` in every
-process mode. The listener is disabled by default, even when an address is set.
-`prometheus.address` defaults to `:9090` and is used only when enabled. See
+`health.address` defaults to `:8081` and always serves `/livez` and `/readyz` in
+every process mode. Prometheus has its own listener at `prometheus.address`
+(default `:9090`), started only when `prometheus.enabled` is `true` (default `false`). See
 [metrics and health](observability.md) for the metric catalog, label budgets,
 queries, and dependency readiness semantics.
 
@@ -158,8 +159,9 @@ use the lowercase spelling shown below. Storage names are also case-sensitive.
 | `grpc.address` | string | No | `:8080` | Any valid TCP listen address | TCP listen address for the gRPC and gRPC health services. Used in `gateway` and `engine` modes. |
 | `grpc.max_receive_message_bytes` | byte size | No | `64MiB` | Size greater than `0B` | Maximum encoded gRPC request size accepted by the server. |
 | `grpc.max_send_message_bytes` | byte size | No | `64MiB` | Size greater than `0B` | Maximum encoded gRPC response size sent by the server. |
-| `prometheus.enabled` | boolean | No | `false` | `true`, `false` | Start the HTTP `/metrics`, `/livez`, and `/readyz` listener in any role. An address alone does not enable it. |
-| `prometheus.address` | string | No | `:9090` | Any valid TCP listen address; empty uses the default | HTTP listen address used only when `prometheus.enabled` is true. |
+| `health.address` | string | No | `:8081` | Any valid TCP listen address; empty uses the default | Always-on HTTP listener for `/livez` and `/readyz` in every role. |
+| `prometheus.enabled` | boolean | No | `false` | `true`, `false` | Start the separate metrics listener; health endpoints are unaffected. |
+| `prometheus.address` | string | No | `:9090` | Any valid TCP listen address; empty uses the default | Listen address for `/metrics`, used only when enabled. |
 | `storage` | object | Engine/Worker | none | Exactly one storage object | The process-bound Store; forbidden in Gateway. |
 | `storage.name` | string | Yes | none | Nonempty UTF-8 identity, at most 256 bytes | Globally unique Store name selected by `address.store`; all replicas of that Store use the same name. |
 | `storage.driver` | enum string | Yes | none | `mongodb`, `elasticsearch`, `opensearch` | Adapter used by this storage instance. See [Storage driver values](#storage-driver-values). |

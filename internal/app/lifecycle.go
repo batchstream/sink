@@ -23,12 +23,20 @@ func (app *Application) Run(ctx context.Context) error {
 	if app.topics != nil {
 		app.background.Go(func() { app.topics.Run(runContext) })
 	}
-	runErrors := make(chan error, 3)
+	runErrors := make(chan error, 4)
 	if app.grpcServer != nil {
 		go func() {
 			err := app.grpcServer.Serve(app.listener)
 			if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 				runErrors <- fmt.Errorf("serve gRPC: %w", err)
+			}
+		}()
+	}
+	if app.healthServer != nil {
+		go func() {
+			err := app.healthServer.Serve(app.healthListener)
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				runErrors <- fmt.Errorf("serve health endpoints: %w", err)
 			}
 		}()
 	}
@@ -86,6 +94,17 @@ func (app *Application) Close() {
 	}
 	if app.batchingServer != nil {
 		app.batchingServer.Close()
+	}
+	if app.healthServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), app.config.ShutdownTimeout)
+		defer cancel()
+		if err := app.healthServer.Shutdown(ctx); err != nil {
+			slog.Error("shut down health endpoints", "error", err)
+			_ = app.healthServer.Close()
+		}
+	}
+	if app.healthListener != nil {
+		_ = app.healthListener.Close()
 	}
 	if app.metricsServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), app.config.ShutdownTimeout)

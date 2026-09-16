@@ -5,6 +5,8 @@ grpc:
   address: :8080
   max_receive_message_bytes: 64MiB
   max_send_message_bytes: 64MiB
+health:
+  address: ":8081"
 prometheus:
   enabled: true
   address: :9090

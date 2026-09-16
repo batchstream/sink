@@ -13,7 +13,7 @@ import (
 
 func replicaView(t *testing.T, gateway *Server, engines []fixtureEngine) *discovery {
 	t.Helper()
-	route, err := routeFor(gateway.current.Load(), engines[0].store)
+	route, err := routeFor(gateway.current, engines[0].store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestReplicaReturnBudgetRemainsScopedToOriginalRPC(t *testing.T) {
 	engines := []fixtureEngine{testEngine(t, "a", 200), testEngine(t, "a", 200)}
 	gateway := testGateway(t, 200, engines[0])
 	replicaView(t, gateway, engines)
-	routes, release, err := gateway.pool.destinations(t.Context(), gateway.current.Load().routes["a"])
+	routes, release, err := gateway.pool.destinations(t.Context(), gateway.current.routes["a"])
 	if err != nil {
 		t.Fatal(err)
 	}

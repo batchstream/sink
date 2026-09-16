@@ -1,12 +1,12 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
@@ -14,6 +14,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
+
+const MaxFileBytes = 4 << 20
 
 // Load reads one strict YAML document. It never connects to storage or Kafka.
 func Load(path string) (Config, error) {
@@ -27,9 +29,6 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return empty, fmt.Errorf("config file %q: %w", path, err)
 	}
-	if loaded.Gateway.RoutesFile != "" && !filepath.IsAbs(loaded.Gateway.RoutesFile) {
-		loaded.Gateway.RoutesFile = filepath.Join(filepath.Dir(path), loaded.Gateway.RoutesFile)
-	}
 	return loaded, nil
 }
 
@@ -37,8 +36,15 @@ func Load(path string) (Config, error) {
 // becomes available to the application. Explicit zero limits are invalid.
 func Decode(reader io.Reader) (Config, error) {
 	var empty Config
+	data, err := io.ReadAll(io.LimitReader(reader, MaxFileBytes+1))
+	if err != nil {
+		return empty, fmt.Errorf("read configuration: %w", err)
+	}
+	if len(data) > MaxFileBytes {
+		return empty, errors.New("configuration exceeds 4 MiB")
+	}
 	var file configFile
-	decoder := yaml.NewDecoder(reader)
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&file); err != nil {
 		return empty, fmt.Errorf("decode configuration: %w", err)
@@ -68,6 +74,7 @@ func resolve(file configFile) (Config, error) {
 	loaded.GRPC.MaxReceiveMessageBytes = v.bytes("grpc.max_receive_message_bytes", file.GRPC.MaxReceiveMessageBytes, 64<<20, math.MaxInt)
 	loaded.GRPC.MaxSendMessageBytes = v.bytes("grpc.max_send_message_bytes", file.GRPC.MaxSendMessageBytes, 64<<20, math.MaxInt)
 	loaded.Prometheus.Enabled = file.Prometheus.Enabled
+	loaded.Health.Address = valueOrDefault(file.Health.Address, ":8081")
 	loaded.Prometheus.Address = valueOrDefault(file.Prometheus.Address, ":9090")
 	loaded.ShutdownTimeout = v.duration("shutdown_timeout", file.ShutdownTimeout, 15*time.Second)
 	loaded.Service = resolveService(file.Service, loaded.GRPC, &v)

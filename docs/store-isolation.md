@@ -34,12 +34,11 @@ that two targets are different. Deployment inventory must enforce this globally.
 Engine checks the expected Store name on every forwarded call.
 It rejects an entire mismatched batch before storage or publishing.
 
-Gateway uses `mode: gateway`, `grpc`, `prometheus`, `service.request`, and `gateway`:
+Gateway uses `mode: gateway`, `grpc`, `health`, `prometheus`, `service.request`, and `gateway`:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `gateway.routes_file` | required | Route YAML file; relative to the main config file |
-| `gateway.reload_interval` | `5s` | Check for a complete new route snapshot |
+| `gateway.routes` | required | Inline Store routes; every entry is active; restart after changes |
 | `gateway.dns_refresh_interval` | `30s` | Refresh DNS even while existing connections are healthy |
 | `gateway.idle_timeout` | `5m` | Close channels that have no active calls and remain idle |
 | `gateway.max_connections` | `256` | Maximum cached gRPC channels, created lazily; a channel can have multiple backend connections |
@@ -54,15 +53,15 @@ replies additionally reserve their configured maximum response allowance. Plain
 puts, deletes and async acceptance do not reserve a full document response quota.
 Size limits do not include all Go, gRPC, TLS or OS allocation overhead.
 
-The route file has this shape:
+Routes belong to the same Gateway configuration:
 
 ```yaml
-routes:
-  - store: primary
-    target: dns:///primary-engine.example:443
-    state: active
-    tls:
-      server_name: primary-engine.example
+gateway:
+  routes:
+    - store: primary
+      target: dns:///primary-engine.example:443
+      tls:
+        server_name: primary-engine.example
 ```
 
 TLS with system trust roots and a minimum of TLS 1.2 is the default. An explicitly
@@ -72,25 +71,25 @@ terminate TLS in a trusted proxy when using TLS routes. Keep Engine endpoints
 inside the trusted service network. Store name checking does not provide
 client authentication or authorization.
 
-Routes support `active`, `draining`, and `disabled`. Only `active` accepts new
-Gateway requests. Already-started calls retain their original snapshot until they
-finish or their deadline expires. Idle channels may be evicted sooner when the
-cache is full; active channels are never evicted to make room. A full active cache
-returns resource exhaustion without forwarding the request.
+All configured routes are active. There is no route state flag or hot reload.
+Add, remove, or update entries in `gateway.routes`, then restart Gateway. During
+a rolling restart, each instance uses the configuration loaded at its own startup.
+Graceful shutdown drains accepted calls within the configured deadline; never
+replay a write automatically just because its connection closes.
 
-Replace the route file atomically. In containers, mount its containing directory
-so an atomic file replacement is visible; a bind mount of a single file can pin
-the old inode. Invalid reloads keep the previous snapshot;
-an invalid initial file fails startup. Route files are limited to 4 MiB and 10,000
-entries with unique Store names. Gateway retains no identity history for removed
-routes; a Store can be re-added with a new Engine address. The name check cannot
-detect a wrong database URI configured under the correct Store name. Database
-migrations require coordinated deployment and data migration plans. Gateway
-replicas converge independently: compare
-`sink_gateway_config_info{sha256="..."}` before declaring a rollout complete.
+Idle channels may be evicted sooner when the cache is full; active channels are
+protected. A full active cache returns resource exhaustion without forwarding.
+DNS refresh still discovers Engine replica changes within a configured target.
 
-Main configuration changes require a restart. `sink config check --config FILE`
-also validates a Gateway's referenced route file offline.
+An invalid configuration fails startup. Configuration files are limited to 4 MiB
+and routes to 10,000 entries with unique Store names. Removing a route does not
+delete its database or topics. Store name checks cannot detect a wrong database
+URI under the correct name; database migration requires coordinated deployment.
+Compare `sink_gateway_config_info{sha256="..."}` across Gateway replicas to
+confirm their normalized startup routes match after a rolling restart.
+
+`sink config check --config FILE` validates the configuration and inline routes
+offline. All configuration changes require a restart.
 
 ## Request and failure behavior
 
@@ -127,9 +126,10 @@ to Engine. Neither SDK nor public protobuf changes are required.
 
 ## Readiness, metrics and scaling
 
-HTTP metrics and health endpoints require `prometheus.enabled: true`; the listener
-is disabled by default. Its address defaults to `:9090`. Gateway and Engine gRPC
-health remain independent of this switch.
+HTTP health endpoints are always available at `health.address` (default `:8081`).
+Prometheus uses its own `prometheus.address` (default `:9090`) and is disabled
+unless `prometheus.enabled` is true. Gateway and Engine gRPC health remains
+independent of Prometheus as well.
 
 Gateway and Engine `/readyz` indicate that the process can serve its role. One
 failed Engine does not make Gateway unready. Engine capability probes remain
@@ -142,7 +142,7 @@ Gateway exports bounded method/code labels with `sink_gateway_requests_total`,
 `sink_gateway_request_duration_seconds`, `sink_gateway_engine_duration_seconds`,
 `sink_gateway_in_flight_requests`, `sink_gateway_in_flight_bytes`,
 `sink_gateway_rejected_total`, `sink_gateway_routes`,
-`sink_gateway_route_reloads_total` and `sink_gateway_config_info`.
+and `sink_gateway_config_info`.
 Engine retains the existing `sink_grpc_server_*`, admission, batching and Lua
 metrics, labeled by the original public method even over private forwarding.
 Worker retains the existing pending/oldest/last-poll/last-commit/retry/DLQ metrics.

@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,13 +20,12 @@ type Server struct {
 	sink.UnimplementedSinkServer
 	config         config.Gateway
 	request        config.Request
-	current        atomic.Pointer[snapshot]
+	current        *snapshot
 	pool           connections
 	mu             sync.Mutex
 	inFlight       int
 	bytes          int
 	metrics        *metrics
-	reloadMu       sync.Mutex
 	activeStores   map[string]int
 	nativeSequence atomic.Uint64
 }
@@ -38,10 +36,10 @@ type Options struct {
 }
 
 func New(opts Options) (*Server, error) {
-	if opts.Gateway.MaxRequests <= 0 || opts.Gateway.MaxRequestsPerStore <= 0 || opts.Gateway.MaxBytes <= 0 || opts.Gateway.MaxFanout <= 0 || opts.Gateway.MaxConnections <= 0 || opts.Gateway.ReloadInterval <= 0 || opts.Gateway.IdleTimeout <= 0 || opts.Gateway.DNSRefreshInterval <= 0 || opts.Request.Timeout <= 0 || opts.Request.MaxOperations <= 0 || opts.Request.MaxReadBytes <= 0 || opts.MaxMessageBytes <= 0 {
+	if opts.Gateway.MaxRequests <= 0 || opts.Gateway.MaxRequestsPerStore <= 0 || opts.Gateway.MaxBytes <= 0 || opts.Gateway.MaxFanout <= 0 || opts.Gateway.MaxConnections <= 0 || opts.Gateway.IdleTimeout <= 0 || opts.Gateway.DNSRefreshInterval <= 0 || opts.Request.Timeout <= 0 || opts.Request.MaxOperations <= 0 || opts.Request.MaxReadBytes <= 0 || opts.MaxMessageBytes <= 0 {
 		return nil, errors.New("gateway limits must be positive")
 	}
-	initial, err := readRoutes(opts.Gateway.RoutesFile)
+	initial, err := newSnapshot(opts.Gateway.Routes)
 	if err != nil {
 		return nil, err
 	}
@@ -52,52 +50,22 @@ func New(opts Options) (*Server, error) {
 	server.pool.messageBytes = opts.MaxMessageBytes + forwarding.EnvelopeBytes
 	server.pool.idleTimeout = opts.Gateway.IdleTimeout
 	server.pool.dnsRefresh = opts.Gateway.DNSRefreshInterval
-	server.current.Store(initial)
+	server.current = initial
 	server.metrics.routes.Set(float64(len(initial.routes)))
 	server.metrics.config.WithLabelValues(initial.hash).Set(1)
 	return server, nil
 }
 
-// Reload swaps complete snapshots; an in-flight RPC retains its old snapshot.
-func (s *Server) Reload() (reloadErr error) {
-	defer func() {
-		if reloadErr != nil {
-			s.metrics.reloads.WithLabelValues("failed").Inc()
-		}
-	}()
-	s.reloadMu.Lock()
-	defer s.reloadMu.Unlock()
-	next, err := readRoutes(s.config.RoutesFile)
-	if err != nil {
-		return err
-	}
-	previous := s.current.Load()
-	if next.hash == previous.hash {
-		return nil
-	}
-	s.current.Store(next)
-	s.metrics.routes.Set(float64(len(next.routes)))
-	s.metrics.config.Reset()
-	s.metrics.config.WithLabelValues(next.hash).Set(1)
-	s.metrics.reloads.WithLabelValues("applied").Inc()
-	return nil
-}
+// Run only reclaims idle downstream connections; configuration is fixed at startup.
 func (s *Server) Run(ctx context.Context) {
-	ticker := time.NewTicker(min(s.config.ReloadInterval, s.config.IdleTimeout))
+	ticker := time.NewTicker(min(5*time.Second, s.config.IdleTimeout))
 	defer ticker.Stop()
-	lastReload := time.Now()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			s.pool.expire()
-			if time.Since(lastReload) >= s.config.ReloadInterval {
-				if err := s.Reload(); err != nil {
-					slog.Warn("Gateway kept last valid route snapshot", "error", err)
-				}
-				lastReload = time.Now()
-			}
 		}
 	}
 }
@@ -190,9 +158,6 @@ func routeFor(view *snapshot, store string) (Route, error) {
 	route, exists := view.routes[store]
 	if !exists {
 		return route, status.Error(codes.InvalidArgument, "Store is not configured")
-	}
-	if route.State != "active" {
-		return route, status.Error(codes.Unavailable, "Store route is not accepting new requests")
 	}
 	return route, nil
 }

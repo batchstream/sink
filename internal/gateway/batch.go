@@ -30,7 +30,7 @@ func (s *Server) records(ctx context.Context, req *forward.ForwardRequest) (*for
 		return nil, err
 	}
 	defer release()
-	view := s.current.Load()
+	view := s.current
 	response := emptyResponse(req, len(addresses))
 	groups := make([]storeGroup, 0)
 	positions := make(map[Route]int)

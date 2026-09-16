@@ -79,19 +79,23 @@ func serveEngine(t testing.TB, backend forward.EngineServer, public ...sink.Sink
 	return listener.Addr().String()
 }
 func routeText(engines ...fixtureEngine) string {
-	text := "routes:\n"
+	text := "mode: gateway\ngateway:\n  routes:\n"
 	for _, e := range engines {
-		text += fmt.Sprintf("  - store: %s\n    target: %s\n    tls: {insecure: true}\n", e.store, e.target)
+		text += fmt.Sprintf("    - store: %s\n      target: %s\n      tls: {insecure: true}\n", e.store, e.target)
 	}
 	return text
 }
 func testGateway(t testing.TB, maximum int, engines ...fixtureEngine) *Server {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "routes.yaml")
+	path := filepath.Join(t.TempDir(), "gateway.yaml")
 	if err := os.WriteFile(path, []byte(routeText(engines...)), 0600); err != nil {
 		t.Fatal(err)
 	}
-	settings := config.Gateway{RoutesFile: path, ReloadInterval: time.Second, DNSRefreshInterval: time.Second, IdleTimeout: time.Minute, MaxConnections: 10, MaxRequests: 32, MaxRequestsPerStore: 32, MaxBytes: 256 << 20, MaxFanout: 2}
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := config.Gateway{Routes: loaded.Gateway.Routes, DNSRefreshInterval: time.Second, IdleTimeout: time.Minute, MaxConnections: 10, MaxRequests: 32, MaxRequestsPerStore: 32, MaxBytes: 256 << 20, MaxFanout: 2}
 	request := config.Request{Timeout: 3 * time.Second, MaxOperations: 1000, MaxReadBytes: maximum}
 	opts := Options{Gateway: settings, Request: request, MaxMessageBytes: 64 << 20}
 	server, err := New(opts)
@@ -309,50 +313,7 @@ func TestLostMutationReplyIsNotReplayedAndKeepsOtherSuccess(t *testing.T) {
 		t.Fatalf("unsafe replay or lost partial success: %v", response)
 	}
 }
-func TestReloadRetainsSnapshotForWholeRequest(t *testing.T) {
-	held := &controlledEngine{store: "a", entered: make(chan struct{}, 1), release: make(chan struct{})}
-	a := fixtureEngine{store: "a", target: serveEngine(t, held)}
-	old := &controlledEngine{store: "b"}
-	next := &controlledEngine{store: "b"}
-	b := fixtureEngine{store: "b", target: serveEngine(t, old)}
-	replacement := fixtureEngine{store: "b", target: serveEngine(t, next)}
-	gateway := testGateway(t, 4096, a, b)
-	request := &sink.WriteRequest{CompletionMode: sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, Operations: []*sink.WriteOperation{put("a", "one", true), put("b", "two", true)}}
-	done := make(chan error, 1)
-	go func() { _, err := gateway.Write(t.Context(), request); done <- err }()
-	select {
-	case <-held.entered:
-	case <-time.After(time.Second):
-		t.Fatal("first Store did not start")
-	}
-	if err := os.WriteFile(gateway.config.RoutesFile, []byte(routeText(a, replacement)), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := gateway.Reload(); err != nil {
-		t.Fatal(err)
-	}
-	close(held.release)
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	if old.calls.Load() != 1 || next.calls.Load() != 0 {
-		t.Fatal("request mixed route snapshots")
-	}
-	request.Operations = request.Operations[1:]
-	if _, err := gateway.Write(t.Context(), request); err != nil {
-		t.Fatal(err)
-	}
-	if next.calls.Load() != 1 {
-		t.Fatal("new request did not use new snapshot")
-	}
-	hash := gateway.current.Load().hash
-	if err := os.WriteFile(gateway.config.RoutesFile, []byte("routes: [invalid]"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := gateway.Reload(); err == nil || gateway.current.Load().hash != hash {
-		t.Fatal("invalid route file replaced last valid snapshot")
-	}
-}
+
 func TestConnectionsAreLazyBoundedAndExpire(t *testing.T) {
 	a := testEngine(t, "a", 4096)
 	b := testEngine(t, "b", 4096)
@@ -361,8 +322,8 @@ func TestConnectionsAreLazyBoundedAndExpire(t *testing.T) {
 		t.Fatal("connections were eagerly opened")
 	}
 	gateway.pool.maximum = 1
-	routeA := gateway.current.Load().routes["a"]
-	routeB := gateway.current.Load().routes["b"]
+	routeA := gateway.current.routes["a"]
+	routeB := gateway.current.routes["b"]
 	first, err := gateway.pool.acquire(routeA)
 	if err != nil {
 		t.Fatal(err)
@@ -413,18 +374,53 @@ func TestGatewayAdmissionAndConcurrentBudgets(t *testing.T) {
 }
 func TestRoutesRejectDuplicateStoreNames(t *testing.T) {
 	a := fixtureEngine{store: "a", target: "127.0.0.1:1"}
-	gateway := testGateway(t, 4096, a)
-	previous := gateway.current.Load()
 	duplicate := a
 	duplicate.target = "127.0.0.1:2"
-	if err := os.WriteFile(gateway.config.RoutesFile, []byte(routeText(a, duplicate)), 0600); err != nil {
+	loaded, err := config.Decode(strings.NewReader(routeText(a, duplicate)))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readRoutes(gateway.config.RoutesFile); err == nil || !strings.Contains(err.Error(), "duplicate Store") {
-		t.Fatalf("duplicate name accepted at startup: %v", err)
+	if err := ValidateRoutes(loaded.Gateway.Routes); err == nil || !strings.Contains(err.Error(), "duplicate Store") {
+		t.Fatalf("duplicate name accepted: %v", err)
 	}
-	if err := gateway.Reload(); err == nil || gateway.current.Load() != previous {
-		t.Fatal("duplicate name replaced the valid route snapshot")
+}
+
+func TestGatewayRoutesChangeOnlyAfterRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gateway.yaml")
+	initial := fixtureEngine{store: "a", target: "127.0.0.1:1"}
+	if err := os.WriteFile(path, []byte(routeText(initial)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{Gateway: loaded.Gateway, Request: loaded.Service.Request, MaxMessageBytes: loaded.GRPC.MaxSendMessageBytes}
+	running, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer running.Close()
+	replacement := fixtureEngine{store: "a", target: "127.0.0.1:2"}
+	if err := os.WriteFile(path, []byte(routeText(replacement)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err = config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts.Gateway = loaded.Gateway
+	restarted, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restarted.Close()
+	if running.current.routes["a"].Target != initial.target || restarted.current.routes["a"].Target != replacement.target {
+		t.Fatal("configuration update must affect only the restarted Gateway")
+	}
+	opts.Gateway.Routes[0].Target = "127.0.0.1:3"
+	if restarted.current.routes["a"].Target != replacement.target {
+		t.Fatal("Gateway did not retain its own immutable route snapshot")
 	}
 }
 
@@ -555,27 +551,6 @@ func TestFanoutIsBounded(t *testing.T) {
 	close(release)
 	if err := <-done; err != nil {
 		t.Fatal(err)
-	}
-}
-func TestReloadReaddsStoreWithNewEngineAddress(t *testing.T) {
-	a := fixtureEngine{store: "a", target: "127.0.0.1:1"}
-	b := fixtureEngine{store: "b", target: "127.0.0.1:2"}
-	gateway := testGateway(t, 4096, a, b)
-	if err := os.WriteFile(gateway.config.RoutesFile, []byte(routeText(b)), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := gateway.Reload(); err != nil {
-		t.Fatal(err)
-	}
-	a.target = "127.0.0.1:3"
-	if err := os.WriteFile(gateway.config.RoutesFile, []byte(routeText(a, b)), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := gateway.Reload(); err != nil {
-		t.Fatal(err)
-	}
-	if routes := gateway.current.Load().routes; len(routes) != 2 || routes[a.store].Target != a.target {
-		t.Fatal("re-added Store did not use its new Engine address")
 	}
 }
 

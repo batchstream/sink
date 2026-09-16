@@ -1,12 +1,17 @@
 mode: gateway
 grpc:
   address: ":8080"
+health:
+  address: ":8081"
 prometheus:
   enabled: true
   address: ":9090"
 gateway:
-  routes_file: routing/routes.yaml
-  reload_interval: 5s
+  routes: # Store routes are loaded only at startup; restart after changes.
+    - store: primary
+      target: dns:///engine:8080
+      tls:
+        insecure: true # Local Compose network; use TLS termination in production.
   dns_refresh_interval: 30s
   idle_timeout: 5m
   max_connections: 256

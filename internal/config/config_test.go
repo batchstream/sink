@@ -23,8 +23,8 @@ storage:
 	if loaded.Mode != ModeEngine || loaded.GRPC.Address != ":8080" {
 		t.Fatalf("Load() = %#v", loaded)
 	}
-	if loaded.Prometheus.Enabled || loaded.Prometheus.Address != ":9090" {
-		t.Fatalf("Load() Prometheus = %#v", loaded.Prometheus)
+	if loaded.Prometheus.Enabled || loaded.Prometheus.Address != ":9090" || loaded.Health.Address != ":8081" {
+		t.Fatalf("Load() health/Prometheus = %#v / %#v", loaded.Health, loaded.Prometheus)
 	}
 	configured := loaded.Storage
 	if configured.Name != "primary" || configured.Driver != DriverMongoDB || configured.MongoDB.URI != "mongodb://mongodb:27017" {
@@ -169,7 +169,7 @@ service:
 
 func TestLoadConfigRejectsMultipleStorages(t *testing.T) {
 	path := writeConfig(t, `
-prometheus:
+health:
   address: ":9090"
 storages:
   - name: mongo-main
@@ -654,8 +654,8 @@ func TestPrometheusRequiresExplicitOptIn(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if loaded.Prometheus.Enabled != test.enabled || loaded.Prometheus.Address != test.address {
-				t.Fatalf("unexpected Prometheus settings: %#v", loaded.Prometheus)
+			if loaded.Prometheus.Enabled != test.enabled || loaded.Prometheus.Address != test.address || loaded.Health.Address != ":8081" {
+				t.Fatalf("unexpected health/Prometheus settings: %#v / %#v", loaded.Health, loaded.Prometheus)
 			}
 		})
 	}

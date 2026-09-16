@@ -18,6 +18,9 @@ func newGateway(opts Options) (*Application, error) {
 			app.Close()
 		}
 	}()
+	if err := app.configureHealth(); err != nil {
+		return nil, err
+	}
 	if loaded.Prometheus.Enabled {
 		if err := app.configurePrometheus(server.MetricsHandler()); err != nil {
 			return nil, err

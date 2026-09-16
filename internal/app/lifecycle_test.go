@@ -26,6 +26,8 @@ func TestApplicationModesKeepTheirOwnResources(t *testing.T) {
 			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 			defer backend.Close()
 			input := fmt.Sprintf(`mode: %s
+health:
+  address: "127.0.0.1:0"
 grpc:
   address: "127.0.0.1:0"
 prometheus:
@@ -109,6 +111,8 @@ func TestAssemblyFailureReleasesPreviouslyOpenedListener(t *testing.T) {
 	address := metrics.Addr().String()
 	_ = metrics.Close()
 	input := fmt.Sprintf(`mode: engine
+health:
+  address: "127.0.0.1:0"
 grpc:
   address: %q
 prometheus:

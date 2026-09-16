@@ -34,6 +34,8 @@ type Application struct {
 	grpcServer      *grpc.Server
 	health          *health.Server
 	listener        net.Listener
+	healthServer    *http.Server
+	healthListener  net.Listener
 	metricsServer   *http.Server
 	metricsListener net.Listener
 }
@@ -68,6 +70,9 @@ func New(ctx context.Context, opts Options) (*Application, error) {
 		}
 	}()
 	var observed *sinkmetrics.Metrics
+	if err := app.configureHealth(); err != nil {
+		return nil, err
+	}
 	if loaded.Prometheus.Enabled {
 		observed, err = sinkmetrics.New(opts.Version, loaded.Storage.Name)
 		if err != nil {

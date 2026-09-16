@@ -18,7 +18,9 @@ cleanup() {
   fi
   "${compose[@]}" logs --no-color > "${artifacts}/containers.log" 2>&1 || true
   "${compose[@]}" ps --all --format json > "${artifacts}/containers.json" 2>&1 || true
-  "${compose[@]}" down --volumes --remove-orphans > "${artifacts}/cleanup.log" 2>&1 || true
+  if ! "${compose[@]}" down --volumes --remove-orphans > "${artifacts}/cleanup.log" 2>&1; then
+    result=1
+  fi
   echo "Performance evidence: ${artifacts} (exit ${result})"
   exit "${result}"
 }
@@ -82,6 +84,7 @@ fixed-500 upsert 32 1 1024 false 500'
   *) echo 'SINK_PERF_PROFILE must be compare or matrix' >&2; exit 1 ;;
 esac
 printf '%s\n' "${cases}" > "${artifacts}/cases.txt"
+failed=0
 for repeat in $(seq 1 "${SINK_PERF_REPEATS:-1}"); do
   while read -r label workload concurrency batch padding returned rate; do
     dataset="perf-${label}-${repeat}"
@@ -97,5 +100,9 @@ for repeat in $(seq 1 "${SINK_PERF_REPEATS:-1}"); do
     result="$?"
     set -e
     printf '%s %s %d\n' "${label}" "${repeat}" "${result}" >> "${artifacts}/exit-codes.txt"
+    if [[ "${result}" != 0 ]]; then
+      failed=1
+    fi
   done <<< "${cases}"
 done
+exit "${failed}"

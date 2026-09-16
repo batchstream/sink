@@ -19,7 +19,7 @@ Use `sink config check --config FILE` to validate the schema and limits without
 connecting to dependencies or printing configured values.
 
 Configuration is loaded once during startup. Unknown fields, malformed YAML,
-multiple YAML documents, invalid Store/database identities, invalid positive-integer
+multiple YAML documents, invalid Store names, invalid positive-integer
 values, and incompatible option combinations prevent the process from
 starting. Backend connections are lazy and dependency recovery is independent
 within each Engine or Worker. Kafka publication/consumption remains unavailable

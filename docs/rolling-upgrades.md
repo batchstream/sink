@@ -98,7 +98,7 @@ an undersized drain window into a zero-interruption rollout.
 
 ```sh
 go test -race ./internal/app ./internal/gateway \
-  -run 'Test(HTTPReadinessRejectsClosedRoles|ShutdownWithdrawsReadinessAndDrainsAcceptedRPC|MembershipWithdrawalRetainsInFlightRequestSnapshot)' -count=10
+  -run 'Test(HTTPReadinessRejectsClosedRoles|ReadinessProbeCannotRestoreClosedRole|ShutdownWithdrawsReadinessAndDrainsAcceptedRPC|MembershipWithdrawalRetainsInFlightRequestSnapshot)' -count=10
 go test -race -tags=integration ./internal/gateway \
   -run '^TestGateway(DiscoversDNSScaleChanges|DNSWithdrawalDrainBoundary)$' -count=3 -timeout=3m
 ```

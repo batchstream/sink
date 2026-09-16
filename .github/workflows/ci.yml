@@ -263,20 +263,19 @@ jobs:
     steps:
       - name: Check out Sink candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Check out existing public SDK
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: liran/sink-go
-          path: sink-go
-          ref: main
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
-      - name: Verify existing SDK against isolated roles
+      - name: Resolve the SDK pinned by the server
+        id: sdk
+        run: |
+          go mod download github.com/liran/sink-go
+          echo "directory=$(go list -m -f '{{.Dir}}' github.com/liran/sink-go)" >> "${GITHUB_OUTPUT}"
+      - name: Verify matching SDK against isolated roles
         env:
-          SINK_GO_DIR: ${{ github.workspace }}/sink-go
+          SINK_GO_DIR: ${{ steps.sdk.outputs.directory }}
           TMPDIR: ${{ runner.temp }}
         run: bash scripts/test-isolated-quickstart.sh
       - name: Upload isolated role evidence

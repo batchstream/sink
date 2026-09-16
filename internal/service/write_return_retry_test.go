@@ -65,14 +65,14 @@ func TestReturningQuotaSettlesFinalCASOutcome(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				opts := service.Options{Storage: backend, Lua: lua, MaxReadBytes: 400}
+				opts := service.Options{BoundStore: "primary", Storage: backend, Lua: lua, MaxReadBytes: 400}
 				core, err := service.New(opts)
 				if err != nil {
 					t.Fatal(err)
 				}
 				var server sink.SinkServer = core
 				if batching {
-					batchOpts := service.BatchingOptions{StoreNames: []string{"primary"}, MaxWait: time.Millisecond}
+					batchOpts := service.BatchingOptions{MaxWait: time.Millisecond}
 					batch, err := service.NewBatchingServer(core, batchOpts)
 					if err != nil {
 						t.Fatal(err)

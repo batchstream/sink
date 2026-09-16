@@ -78,7 +78,7 @@ func TestSmallVisibleWriteReturnsUnusedWorkingCapacityToScans(t *testing.T) {
 	}
 	core.admissionMu.Lock()
 	retained := core.inFlightBytes
-	storeRetained := core.storeBytes["primary"]
+	storeRetained := core.inFlightBytes
 	core.admissionMu.Unlock()
 	if retained >= 1<<20 || retained <= 0 || retained != storeRetained {
 		t.Fatalf("small write kept hypothetical snapshots: global=%d store=%d", retained, storeRetained)
@@ -101,7 +101,7 @@ func TestSmallVisibleWriteReturnsUnusedWorkingCapacityToScans(t *testing.T) {
 	if result.err != nil || result.response.GetResults()[0].GetStatus() != sink.WriteStatus_WRITE_STATUS_APPLIED {
 		t.Fatalf("write result: %v, %v", result.response, result.err)
 	}
-	if core.inFlightBytes != 0 || core.storeBytes["primary"] != 0 || core.inFlightRequests != 0 {
+	if core.inFlightBytes != 0 || core.inFlightRequests != 0 {
 		t.Fatal("resized reservation leaked or released its original size twice")
 	}
 	t.Logf("synthetic small merge reservation: %d -> %d bytes while waiting for visibility", estimate.bytes, retained)

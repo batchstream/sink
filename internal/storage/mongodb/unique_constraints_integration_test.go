@@ -38,7 +38,7 @@ func constraintServer(t *testing.T, fixture *integrationFixture) (*service.Serve
 		t.Fatal(err)
 	}
 	observed := &constraintStorage{Storage: fixture.store}
-	opts := service.Options{Storage: observed, Lua: engine}
+	opts := service.Options{BoundStore: "primary", Storage: observed, Lua: engine}
 	server, err := service.New(opts)
 	if err != nil {
 		t.Fatal(err)

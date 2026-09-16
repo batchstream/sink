@@ -117,7 +117,7 @@ func BenchmarkMergeFoldingContention(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	options := service.Options{Storage: backend, Lua: engine, MaxReadBytes: 1 << 20, MaxMergeAttempts: 1000}
+	options := service.Options{BoundStore: "primary", Storage: backend, Lua: engine, MaxReadBytes: 1 << 20, MaxMergeAttempts: 1000}
 	server, err := service.New(options)
 	if err != nil {
 		b.Fatal(err)

@@ -20,6 +20,7 @@ type ReadBudget struct {
 	shared    []*ReadBudget
 	caller    *ReadBudget
 	working   *ReadBudget
+	observe   func(int)
 }
 
 func NewReadBudget(maxBytes int) *ReadBudget {
@@ -27,6 +28,13 @@ func NewReadBudget(maxBytes int) *ReadBudget {
 		maxBytes = DefaultMaxReadBytes
 	}
 	budget := &ReadBudget{remaining: maxBytes, maximum: maxBytes}
+	return budget
+}
+
+// NewTrackedReadBudget accepts an explicit zero grant and reports successful charges.
+// observe must not call back into this budget.
+func NewTrackedReadBudget(maxBytes int, observe func(int)) *ReadBudget {
+	budget := &ReadBudget{remaining: max(0, maxBytes), maximum: max(0, maxBytes), observe: observe}
 	return budget
 }
 
@@ -89,5 +97,8 @@ func (b *ReadBudget) Reserve(size int) error {
 		return NewOperationError(ErrorCodeResourceExhausted, size >= 0 && size <= b.maximum-overhead, cause)
 	}
 	b.remaining -= size + overhead
+	if b.observe != nil {
+		b.observe(b.maximum - b.remaining)
+	}
 	return nil
 }

@@ -22,12 +22,12 @@ func TestLoadGeneratorReconcilesAcknowledgedWrites(t *testing.T) {
 	}
 	// Reconciliation starts above this limit and must retry smaller read
 	// batches without changing acknowledgement accounting.
-	serverOptions := service.Options{Storage: memory.New(), Lua: engine, StoreNames: []string{"mongo"}, MaxReadBytes: 2048}
+	serverOptions := service.Options{Storage: memory.New(), Lua: engine, BoundStore: "mongo", MaxReadBytes: 2048}
 	core, err := service.New(serverOptions)
 	if err != nil {
 		t.Fatal(err)
 	}
-	batchOptions := service.BatchingOptions{StoreNames: []string{"mongo"}, MaxWait: time.Millisecond}
+	batchOptions := service.BatchingOptions{MaxWait: time.Millisecond}
 	batched, err := service.NewBatchingServer(core, batchOptions)
 	if err != nil {
 		t.Fatal(err)

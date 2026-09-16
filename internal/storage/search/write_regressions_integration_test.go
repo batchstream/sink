@@ -133,12 +133,12 @@ func TestSearchAppliedCallsPassAnEarlierBatchWaitingForRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := service.Options{Storage: product.store, Lua: lua, RequestTimeout: 10 * time.Second, StoreNames: []string{"primary"}, MaxStoreRequests: 2, MaxInFlightRequests: 2}
+	opts := service.Options{BoundStore: "primary", Storage: product.store, Lua: lua, RequestTimeout: 10 * time.Second, MaxInFlightRequests: 2}
 	core, err := service.New(opts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	batchOpts := service.BatchingOptions{StoreNames: []string{"primary"}, MaxOperations: 1, MaxWait: time.Millisecond}
+	batchOpts := service.BatchingOptions{MaxOperations: 1, MaxWait: time.Millisecond}
 	server, err := service.NewBatchingServer(core, batchOpts)
 	if err != nil {
 		t.Fatal(err)

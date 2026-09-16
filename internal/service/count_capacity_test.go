@@ -43,13 +43,13 @@ func TestCountReservesBoundedResponsesAndReleasesCapacity(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			opts := service.Options{Storage: backend, Lua: engine, StoreNames: []string{"primary"}, AdmissionWait: 10 * time.Millisecond}
+			opts := service.Options{BoundStore: "primary", Storage: backend, Lua: engine, AdmissionWait: 10 * time.Millisecond, MaxInFlightRequests: 32}
 			server, err := service.New(opts)
 			if err != nil {
 				t.Fatal(err)
 			}
 			command := &sink.Command{Store: "primary", Method: "POST", Path: "/products/_search", ContentType: contentType}
-			want := 32 // Search counts can use every per-store request slot.
+			want := 32 // Search counts can use every configured process request slot.
 			if contentType == "application/bson" {
 				fields := bson.D{{Key: "find", Value: "products"}}
 				payload, err := bson.Marshal(fields)

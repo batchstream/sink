@@ -9,6 +9,7 @@ import (
 	"time"
 
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/forwarding"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/storage"
 	"google.golang.org/grpc/codes"
@@ -363,9 +364,9 @@ func (s *Server) executeWriteAttempt(
 	attempt := writeAttempt{
 		options:   opts,
 		results:   results,
-		snapshots: opts.budgets.fresh(s.maxReadBytes),
-		inputs:    opts.budgets.fresh(s.maxReadBytes),
-		outputs:   opts.budgets.fresh(s.maxReadBytes),
+		snapshots: opts.budgets.fresh(forwarding.Snapshots, s.maxReadBytes),
+		inputs:    opts.budgets.fresh(forwarding.Inputs, s.maxReadBytes),
+		outputs:   opts.budgets.fresh(forwarding.Outputs, s.maxReadBytes),
 		output:    storage.NewReadBudget(s.maxReadBytes),
 	}
 	next := make([]writeGroup, 0)

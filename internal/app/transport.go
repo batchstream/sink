@@ -1,10 +1,16 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/liran/sink/internal/config"
+	"github.com/liran/sink/internal/forwarding"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	sink "github.com/liran/sink/gen/sink"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
@@ -20,15 +26,38 @@ func (app *Application) configureGRPC(server sink.SinkServer, observed *sinkmetr
 		return fmt.Errorf("listen for gRPC: %w", err)
 	}
 	serverOptions := make([]grpc.ServerOption, 0, 4)
-	serverOptions = append(serverOptions, grpc.MaxRecvMsgSize(app.config.GRPC.MaxReceiveMessageBytes))
-	serverOptions = append(serverOptions, grpc.MaxSendMsgSize(app.config.GRPC.MaxSendMessageBytes))
+	overhead := 0
+	if app.config.Mode == config.ModeEngine {
+		overhead = forwarding.EnvelopeBytes
+	}
+	serverOptions = append(serverOptions, grpc.MaxRecvMsgSize(app.config.GRPC.MaxReceiveMessageBytes+overhead))
+	serverOptions = append(serverOptions, grpc.MaxSendMsgSize(app.config.GRPC.MaxSendMessageBytes+overhead))
 	vtCodec := protocol.NewVTProtoCodec()
 	serverOptions = append(serverOptions, grpc.ForceServerCodecV2(vtCodec))
+	interceptors := make([]grpc.UnaryServerInterceptor, 0, 2)
+	if app.gateway != nil {
+		interceptors = append(interceptors, app.gateway.UnaryInterceptor())
+	}
+	if app.config.Mode == config.ModeEngine {
+		store := app.config.Storage.Name
+		interceptors = append(interceptors, func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+			if info.FullMethod != "/sink.forward.v1.Engine/Forward" {
+				if sized, ok := req.(interface{ SizeVT() int }); ok && sized.SizeVT() > app.config.GRPC.MaxReceiveMessageBytes {
+					return nil, status.Error(codes.ResourceExhausted, "request exceeds message limit")
+				}
+			}
+			if err := protocol.CheckStore(req, store); err != nil {
+				return nil, err
+			}
+			return handler(ctx, req)
+		})
+	}
 	if observed != nil {
 		interceptor := observed.UnaryServerInterceptor()
-		serverOptions = append(serverOptions, grpc.UnaryInterceptor(interceptor))
+		interceptors = append(interceptors, interceptor)
 		serverOptions = append(serverOptions, grpc.StreamInterceptor(observed.StreamServerInterceptor()))
 	}
+	serverOptions = append(serverOptions, grpc.ChainUnaryInterceptor(interceptors...))
 	grpcServer := grpc.NewServer(serverOptions...)
 	sink.RegisterSinkServer(grpcServer, server)
 	healthServer := health.NewServer()

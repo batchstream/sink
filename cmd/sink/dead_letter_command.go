@@ -47,14 +47,8 @@ func runDeadLetterCommand(args []string, stdout io.Writer, stderr io.Writer) err
 	if err != nil {
 		return err
 	}
-	var selected *config.Storage
-	for index := range loaded.Storages {
-		if loaded.Storages[index].Name == *store {
-			selected = &loaded.Storages[index]
-			break
-		}
-	}
-	if selected == nil || !selected.Kafka.Enabled {
+	selected := &loaded.Storage
+	if selected.Name != *store || !selected.Kafka.Enabled {
 		return errors.New("selected store does not enable Kafka")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

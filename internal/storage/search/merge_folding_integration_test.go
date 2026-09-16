@@ -47,7 +47,7 @@ func TestSearchMergeFoldingCommitsAndMakesFinalStateVisibleOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := service.Options{Storage: observed, Lua: engine}
+	options := service.Options{BoundStore: "primary", Storage: observed, Lua: engine}
 	server, err := service.New(options)
 	if err != nil {
 		t.Fatal(err)

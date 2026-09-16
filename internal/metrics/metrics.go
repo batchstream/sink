@@ -291,7 +291,7 @@ func New(version string, storeNames ...string) (*Metrics, error) {
 	executionQueuedBytes := prometheus.NewGaugeVec(executionQueueBytesOptions, []string{"store"})
 	executionWaitOptions := prometheus.HistogramOpts{Namespace: namespace, Name: "execution_admission_wait_duration_seconds", Help: "Time queued direct synchronous RPCs waited before admission, rejection or cancellation.", Buckets: prometheus.DefBuckets}
 	executionAdmissionWait := prometheus.NewHistogramVec(executionWaitOptions, []string{"store"})
-	storeBytesOptions := prometheus.GaugeOpts{Namespace: namespace, Name: "execution_store_bytes", Help: "Execution reservation bytes charged to each store, including cross-store calls."}
+	storeBytesOptions := prometheus.GaugeOpts{Namespace: namespace, Name: "execution_store_bytes", Help: "Execution reservation bytes attributed to the process Store."}
 	storeExecutionBytes := prometheus.NewGaugeVec(storeBytesOptions, []string{"store"})
 	lastPollOptions := prometheus.GaugeOpts{Namespace: namespace, Name: "kafka_worker_last_poll_timestamp_seconds", Help: "Last completed Kafka poll by configured store."}
 	workerLastPoll := prometheus.NewGaugeVec(lastPollOptions, []string{"store"})

@@ -47,7 +47,7 @@ func nativeRevisionService(t *testing.T, backend storage.Storage) *service.Serve
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := service.Options{Storage: backend, Lua: lua, MaxReadBytes: 1 << 20}
+	opts := service.Options{BoundStore: "primary", Storage: backend, Lua: lua, MaxReadBytes: 1 << 20}
 	server, err := service.New(opts)
 	if err != nil {
 		t.Fatal(err)

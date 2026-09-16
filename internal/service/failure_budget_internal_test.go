@@ -100,7 +100,7 @@ func TestTinyFailureBudgetsKeepNonemptyMessages(t *testing.T) {
 	server.server.maxReadBytes = 1
 	operation := &sink.ReadOperation{Address: completionAddress("key")}
 	request := &sink.ReadRequest{Operations: []*sink.ReadOperation{operation, operation}}
-	read, err := server.Read(t.Context(), request)
+	read, err := server.server.Read(t.Context(), request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestTinyFailureBudgetsKeepNonemptyMessages(t *testing.T) {
 	}
 	deleteOperation := &sink.DeleteOperation{Address: completionAddress("key")}
 	deleteRequest := &sink.DeleteRequest{CompletionMode: sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, Operations: []*sink.DeleteOperation{deleteOperation, deleteOperation}}
-	deleted, err := server.Delete(t.Context(), deleteRequest)
+	deleted, err := server.server.Delete(t.Context(), deleteRequest)
 	if err != nil {
 		t.Fatal(err)
 	}

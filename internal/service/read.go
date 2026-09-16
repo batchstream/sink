@@ -5,13 +5,18 @@ import (
 	"errors"
 
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/forwarding"
+	"github.com/liran/sink/internal/protocol"
 	"github.com/liran/sink/internal/storage"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 func (s *Server) Read(ctx context.Context, req *sink.ReadRequest) (*sink.ReadResponse, error) {
-	outcome, err := s.read(ctx, req, nil)
+	if err := protocol.CheckStore(req, s.boundStore); err != nil {
+		return nil, err
+	}
+	outcome, err := s.read(ctx, req, contextBudgets(ctx, len(req.GetOperations())))
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +82,7 @@ func (s *Server) read(ctx context.Context, req *sink.ReadRequest, budgets *reque
 	if len(storageOperations) == 0 {
 		return outcome, nil
 	}
-	snapshotBudgets := budgets.fresh(s.maxReadBytes)
+	snapshotBudgets := budgets.fresh(forwarding.Snapshots, s.maxReadBytes)
 	working := storage.NewReadBudget(s.maxReadBytes)
 	for index := range storageOperations {
 		budget := sharedSnapshotBudget(owners[index], snapshotBudgets)
@@ -105,7 +110,7 @@ func (s *Server) read(ctx context.Context, req *sink.ReadRequest, budgets *reque
 
 	// Charge copies in each original RPC's order, including repeated keys.
 	// Check the aggregate output size before allocating any document copies.
-	outputBudgets := budgets.fresh(s.maxReadBytes)
+	outputBudgets := budgets.fresh(forwarding.Outputs, s.maxReadBytes)
 	outputBytes := make([]int, budgets.callerCount())
 	for index, operationIndex := range operationIndexes {
 		owner := budgets.owner(operationIndex)

@@ -211,8 +211,8 @@ func TestReadMicrobatchKeepsCompletedCallWhenLaterReadFails(t *testing.T) {
 func TestReadBatchConcurrencyUsesStoreLimit(t *testing.T) {
 	backend := &readCapacityStorage{Storage: memory.New(), started: make(chan struct{}, 3), gate: make(chan struct{})}
 	core := completionServer(t, backend).server
-	core.maxStoreRequests = 2
-	opts := BatchingOptions{StoreNames: []string{"primary"}, MaxOperations: 1, MaxWait: time.Millisecond}
+	core.maxInFlightRequests = 2
+	opts := BatchingOptions{MaxOperations: 1, MaxWait: time.Millisecond}
 	server, err := NewBatchingServer(core, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -227,7 +227,7 @@ func TestReadBatchConcurrencyUsesStoreLimit(t *testing.T) {
 			awaitCompletion(t, backend.started)
 		}
 	}
-	waitForQueuedCalls(t, server.reads["primary"], 1)
+	waitForQueuedCalls(t, server.reads, 1)
 	if backend.peak.Load() != 2 {
 		t.Fatalf("read concurrency = %d", backend.peak.Load())
 	}
@@ -255,7 +255,7 @@ func TestReadBatchConcurrencyUsesStoreLimit(t *testing.T) {
 func TestReadBatchCancellationKeepsOtherCallerAlive(t *testing.T) {
 	backend := &readCapacityStorage{Storage: memory.New(), started: make(chan struct{}, 1), gate: make(chan struct{})}
 	core := completionServer(t, backend).server
-	opts := BatchingOptions{StoreNames: []string{"primary"}, MaxOperations: 2, MaxWait: time.Second}
+	opts := BatchingOptions{MaxOperations: 2, MaxWait: time.Second}
 	server, err := NewBatchingServer(core, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -268,7 +268,7 @@ func TestReadBatchCancellationKeepsOtherCallerAlive(t *testing.T) {
 	second := readCapacityCall(t.Context(), "second")
 	canceled, healthy := make(chan error, 1), make(chan error, 1)
 	go func() { _, err := server.Read(ctx, first.request); canceled <- err }()
-	waitForQueuedCalls(t, server.reads["primary"], 1)
+	waitForQueuedCalls(t, server.reads, 1)
 	go func() { _, err := server.Read(t.Context(), second.request); healthy <- err }()
 	awaitCompletion(t, backend.started)
 	cancel()

@@ -297,7 +297,7 @@ func TestSearchServiceConcurrentMergeIsAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewLuaEngine() error = %v", err)
 	}
-	serverOptions := service.Options{
+	serverOptions := service.Options{BoundStore: "primary",
 		Storage:          fixture.store,
 		Lua:              luaEngine,
 		MaxMergeAttempts: 200,

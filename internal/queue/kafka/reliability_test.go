@@ -23,7 +23,7 @@ func reliabilityProcessor(t *testing.T, backend storage.Storage) *worker.Process
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverOptions := service.Options{Storage: backend, Lua: lua}
+	serverOptions := service.Options{BoundStore: "primary", Storage: backend, Lua: lua}
 	server, err := service.New(serverOptions)
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestOversizedKafkaRecordMustBePermanentFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverOptions := service.Options{Storage: memory.New(), Lua: lua, Publisher: publisher}
+	serverOptions := service.Options{BoundStore: "primary", Storage: memory.New(), Lua: lua, Publisher: publisher}
 	server, err := service.New(serverOptions)
 	if err != nil {
 		t.Fatal(err)

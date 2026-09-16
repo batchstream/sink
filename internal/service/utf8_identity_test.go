@@ -1,6 +1,8 @@
 package service_test
 
 import (
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"testing"
 
 	sink "github.com/liran/sink/gen/sink"
@@ -44,7 +46,7 @@ func TestVTRecordRequestsRejectInvalidUTF8Identities(t *testing.T) {
 			readOperation := &sink.ReadOperation{Address: &decoded}
 			readRequest := &sink.ReadRequest{Operations: []*sink.ReadOperation{readOperation}}
 			read, err := server.Read(t.Context(), readRequest)
-			if err != nil || read.Results[0].GetFailure().GetCode() != sink.FailureCode_FAILURE_CODE_INVALID_ARGUMENT {
+			if (field == "store" && status.Code(err) != codes.InvalidArgument) || (field != "store" && (err != nil || read.Results[0].GetFailure().GetCode() != sink.FailureCode_FAILURE_CODE_INVALID_ARGUMENT)) {
 				t.Fatalf("invalid identity was read: response=%v error=%v", read, err)
 			}
 			for _, mode := range []sink.CompletionMode{sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED} {
@@ -52,13 +54,13 @@ func TestVTRecordRequestsRejectInvalidUTF8Identities(t *testing.T) {
 				operation.Address = &decoded
 				request := &sink.WriteRequest{Operations: []*sink.WriteOperation{operation}, CompletionMode: mode}
 				written, err := server.Write(t.Context(), request)
-				if err != nil || written.Results[0].GetFailure().GetCode() != sink.FailureCode_FAILURE_CODE_INVALID_ARGUMENT {
+				if (field == "store" && status.Code(err) != codes.InvalidArgument) || (field != "store" && (err != nil || written.Results[0].GetFailure().GetCode() != sink.FailureCode_FAILURE_CODE_INVALID_ARGUMENT)) {
 					t.Fatalf("invalid identity was written: response=%v error=%v", written, err)
 				}
 				remove := &sink.DeleteOperation{Address: &decoded}
 				deleteRequest := &sink.DeleteRequest{Operations: []*sink.DeleteOperation{remove}, CompletionMode: mode}
 				deleted, err := server.Delete(t.Context(), deleteRequest)
-				if err != nil || deleted.Results[0].GetFailure().GetCode() != sink.FailureCode_FAILURE_CODE_INVALID_ARGUMENT {
+				if (field == "store" && status.Code(err) != codes.InvalidArgument) || (field != "store" && (err != nil || deleted.Results[0].GetFailure().GetCode() != sink.FailureCode_FAILURE_CODE_INVALID_ARGUMENT)) {
 					t.Fatalf("invalid identity was deleted: response=%v error=%v", deleted, err)
 				}
 			}

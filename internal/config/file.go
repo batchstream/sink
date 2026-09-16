@@ -5,10 +5,11 @@ import "time"
 // File types preserve omission so defaults can depend on other configured limits.
 // Runtime code receives only resolved values through Config.
 type configFile struct {
+	Storage         *storageFile   `yaml:"storage"`
+	Gateway         *gatewayFile   `yaml:"gateway"`
 	Mode            Mode           `yaml:"mode"`
 	GRPC            gRPCFile       `yaml:"grpc"`
 	Prometheus      prometheusFile `yaml:"prometheus"`
-	Storages        []storageFile  `yaml:"storages"`
 	Service         serviceFile    `yaml:"service"`
 	ShutdownTimeout *time.Duration `yaml:"shutdown_timeout"`
 }
@@ -38,31 +39,27 @@ type requestFile struct {
 }
 
 type executionFile struct {
-	MaxRequests         *int               `yaml:"max_requests"`
-	MaxBytes            *byteSize          `yaml:"max_bytes"`
-	MaxRequestsPerStore *int               `yaml:"max_requests_per_store"`
-	Queue               admissionQueueFile `yaml:"queue"`
-	Scan                scanFile           `yaml:"scan"`
+	MaxRequests *int               `yaml:"max_requests"`
+	MaxBytes    *byteSize          `yaml:"max_bytes"`
+	Queue       admissionQueueFile `yaml:"queue"`
+	Scan        scanFile           `yaml:"scan"`
 }
 
 type admissionQueueFile struct {
-	MaxRequests         *int           `yaml:"max_requests"`
-	MaxBytes            *byteSize      `yaml:"max_bytes"`
-	MaxRequestsPerStore *int           `yaml:"max_requests_per_store"`
-	MaxWait             *time.Duration `yaml:"max_wait"`
+	MaxRequests *int           `yaml:"max_requests"`
+	MaxBytes    *byteSize      `yaml:"max_bytes"`
+	MaxWait     *time.Duration `yaml:"max_wait"`
 }
 
 type scanFile struct {
-	MaxRequests         *int           `yaml:"max_requests"`
-	MaxBytes            *byteSize      `yaml:"max_bytes"`
-	MaxRequestsPerStore *int           `yaml:"max_requests_per_store"`
-	AdmissionWait       *time.Duration `yaml:"admission_wait"`
+	MaxRequests   *int           `yaml:"max_requests"`
+	MaxBytes      *byteSize      `yaml:"max_bytes"`
+	AdmissionWait *time.Duration `yaml:"admission_wait"`
 }
 
 type publishFile struct {
-	MaxRequestsPerStore *int      `yaml:"max_requests_per_store"`
-	MaxRequests         *int      `yaml:"max_requests"`
-	MaxBytes            *byteSize `yaml:"max_bytes"`
+	MaxRequests *int      `yaml:"max_requests"`
+	MaxBytes    *byteSize `yaml:"max_bytes"`
 }
 
 type batchingFile struct {
@@ -91,12 +88,12 @@ type luaFile struct {
 }
 
 type storageFile struct {
-	Name    string          `yaml:"name"`
-	Driver  Driver          `yaml:"driver"`
-	MongoDB mongoDBFile     `yaml:"mongodb"`
-	Search  searchFile      `yaml:"search"`
-	Limits  storeLimitsFile `yaml:"limits"`
-	Kafka   kafkaFile       `yaml:"kafka"`
+	DatabaseID string      `yaml:"database_id"`
+	Name       string      `yaml:"name"`
+	Driver     Driver      `yaml:"driver"`
+	MongoDB    mongoDBFile `yaml:"mongodb"`
+	Search     searchFile  `yaml:"search"`
+	Kafka      kafkaFile   `yaml:"kafka"`
 }
 
 type mongoDBFile struct {
@@ -111,10 +108,6 @@ type searchFile struct {
 	Username  string   `yaml:"username"`
 	Password  string   `yaml:"password"`
 	APIKey    string   `yaml:"api_key"`
-}
-
-type storeLimitsFile struct {
-	MaxExecutionBytes *byteSize `yaml:"max_execution_bytes"`
 }
 
 type kafkaFile struct {
@@ -155,4 +148,16 @@ type retryFile struct {
 type deadLetterFile struct {
 	Topic     string         `yaml:"topic"`
 	Retention *time.Duration `yaml:"retention"`
+}
+
+type gatewayFile struct {
+	MaxRequestsPerStore *int           `yaml:"max_requests_per_store"`
+	DNSRefreshInterval  *time.Duration `yaml:"dns_refresh_interval"`
+	RoutesFile          string         `yaml:"routes_file"`
+	ReloadInterval      *time.Duration `yaml:"reload_interval"`
+	IdleTimeout         *time.Duration `yaml:"idle_timeout"`
+	MaxConnections      *int           `yaml:"max_connections"`
+	MaxRequests         *int           `yaml:"max_requests"`
+	MaxBytes            *byteSize      `yaml:"max_bytes"`
+	MaxFanout           *int           `yaml:"max_fanout"`
 }

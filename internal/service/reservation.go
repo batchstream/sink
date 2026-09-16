@@ -31,11 +31,6 @@ func (r *admissionReservation) resize(bytes int) error {
 	}
 	if delta > 0 {
 		full := delta > pool.maxInFlightBytes-pool.inFlightBytes
-		for _, name := range r.stores {
-			if limit := pool.maxStoreBytes[name]; limit > 0 && delta > limit-pool.storeBytes[name] {
-				full = true
-			}
-		}
 		for _, waiter := range pool.admissionWaiters {
 			if !pool.admissionSlotsFull(*waiter) {
 				full = true

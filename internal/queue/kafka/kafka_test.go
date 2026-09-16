@@ -77,7 +77,7 @@ func TestKafkaPublisherWorkerAppliesAsyncMutations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewLuaEngine() error = %v", err)
 	}
-	serverOptions := service.Options{
+	serverOptions := service.Options{BoundStore: "primary",
 		Storage:   store,
 		Lua:       luaEngine,
 		Publisher: publisher,
@@ -267,7 +267,7 @@ func TestKafkaWorkerReplaysUncommittedMutationsAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("merge.NewLuaEngine() error = %v", err)
 	}
-	serverOptions := service.Options{
+	serverOptions := service.Options{BoundStore: "primary",
 		Storage:   store,
 		Lua:       luaEngine,
 		Publisher: publisher,

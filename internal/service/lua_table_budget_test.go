@@ -33,7 +33,7 @@ func TestLuaNativeBudgetFailureDoesNotCommitPartialMutation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			options := service.Options{Storage: backend, Lua: engine}
+			options := service.Options{BoundStore: "primary", Storage: backend, Lua: engine}
 			server, err := service.New(options)
 			if err != nil {
 				t.Fatal(err)
@@ -83,7 +83,7 @@ func TestLuaConversionDeadlineDoesNotCommitMutation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			options := service.Options{Storage: backend, Lua: engine}
+			options := service.Options{BoundStore: "primary", Storage: backend, Lua: engine}
 			server, err := service.New(options)
 			if err != nil {
 				t.Fatal(err)
@@ -131,7 +131,7 @@ func TestSinkV1CumulativeBudgetFailureDoesNotCommitMutation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			options := service.Options{Storage: backend, Lua: engine}
+			options := service.Options{BoundStore: "primary", Storage: backend, Lua: engine}
 			server, err := service.New(options)
 			if err != nil {
 				t.Fatal(err)
@@ -179,7 +179,7 @@ func TestLuaPatternCaptureStackFailureDoesNotCommitMutation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			options := service.Options{Storage: backend, Lua: engine}
+			options := service.Options{BoundStore: "primary", Storage: backend, Lua: engine}
 			server, err := service.New(options)
 			if err != nil {
 				t.Fatal(err)

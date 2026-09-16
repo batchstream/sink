@@ -21,7 +21,7 @@ func TestScansLeaveOrdinaryRequestCapacity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := Options{Storage: memory.New(), Lua: lua, StoreNames: []string{"mongo"}}
+	opts := Options{BoundStore: "primary", Storage: memory.New(), Lua: lua}
 	s, err := New(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -49,14 +49,14 @@ func TestScansLeaveOrdinaryRequestCapacity(t *testing.T) {
 	}
 }
 
-func TestScanRequestAndStoreQuotasRelease(t *testing.T) {
+func TestScanRequestQuotaReleases(t *testing.T) {
 	luaOpts := merge.LuaOptions{}
 	lua, err := merge.NewLuaEngine(luaOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := Options{Storage: memory.New(), Lua: lua, MaxInFlightRequests: 4, MaxStoreRequests: 2,
-		MaxInFlightBytes: 4096, MaxScanRequests: 2, MaxScanBytes: 2048, MaxStoreScanRequests: 1, StoreNames: []string{"a", "b", "c"}}
+	opts := Options{BoundStore: "primary", Storage: memory.New(), Lua: lua, MaxInFlightRequests: 4,
+		MaxInFlightBytes: 4096, MaxScanRequests: 2, MaxScanBytes: 2048}
 	s, err := New(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -65,10 +65,6 @@ func TestScanRequestAndStoreQuotasRelease(t *testing.T) {
 	_, release, err := s.admitRequest(t.Context(), first)
 	if err != nil {
 		t.Fatal(err)
-	}
-	_, _, err = s.admitRequest(t.Context(), first)
-	if status.Code(err) != codes.ResourceExhausted {
-		t.Fatalf("store quota: %v", err)
 	}
 	second := admissionRequest{encodedBytes: 100, scan: true, stores: []string{"b"}}
 	_, releaseSecond, err := s.admitRequest(t.Context(), second)
@@ -82,7 +78,7 @@ func TestScanRequestAndStoreQuotasRelease(t *testing.T) {
 	}
 	release()
 	releaseSecond()
-	if s.scanRequests != 0 || s.scanBytes != 0 || len(s.storeScanRequests) != 0 {
+	if s.scanRequests != 0 || s.scanBytes != 0 {
 		t.Fatal("scan quota leaked")
 	}
 	_, release, err = s.admitRequest(t.Context(), first)

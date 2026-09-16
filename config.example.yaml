@@ -1,5 +1,5 @@
 # Sizes use binary units (KiB, MiB, GiB); durations use ms, s, m, or h.
-mode: server
+mode: engine
 
 grpc:
   address: ":8080"
@@ -9,17 +9,15 @@ grpc:
 prometheus:
   address: ":9090"
 
-storages:
-  - name: primary
-    driver: mongodb
-    mongodb:
-      uri: mongodb://mongodb:27017
-      metadata_field: __sink
-      max_concurrent_writes: 64
-      max_concurrent_groups: 16
-    # Optional ceiling within service.execution.max_bytes.
-    # limits:
-    #   max_execution_bytes: 128MiB
+storage:
+  name: primary
+  database_id: catalog-database
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongodb:27017
+    metadata_field: __sink
+    max_concurrent_writes: 64
+    max_concurrent_groups: 16
 
 service:
   request:
@@ -29,16 +27,13 @@ service:
   execution:
     max_requests: 128
     max_bytes: 256MiB
-    max_requests_per_store: 32
     queue:
       max_requests: 1024
-      max_requests_per_store: 256
       max_bytes: 32MiB
       max_wait: 2s
     scan:
       admission_wait: 2s
   publish:
-    max_requests_per_store: 32
     max_requests: 32
     max_bytes: 256MiB
   batching:

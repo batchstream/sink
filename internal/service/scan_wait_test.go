@@ -118,21 +118,18 @@ func TestScanAdmissionWaitIsBoundedAndCanceled(t *testing.T) {
 }
 
 func TestScanWaitQueueBounds(t *testing.T) {
-	for _, limit := range []string{"requests", "bytes", "store"} {
+	for _, limit := range []string{"requests", "bytes"} {
 		t.Run(limit, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				server := completionServer(t, memory.New()).server
 				server.maxInFlightBytes = 100
 				server.maxScanRequests = 10
 				server.maxScanBytes = 100
-				server.maxStoreScanRequests = 10
 				switch limit {
 				case "requests":
 					server.maxScanRequests = 1
 				case "bytes":
 					server.maxScanBytes = 15
-				case "store":
-					server.maxStoreScanRequests = 1
 				}
 				busy := admissionRequest{encodedBytes: 100}
 				_, release, err := server.admitRequest(t.Context(), busy)
@@ -151,20 +148,9 @@ func TestScanWaitQueueBounds(t *testing.T) {
 				if len(server.admissionWaiters) != 1 || server.inFlightBytes != 100 {
 					t.Fatal("queue cap did not bound retained scans")
 				}
-				if limit == "store" {
-					scan.stores = []string{"other"}
-					go func() { _, _, err := server.admitRequest(ctx, scan); finished <- err }()
-					synctest.Wait()
-					if len(server.admissionWaiters) != 2 {
-						t.Fatal("one store filled another store's waiting quota")
-					}
-				}
 				cancel()
 				if err := <-finished; status.Code(err) != codes.Canceled {
 					t.Fatal(err)
-				}
-				if limit == "store" {
-					<-finished
 				}
 				synctest.Wait()
 				if len(server.admissionWaiters) != 0 {

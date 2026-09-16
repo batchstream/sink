@@ -16,7 +16,7 @@ import (
 )
 
 func TestApplicationModesKeepTheirOwnResources(t *testing.T) {
-	for _, mode := range []string{"server", "worker", "all"} {
+	for _, mode := range []string{"engine", "worker"} {
 		t.Run(mode, func(t *testing.T) {
 			broker, err := kfake.NewCluster(kfake.NumBrokers(1))
 			if err != nil {
@@ -30,19 +30,20 @@ grpc:
   address: "127.0.0.1:0"
 prometheus:
   address: "127.0.0.1:0"
-storages:
-  - name: primary
-    driver: opensearch
-    search:
-      endpoints: [%q]
-    kafka:
-      enabled: true
-      brokers: [%q]
-      topic:
-        name: mutations
-        replication_factor: 1
-      consumer:
-        group_id: workers
+storage:
+  name: primary
+  database_id: test-database
+  driver: opensearch
+  search:
+    endpoints: [%q]
+  kafka:
+    enabled: true
+    brokers: [%q]
+    topic:
+      name: mutations
+      replication_factor: 1
+    consumer:
+      group_id: workers
 shutdown_timeout: 1s
 `, mode, backend.URL, broker.ListenAddrs()[0])
 			loaded, err := config.Decode(strings.NewReader(input))
@@ -55,7 +56,7 @@ shutdown_timeout: 1s
 				t.Fatal(err)
 			}
 			defer app.Close()
-			if (app.grpcServer != nil) != (mode != "worker") || (app.publisher != nil) != (mode != "worker") || (len(app.workers) != 0) != (mode != "server") {
+			if (app.grpcServer != nil) != (mode != "worker") || (app.publisher != nil) != (mode != "worker") || (app.worker != nil) != (mode == "worker") {
 				t.Fatal("mode acquired another role's resources")
 			}
 			if app.health != nil {
@@ -107,15 +108,17 @@ func TestAssemblyFailureReleasesPreviouslyOpenedListener(t *testing.T) {
 	}
 	address := metrics.Addr().String()
 	_ = metrics.Close()
-	input := fmt.Sprintf(`grpc:
+	input := fmt.Sprintf(`mode: engine
+grpc:
   address: %q
 prometheus:
   address: %q
-storages:
-  - name: primary
-    driver: opensearch
-    search:
-      endpoints: [http://127.0.0.1:1]
+storage:
+  name: primary
+  database_id: test-database
+  driver: opensearch
+  search:
+    endpoints: [http://127.0.0.1:1]
 `, occupied.Addr().String(), address)
 	loaded, err := config.Decode(strings.NewReader(input))
 	if err != nil {

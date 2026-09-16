@@ -18,7 +18,7 @@ func TestSearchInvalidUTF8CannotOverwriteUnicodeKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := service.Options{Storage: fixture.store, Lua: engine}
+	opts := service.Options{BoundStore: "primary", Storage: fixture.store, Lua: engine}
 	server, err := service.New(opts)
 	if err != nil {
 		t.Fatal(err)

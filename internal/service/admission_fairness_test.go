@@ -93,38 +93,3 @@ func TestAdmissionCancellationWakesNextReservation(t *testing.T) {
 		}
 	})
 }
-
-func TestAdmissionBusyStoreDoesNotBlockOtherStores(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		server := completionServer(t, memory.New()).server
-		server.maxStoreRequests = 1
-		server.storeRequests = map[string]int{"a": 0, "b": 0}
-		first := admissionRequest{encodedBytes: 1, stores: []string{"a"}}
-		_, releaseFirst, err := server.admitRequest(t.Context(), first)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer releaseFirst()
-		ctx, cancel := context.WithCancel(t.Context())
-		first.wait = true
-		canceled := make(chan error, 1)
-		go func() {
-			_, _, admitErr := server.admitRequest(ctx, first)
-			canceled <- admitErr
-		}()
-		synctest.Wait()
-		second := admissionRequest{encodedBytes: 1, stores: []string{"b"}}
-		_, releaseSecond, err := server.admitRequest(t.Context(), second)
-		if err != nil {
-			t.Errorf("unrelated store blocked by waiting store: %v", err)
-		}
-		if releaseSecond != nil {
-			releaseSecond()
-		}
-		cancel()
-		synctest.Wait()
-		if status.Code(<-canceled) != codes.Canceled {
-			t.Error("waiting store did not release on cancellation")
-		}
-	})
-}

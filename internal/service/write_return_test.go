@@ -117,7 +117,7 @@ func TestWriteReturningBudgetRejectsBeforeCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := service.Options{Storage: store, Lua: lua, MaxReadBytes: 400}
+	opts := service.Options{BoundStore: "primary", Storage: store, Lua: lua, MaxReadBytes: 400}
 	server, err := service.New(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -161,7 +161,7 @@ func TestFailedWriteReturningReleasesQuota(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := service.Options{Storage: backend, Lua: lua, MaxReadBytes: 400}
+	opts := service.Options{BoundStore: "primary", Storage: backend, Lua: lua, MaxReadBytes: 400}
 	server, err := service.New(opts)
 	if err != nil {
 		t.Fatal(err)

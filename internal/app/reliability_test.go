@@ -88,20 +88,16 @@ func TestReadinessSharesOutstandingProbeAndRecovers(t *testing.T) {
 func TestUnavailableStoreDoesNotBlockStartup(t *testing.T) {
 	unavailable := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) }))
 	defer unavailable.Close()
-	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
-	defer healthy.Close()
-	contents := fmt.Sprintf(`grpc:
+	contents := fmt.Sprintf(`mode: engine
+grpc:
   address: "127.0.0.1:0"
-storages:
-  - name: failed
-    driver: opensearch
-    search:
-      endpoints: [%q]
-  - name: healthy
-    driver: opensearch
-    search:
-      endpoints: [%q]
-`, unavailable.URL, healthy.URL)
+storage:
+  name: failed
+  database_id: failed-database
+  driver: opensearch
+  search:
+    endpoints: [%q]
+`, unavailable.URL)
 	loaded, err := config.Decode(strings.NewReader(contents))
 	if err != nil {
 		t.Fatal(err)
@@ -109,18 +105,17 @@ storages:
 	options := Options{Config: loaded, Version: "test"}
 	app, err := New(t.Context(), options)
 	if err != nil {
-		t.Fatalf("healthy store could not start alongside outage: %v", err)
+		t.Fatalf("dependency outage prevented startup: %v", err)
 	}
 	defer app.Close()
 	app.health = health.NewServer()
 	app.updateHealth(t.Context())
 	assertHealthStatus(t, app.health, storageHealthService("failed"), healthpb.HealthCheckResponse_NOT_SERVING)
-	assertHealthStatus(t, app.health, storageHealthService("healthy"), healthpb.HealthCheckResponse_SERVING)
-	request := httptest.NewRequest(http.MethodGet, "/readyz?service=sink.storage.healthy", nil)
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	response := httptest.NewRecorder()
 	app.serveReadiness(response, request)
 	if response.Code != http.StatusOK {
-		t.Fatal("healthy store readiness was coupled to failed store")
+		t.Fatal("dependency outage prevented process readiness")
 	}
 }
 

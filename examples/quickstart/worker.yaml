@@ -1,0 +1,57 @@
+mode: worker
+
+grpc:
+  address: ":8080"
+  max_receive_message_bytes: 64MiB
+  max_send_message_bytes: 64MiB
+
+prometheus:
+  address: ":9090"
+
+storage:
+  name: primary
+  database_id: quickstart-primary
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongo:27017/?replicaSet=rs0
+    max_concurrent_writes: 64
+    max_concurrent_groups: 16
+  kafka:
+    enabled: true
+    brokers:
+      - kafka:19092
+    topic:
+      name: sink-mutations
+      partitions: 4
+      replication_factor: 1
+      retention: 72h
+    consumer:
+      group_id: sink-quickstart
+      max_poll_records: 500
+      retry:
+        max_attempts: 10
+        backoff: 100ms
+        max_backoff: 10s
+
+    dead_letter:
+      topic: sink-mutations.dlq
+service:
+  request:
+    max_operations: 1000
+  batching:
+    max_wait: 2ms
+    max_operations: 1000
+    max_bytes: 16MiB
+    queue:
+      max_operations: 10_000
+      max_bytes: 128MiB
+  merge:
+    max_attempts: 3
+    lua:
+      timeout: 100ms
+      max_source_bytes: 64KiB
+      max_result_bytes: 16MiB
+      max_cached_programs: 256
+      max_instructions: 1_000_000
+
+shutdown_timeout: 15s

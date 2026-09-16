@@ -4,6 +4,8 @@ import (
 	"context"
 
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/forwarding"
+	"github.com/liran/sink/internal/protocol"
 	"github.com/liran/sink/internal/storage"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -12,7 +14,14 @@ import (
 const maxCountResponseBytes = 256 << 10
 
 func (s *Server) Query(ctx context.Context, req *sink.QueryRequest) (*sink.QueryResponse, error) {
-	request, err := nativeRequest(req.GetCommand(), s.maxReadBytes)
+	maximum := forwarding.FromContext(ctx).Limit(forwarding.Outputs, s.maxReadBytes)
+	if maximum <= 0 {
+		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
+	}
+	if err := protocol.CheckStore(req, s.boundStore); err != nil {
+		return nil, err
+	}
+	request, err := nativeRequest(req.GetCommand(), maximum)
 	if err != nil {
 		return nil, err
 	}
@@ -59,16 +68,23 @@ func (s *Server) Query(ctx context.Context, req *sink.QueryRequest) (*sink.Query
 		encoded := &sink.Document{Encoding: sink.DocumentEncoding(document.Encoding), Payload: document.Payload}
 		response.Documents = append(response.Documents, encoded)
 	}
-	if response.SizeVT() > s.maxReadBytes {
+	if response.SizeVT() > maximum {
 		return nil, status.Error(codes.ResourceExhausted, "query response exceeds byte limit")
 	}
 	return response, nil
 }
 
 func (s *Server) Count(ctx context.Context, req *sink.CountRequest) (*sink.CountResponse, error) {
+	maximum := forwarding.FromContext(ctx).Limit(forwarding.Outputs, s.maxReadBytes)
+	if maximum <= 0 {
+		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
+	}
+	if err := protocol.CheckStore(req, s.boundStore); err != nil {
+		return nil, err
+	}
 	// Count retains only totals and bounded backend metadata. Enforce the
 	// smaller buffer in the adapter as well as reserving it at admission.
-	request, err := nativeRequest(req.GetCommand(), min(s.maxReadBytes, maxCountResponseBytes))
+	request, err := nativeRequest(req.GetCommand(), min(maximum, maxCountResponseBytes))
 	if err != nil {
 		return nil, err
 	}

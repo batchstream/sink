@@ -2,14 +2,33 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-compose=(docker compose --project-directory "${script_dir}" --file "${script_dir}/compose.yaml")
+compose=(docker compose --env-file /dev/null --project-directory "${script_dir}" --file "${script_dir}/compose.yaml")
 
 "${compose[@]}" up --build --detach --wait
+for role in engine worker; do
+  metrics_address="$("${compose[@]}" port "${role}" 9090)"
+  endpoint="http://${metrics_address}/readyz"
+  if [[ "${role}" == engine ]]; then
+    endpoint+="?service=sink.kafka.primary"
+  fi
+  ready=false
+  for _ in $(seq 1 60); do
+    if curl --fail --silent --max-time 2 "${endpoint}" >/dev/null; then
+      ready=true
+      break
+    fi
+    sleep 1
+  done
+  if [[ "${ready}" != true ]]; then
+    echo "${role} did not become ready" >&2
+    exit 1
+  fi
+done
 "${compose[@]}" --profile test run --build --rm --no-deps example
 
 metrics_file="$(mktemp)"
 trap 'rm -f "${metrics_file}"' EXIT
-curl --fail --silent --show-error http://127.0.0.1:9090/metrics --output "${metrics_file}"
+curl --fail --silent --show-error http://127.0.0.1:19091/metrics --output "${metrics_file}"
 grep -q '^sink_build_info' "${metrics_file}"
 grep -Eq '^sink_grpc_server_requests_total\{.*method="Read".*\} [1-9][0-9]*$' "${metrics_file}"
 
@@ -17,6 +36,6 @@ echo
 echo "Sink quickstart is running."
 echo "gRPC endpoint: 127.0.0.1:8080"
 echo "Prometheus metrics: http://127.0.0.1:9090/metrics"
-echo "MongoDB: mongodb://127.0.0.1:27017/?directConnection=true"
-echo "Kafka: 127.0.0.1:9092"
+echo "Engine metrics: http://127.0.0.1:19091/metrics"
+echo "Worker metrics: http://127.0.0.1:19092/metrics"
 echo "Stop it with: docker compose -f ${script_dir}/compose.yaml down"

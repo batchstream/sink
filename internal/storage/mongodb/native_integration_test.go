@@ -134,7 +134,7 @@ func TestMongoReturningMergeCommitsIndependentCounterValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverOptions := service.Options{Storage: fixture.store, Lua: lua, MaxReadBytes: 1 << 20}
+	serverOptions := service.Options{BoundStore: "primary", Storage: fixture.store, Lua: lua, MaxReadBytes: 1 << 20}
 	server, err := service.New(serverOptions)
 	if err != nil {
 		t.Fatal(err)

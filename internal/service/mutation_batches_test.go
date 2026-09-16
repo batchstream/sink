@@ -74,12 +74,17 @@ func completionServer(t *testing.T, backend storage.Storage) *BatchingServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	coreOpts := Options{Storage: backend, Lua: lua, StoreNames: []string{"primary"}, RequestTimeout: 5 * time.Second}
+	coreOpts := Options{BoundStore: "primary", Storage: backend, Lua: lua, RequestTimeout: 5 * time.Second}
 	core, err := New(coreOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := &BatchingServer{server: core}
+	batchOpts := BatchingOptions{MaxWait: time.Millisecond}
+	server, err := NewBatchingServer(core, batchOpts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(server.Close)
 	return server
 }
 func completionAddress(key string) *sink.RecordAddress {
@@ -341,7 +346,7 @@ func TestMixedCompletionFitsSingleRequestAndByteBudgets(t *testing.T) {
 			case "global_requests":
 				server.server.maxInFlightRequests = 1
 			case "store_requests":
-				server.server.maxStoreRequests = 1
+				server.server.maxInFlightRequests = 1
 			case "bytes":
 				server.server.maxInFlightBytes = 3 * server.server.maxReadBytes
 			}
@@ -353,7 +358,7 @@ func TestMixedCompletionFitsSingleRequestAndByteBudgets(t *testing.T) {
 			if first := awaitCompletion(t, backend.events); first.visible {
 				t.Fatal("limited execution did not run the applied group first")
 			}
-			if server.server.inFlightRequests != 0 || server.server.inFlightBytes != 0 || server.server.storeRequests["primary"] != 0 {
+			if server.server.inFlightRequests != 0 || server.server.inFlightBytes != 0 {
 				t.Fatal("group admission leaked capacity")
 			}
 		})

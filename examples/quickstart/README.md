@@ -1,49 +1,35 @@
-# Docker Compose quickstart
+# Gateway / Engine / Worker quickstart
 
-The quickstart runs a complete local Sink environment and verifies it through
-the public gRPC API. It starts MongoDB as a single-node ReplicaSet, Apache Kafka
-in KRaft mode, Sink in combined server/worker mode, and a disposable Go client.
-The Sink container loads
-[`sink.yaml`](sink.yaml) through `--config /etc/sink/config.yaml`; edit that file
-to try other server settings.
-
-From the repository root, run:
+This example runs Gateway, Engine and Worker as separate containers with real
+MongoDB and Kafka. Run `make quickstart` to start them and exercise the public API.
 
 ```shell
-./examples/quickstart/run.sh
+docker compose --env-file /dev/null -f examples/quickstart/compose.yaml up --build -d --wait
 ```
 
-The command builds the local Sink image, starts the dependencies, lets Sink
-create and reconcile its Kafka mutation and dead-letter Topics, and runs these
-checks:
+The public endpoint is `127.0.0.1:8080`. Gateway, Engine and Worker metrics are at
+ports `9090`, `19091` and `19092`, respectively. Check producer readiness with
+`http://127.0.0.1:19091/readyz?service=sink.kafka.primary` and Worker readiness with
+`http://127.0.0.1:19092/readyz` before testing async completion.
 
-1. Wait for the Sink gRPC health service.
-2. Batch-write and batch-read two BSON documents synchronously.
-3. Submit one asynchronous write and wait for the Kafka worker to apply it.
-4. Hard-delete all three records and confirm they are absent.
-
-The stack remains running after the checks pass so it can be inspected or used
-for additional requests. The exposed endpoints are:
-
-- Sink gRPC: `127.0.0.1:8080`
-- Prometheus metrics: `http://127.0.0.1:9090/metrics`
-- MongoDB: `mongodb://127.0.0.1:27017/?directConnection=true`
-- Kafka: `127.0.0.1:9092`
-
-Re-run only the scenario against the active stack with:
+With the existing sink-go checkout, exercise the public contract:
 
 ```shell
-docker compose \
-  --file examples/quickstart/compose.yaml \
-  --profile test \
-  run --build --rm --no-deps example
+cd ../sink-go
+SINK_INTEGRATION_ADDRESS=127.0.0.1:8080 go test -race -tags=integration \
+  -run '^(TestSinkCompatibility|TestNativeCompatibility)$' -count=1
 ```
 
-Stop the services while preserving their local volumes:
+Stop the example with:
 
 ```shell
-docker compose --file examples/quickstart/compose.yaml down
+docker compose --env-file /dev/null -f examples/quickstart/compose.yaml down
 ```
 
-Add `--volumes` to the down command when a completely clean MongoDB and Kafka
-state is required.
+Gateway mounts the dedicated `routing` directory so atomic route-file replacement
+is visible inside its container.
+
+For another Store, add its own database target, Engine, Worker and route. Replicas
+of one Store share that Store's `database_id`; different Stores must not share a
+database target. The example's plaintext route is for the local Compose network.
+See [configuration, migration and scaling](../../docs/store-isolation.md).

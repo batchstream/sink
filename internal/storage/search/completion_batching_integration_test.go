@@ -35,12 +35,12 @@ func TestSearchBatchingIsolatesIndependentVisibleDatasets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := service.Options{Storage: slow.store, Lua: engine, StoreNames: []string{"primary"}, RequestTimeout: 10 * time.Second}
+	options := service.Options{BoundStore: "primary", Storage: slow.store, Lua: engine, RequestTimeout: 10 * time.Second}
 	core, err := service.New(options)
 	if err != nil {
 		t.Fatal(err)
 	}
-	batchOptions := service.BatchingOptions{StoreNames: []string{"primary"}, MaxWait: 200 * time.Millisecond, MaxOperations: 2}
+	batchOptions := service.BatchingOptions{MaxWait: 200 * time.Millisecond, MaxOperations: 2}
 	server, err := service.NewBatchingServer(core, batchOptions)
 	if err != nil {
 		t.Fatal(err)
@@ -139,12 +139,12 @@ func TestSearchBatchingKeepsArchiveAppliedWithoutRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := service.Options{Storage: product.store, Lua: engine, RequestTimeout: 10 * time.Second}
+	opts := service.Options{BoundStore: "primary", Storage: product.store, Lua: engine, RequestTimeout: 10 * time.Second}
 	core, err := service.New(opts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	batchOptions := service.BatchingOptions{StoreNames: []string{"primary"}, MaxWait: time.Second, MaxOperations: 2}
+	batchOptions := service.BatchingOptions{MaxWait: time.Second, MaxOperations: 2}
 	server, err := service.NewBatchingServer(core, batchOptions)
 	if err != nil {
 		t.Fatal(err)

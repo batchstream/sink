@@ -21,7 +21,7 @@ func TestProcessorAppliesWriteAndDeleteSynchronously(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewLuaEngine() error = %v", err)
 	}
-	serverOptions := service.Options{Storage: store, Lua: luaEngine}
+	serverOptions := service.Options{BoundStore: "primary", Storage: store, Lua: luaEngine}
 	server, err := service.New(serverOptions)
 	if err != nil {
 		t.Fatalf("service.New() error = %v", err)
@@ -80,7 +80,7 @@ func TestProcessorBatchPreservesMixedMutationOrderPerRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewLuaEngine() error = %v", err)
 	}
-	serverOptions := service.Options{Storage: store, Lua: luaEngine}
+	serverOptions := service.Options{BoundStore: "primary", Storage: store, Lua: luaEngine}
 	server, err := service.New(serverOptions)
 	if err != nil {
 		t.Fatalf("service.New() error = %v", err)
@@ -163,11 +163,13 @@ func (s *namespaceAgnosticStorage) Delete(ctx context.Context, req storage.Delet
 
 func TestProcessorUsesBackendPhysicalIdentityForOrdering(t *testing.T) {
 	store := &namespaceAgnosticStorage{backend: memory.New()}
-	engine, err := merge.NewLuaEngine(merge.LuaOptions{})
+	luaOptions := merge.LuaOptions{}
+	engine, err := merge.NewLuaEngine(luaOptions)
 	if err != nil {
 		t.Fatal(err)
 	}
-	server, err := service.New(service.Options{Storage: store, Lua: engine})
+	serviceOptions := service.Options{BoundStore: "primary", Storage: store, Lua: engine}
+	server, err := service.New(serviceOptions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,9 +190,10 @@ func TestProcessorUsesBackendPhysicalIdentityForOrdering(t *testing.T) {
 			t.Fatalf("HandleBatch() result[%d] = %v", index, result)
 		}
 	}
-	read, err := store.Read(t.Context(), storage.ReadRequest{
+	request := storage.ReadRequest{
 		Operations: []storage.ReadOperation{{Address: processorStorageAddressFor("same-record")}},
-	})
+	}
+	read, err := store.Read(t.Context(), request)
 	if err != nil {
 		t.Fatal(err)
 	}

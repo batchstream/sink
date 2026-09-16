@@ -3,7 +3,6 @@ package storage
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"unicode/utf8"
@@ -111,53 +110,4 @@ func (p *Projection) Validate() error {
 type QueryResponse struct {
 	Documents []Document
 	HasMore   bool
-}
-
-func (r *Router) nativeBackend(name string) (NativeStorage, error) {
-	backend, exists := r.backends[name]
-	if !exists {
-		cause := fmt.Errorf("storage %q is not configured", name)
-		return nil, InvalidArgumentError(cause)
-	}
-	native, ok := backend.(NativeStorage)
-	if !ok {
-		return nil, fmt.Errorf("storage %q: %w", name, ErrNativeUnsupported)
-	}
-	return native, nil
-}
-
-func (r *Router) Execute(ctx context.Context, req NativeRequest) (NativeResponse, error) {
-	backend, err := r.nativeBackend(req.Store)
-	if err != nil {
-		var empty NativeResponse
-		return empty, err
-	}
-	return backend.Execute(ctx, req)
-}
-
-func (r *Router) Scan(ctx context.Context, req ScanRequest) (ScanResponse, error) {
-	backend, err := r.nativeBackend(req.Request.Store)
-	if err != nil {
-		var empty ScanResponse
-		return empty, err
-	}
-	return backend.Scan(ctx, req)
-}
-
-func (r *Router) Query(ctx context.Context, req QueryRequest) (QueryResponse, error) {
-	backend, err := r.nativeBackend(req.Request.Store)
-	if err != nil {
-		var empty QueryResponse
-		return empty, err
-	}
-	return backend.Query(ctx, req)
-}
-
-func (r *Router) Count(ctx context.Context, req CountRequest) (CountResponse, error) {
-	backend, err := r.nativeBackend(req.Request.Store)
-	if err != nil {
-		var empty CountResponse
-		return empty, err
-	}
-	return backend.Count(ctx, req)
 }

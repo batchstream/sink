@@ -18,11 +18,9 @@ func resolveService(file serviceFile, grpc GRPC, v *validator) Service {
 	execution := &loaded.Execution
 	execution.MaxRequests = v.bounded("service.execution.max_requests", file.Execution.MaxRequests, 128, 10000)
 	execution.MaxBytes = v.bytes("service.execution.max_bytes", file.Execution.MaxBytes, 256<<20, 16<<30)
-	execution.MaxRequestsPerStore = v.bounded("service.execution.max_requests_per_store", file.Execution.MaxRequestsPerStore, 32, 10000)
 	queue := &execution.Queue
 	queue.MaxRequests = v.bounded("service.execution.queue.max_requests", file.Execution.Queue.MaxRequests, 1024, 10000)
 	queue.MaxBytes = v.bytes("service.execution.queue.max_bytes", file.Execution.Queue.MaxBytes, min(32<<20, execution.MaxBytes), 16<<30)
-	queue.MaxRequestsPerStore = v.bounded("service.execution.queue.max_requests_per_store", file.Execution.Queue.MaxRequestsPerStore, min(256, queue.MaxRequests), queue.MaxRequests)
 	queue.MaxWait = v.duration("service.execution.queue.max_wait", file.Execution.Queue.MaxWait, min(2*time.Second, request.Timeout))
 	if queue.MaxWait > request.Timeout {
 		v.reject(errors.New("service.execution.queue.max_wait cannot exceed service.request.timeout"))
@@ -30,12 +28,10 @@ func resolveService(file serviceFile, grpc GRPC, v *validator) Service {
 	scan := &execution.Scan
 	scan.MaxRequests = v.bounded("service.execution.scan.max_requests", file.Execution.Scan.MaxRequests, max(1, execution.MaxRequests/2), execution.MaxRequests)
 	scan.MaxBytes = v.bytes("service.execution.scan.max_bytes", file.Execution.Scan.MaxBytes, max(1, execution.MaxBytes/2), execution.MaxBytes)
-	scan.MaxRequestsPerStore = v.bounded("service.execution.scan.max_requests_per_store", file.Execution.Scan.MaxRequestsPerStore, max(1, execution.MaxRequestsPerStore/2), execution.MaxRequestsPerStore)
 	scan.AdmissionWait = v.duration("service.execution.scan.admission_wait", file.Execution.Scan.AdmissionWait, min(2*time.Second, request.Timeout))
 	if scan.AdmissionWait > request.Timeout {
 		v.reject(errors.New("service.execution.scan.admission_wait cannot exceed service.request.timeout"))
 	}
-	loaded.Publish.MaxRequestsPerStore = v.bounded("service.publish.max_requests_per_store", file.Publish.MaxRequestsPerStore, 32, 10000)
 	loaded.Publish.MaxRequests = v.bounded("service.publish.max_requests", file.Publish.MaxRequests, 32, 10000)
 	loaded.Publish.MaxBytes = v.bytes("service.publish.max_bytes", file.Publish.MaxBytes, 256<<20, 16<<30)
 	loaded.Batching = resolveBatching(file.Batching, request, grpc, v)

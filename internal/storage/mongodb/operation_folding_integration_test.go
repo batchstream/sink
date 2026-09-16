@@ -20,7 +20,7 @@ func TestMongoDBFoldedPutAndMergePreserveConditionsAndBSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := service.Options{Storage: fixture.store, Lua: lua}
+	opts := service.Options{BoundStore: "primary", Storage: fixture.store, Lua: lua}
 	server, err := service.New(opts)
 	if err != nil {
 		t.Fatal(err)

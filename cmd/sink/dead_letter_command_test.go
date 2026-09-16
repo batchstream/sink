@@ -66,22 +66,24 @@ func TestDeadLetterReplayPreservesPublisherRouting(t *testing.T) {
 				if err := client.ProduceSync(ctx, original, letter).FirstErr(); err != nil {
 					t.Fatal(err)
 				}
-				backend := "    search:\n      endpoints: [http://127.0.0.1:1]\n"
+				backend := "  search:\n    endpoints: [http://127.0.0.1:1]\n"
 				if driver == config.DriverMongoDB {
-					backend = "    mongodb:\n      uri: mongodb://127.0.0.1:1\n"
+					backend = "  mongodb:\n    uri: mongodb://127.0.0.1:1\n"
 				}
-				contents := fmt.Sprintf(`storages:
-  - name: primary
-    driver: %s
-%s    kafka:
-      enabled: true
-      brokers: [%q]
-      topic:
-        name: source
-        replication_factor: 1
-        min_insync_replicas: 1
-      dead_letter:
-        topic: source.dlq
+				contents := fmt.Sprintf(`mode: engine
+storage:
+  name: primary
+  database_id: test-database
+  driver: %s
+%s  kafka:
+    enabled: true
+    brokers: [%q]
+    topic:
+      name: source
+      replication_factor: 1
+      min_insync_replicas: 1
+    dead_letter:
+      topic: source.dlq
 `, driver, backend, cluster.ListenAddrs()[0])
 				configPath := writeConfig(t, contents)
 				args := []string{"replay", "--config", configPath, "--store", "primary", "--partition", strconv.Itoa(int(letter.Partition)), "--offset", strconv.FormatInt(letter.Offset, 10)}

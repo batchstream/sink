@@ -9,8 +9,6 @@ services:
       - --bind_ip_all
     environment:
       GLIBC_TUNABLES: glibc.pthread.rseq=1
-    ports:
-      - 127.0.0.1:27017:27017
     volumes:
       - mongo-data:/data/db
     healthcheck:
@@ -44,8 +42,6 @@ services:
       KAFKA_NUM_PARTITIONS: 4
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
-    ports:
-      - 127.0.0.1:9092:9092
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
@@ -57,42 +53,58 @@ services:
       retries: 20
       start_period: 15s
 
-  sink:
+  engine:
     image: sink-quickstart:local
     build:
       context: ../..
       dockerfile: Dockerfile
-      args:
-        VERSION: quickstart
     init: true
-    command:
-      - --config
-      - /etc/sink/config.yaml
+    command: [--config, /etc/sink/engine.yaml]
     volumes:
-      - ./sink.yaml:/etc/sink/config.yaml:ro
+      - ./engine.yaml:/etc/sink/engine.yaml:ro
+    ports:
+      - 127.0.0.1:19091:9090
+    depends_on:
+      mongo: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+
+  worker:
+    pull_policy: never
+    image: sink-quickstart:local
+    init: true
+    command: [--config, /etc/sink/worker.yaml]
+    volumes:
+      - ./worker.yaml:/etc/sink/worker.yaml:ro
+    ports:
+      - 127.0.0.1:19092:9090
+    depends_on:
+      engine: {condition: service_started}
+
+  gateway:
+    pull_policy: never
+    image: sink-quickstart:local
+    init: true
+    command: [--config, /etc/sink/gateway.yaml]
+    volumes:
+      - ./gateway.yaml:/etc/sink/gateway.yaml:ro
+      - ./routing:/etc/sink/routing:ro
     ports:
       - 127.0.0.1:8080:8080
       - 127.0.0.1:9090:9090
     depends_on:
-      mongo:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    restart: unless-stopped
+      engine: {condition: service_started}
 
   example:
-    profiles:
-      - test
+    profiles: [test]
     image: sink-quickstart-client:local
     build:
       context: ../..
       dockerfile: examples/quickstart/Dockerfile
     environment:
-      SINK_ADDRESS: sink:8080
+      SINK_ADDRESS: gateway:8080
     depends_on:
-      sink:
-        condition: service_started
-    restart: "no"
+      gateway: {condition: service_started}
+      worker: {condition: service_started}
 
 volumes:
   mongo-data:

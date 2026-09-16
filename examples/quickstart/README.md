@@ -30,6 +30,6 @@ Gateway mounts the dedicated `routing` directory so atomic route-file replacemen
 is visible inside its container.
 
 For another Store, add its own database target, Engine, Worker and route. Replicas
-of one Store share that Store's `database_id`; different Stores must not share a
+of one Store share that Store's `storage.name`; different Stores must not share a
 database target. The example's plaintext route is for the local Compose network.
 See [configuration, migration and scaling](../../docs/store-isolation.md).

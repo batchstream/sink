@@ -25,12 +25,13 @@ never connects to Kafka or a database.
 
 ## Configuration
 
-An Engine uses `mode: engine` and one `storage` mapping with `name`, `database_id`,
-`driver`, and the existing driver/Kafka settings. Worker uses the same mapping with
-`mode: worker`. The database ID is an operator-assigned asset identity, not a URI.
+An Engine uses `mode: engine` and one `storage` mapping with `name`, `driver`,
+and the existing driver/Kafka settings. Worker uses the same mapping with
+`mode: worker`. The globally unique Store name is the only configured identity;
+all Engine and Worker replicas of that Store use the same name.
 A Store must have its own database target. Distinct URI aliases do not establish
 that two targets are different. Deployment inventory must enforce this globally.
-Engine checks the expected Store and database identity on every forwarded call.
+Engine checks the expected Store name on every forwarded call.
 It rejects an entire mismatched batch before storage or publishing.
 
 Gateway uses `mode: gateway`, `grpc`, `prometheus`, `service.request`, and `gateway`:
@@ -58,7 +59,6 @@ The route file has this shape:
 ```yaml
 routes:
   - store: primary
-    database_id: inventory-primary
     target: dns:///primary-engine.example:443
     state: active
     tls:
@@ -69,7 +69,7 @@ TLS with system trust roots and a minimum of TLS 1.2 is the default. An explicit
 trusted plaintext endpoint requires `tls.insecure: true`; it cannot also set
 `server_name`. Sink's listener remains the existing plaintext gRPC listener;
 terminate TLS in a trusted proxy when using TLS routes. Keep Engine endpoints
-inside the trusted service network. Database identity checking does not provide
+inside the trusted service network. Store name checking does not provide
 client authentication or authorization.
 
 Routes support `active`, `draining`, and `disabled`. Only `active` accepts new
@@ -82,10 +82,11 @@ Replace the route file atomically. In containers, mount its containing directory
 so an atomic file replacement is visible; a bind mount of a single file can pin
 the old inode. Invalid reloads keep the previous snapshot;
 an invalid initial file fails startup. Route files are limited to 4 MiB and 10,000
-entries. Store/database associations are remembered across removals during the
-Gateway lifetime, with a bounded history; hot database reassignment is rejected.
-A planned database migration requires coordinated drain/restart and inventory
-changes, not a route-file edit. Gateway replicas converge independently: compare
+entries with unique Store names. Gateway retains no identity history for removed
+routes; a Store can be re-added with a new Engine address. The name check cannot
+detect a wrong database URI configured under the correct Store name. Database
+migrations require coordinated deployment and data migration plans. Gateway
+replicas converge independently: compare
 `sink_gateway_config_info{sha256="..."}` before declaring a rollout complete.
 
 Main configuration changes require a restart. `sink config check --config FILE`
@@ -154,7 +155,7 @@ backend pressure; Gateway still needs its own capacity planning and scaling.
 
 ## Migration
 
-1. Inventory one stable database ID per Store and ensure unique database ownership.
+1. Assign a globally unique name to each Store and ensure unique database ownership.
 2. Split `storages` into one Engine and Worker configuration per Store. Engine does
    not require a Kafka consumer group; Worker does. Keep topic, DLQ and consumer
    group identity consistent with existing accepted messages.
@@ -166,7 +167,7 @@ backend pressure; Gateway still needs its own capacity planning and scaling.
    processes: they do not implement the private forwarding contract.
 
 Only `gateway`, `engine`, and `worker` modes are supported, and `mode` is required.
-Engine and Worker require singular `storage` with `name` and `database_id`.
+Engine and Worker require singular `storage` with a globally unique `name`.
 The old `server`/`all` modes and plural `storages` are rejected. Execution,
 publishing, admission queues and Scan use process limits; old per-Store sublimits
 and `storage.limits.max_execution_bytes` are rejected. Gateway retains its own

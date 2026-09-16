@@ -88,12 +88,11 @@ type luaFile struct {
 }
 
 type storageFile struct {
-	DatabaseID string      `yaml:"database_id"`
-	Name       string      `yaml:"name"`
-	Driver     Driver      `yaml:"driver"`
-	MongoDB    mongoDBFile `yaml:"mongodb"`
-	Search     searchFile  `yaml:"search"`
-	Kafka      kafkaFile   `yaml:"kafka"`
+	Name    string      `yaml:"name"`
+	Driver  Driver      `yaml:"driver"`
+	MongoDB mongoDBFile `yaml:"mongodb"`
+	Search  searchFile  `yaml:"search"`
+	Kafka   kafkaFile   `yaml:"kafka"`
 }
 
 type mongoDBFile struct {

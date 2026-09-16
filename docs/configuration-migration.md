@@ -4,9 +4,9 @@ This version requires a new process topology and configuration. There is no
 runtime compatibility mode for `server`, `all`, or plural `storages`. The public
 gRPC protocol, stored documents and Kafka mutation encoding remain unchanged.
 
-1. Assign a stable `database_id` to each Store's unique database target.
+1. Assign a globally unique `storage.name` to each Store's unique database target.
 2. Split each old `storages` entry into its own Engine configuration: `mode: engine`
-   and a singular `storage` object. Add the Store's `database_id`.
+   and a singular `storage` object. Keep the Store's existing unique name.
 3. For each asynchronous Store, create a separate `mode: worker` configuration
    with the same `storage` identity, backend, topic and topic policy, plus its
    existing consumer group. Worker requires Kafka to be enabled.
@@ -16,7 +16,7 @@ gRPC protocol, stored documents and Kafka mutation encoding remain unchanged.
    Remove their `max_requests_per_store` fields. Move any Store byte ceiling into
    `service.execution.max_bytes` and remove `storage.limits`.
 5. Create a Gateway configuration with `mode: gateway`, `service.request`, and
-   `gateway` settings. Its separate route file maps each Store/database identity
+   `gateway` settings. Its separate route file maps each Store name
    to that Store's Engine service. Gateway must not contain `storage`, database
    credentials, Kafka settings, or execution/batching/Lua configuration.
 6. Validate every process configuration with `sink config check --config FILE`.
@@ -40,3 +40,9 @@ triggers and scale-to-zero remain deployment policies.
 
 See the [runtime guide](store-isolation.md) and the complete
 [three-component quickstart](../examples/quickstart/README.md).
+
+The Store name is the sole identity. Remove the former `database_id` key from
+Engine/Worker configurations and route files; strict decoding rejects it. Private
+forwarding now uses protocol version 2. Upgrade Gateway and Engine together using
+a coordinated cutover; mixed protocol versions reject forwarding before execution.
+The public client protocol and Kafka mutation format remain unchanged.

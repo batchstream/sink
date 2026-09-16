@@ -9,7 +9,7 @@ import (
 	"github.com/liran/sink/internal/storage"
 )
 
-const Version = 1
+const Version = 2
 
 // EnvelopeBytes is reserved in the private transport in addition to the public message cap.
 const EnvelopeBytes = 4096

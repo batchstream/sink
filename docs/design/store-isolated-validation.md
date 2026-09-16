@@ -8,7 +8,7 @@ implementation are unchanged. No release or production rollout is included.
 
 - Gateway, Engine, and Worker assemble independently. Gateway opens no database
   or Kafka clients and does not instantiate the execution core.
-- Engine and Worker bind one Store and database identity. Misrouted requests are
+- Engine and Worker bind one Store name. Misrouted requests are
   rejected before effects. The removed `server`/`all` modes, plural `storages`,
   per-Store execution subquotas, and Store byte ceilings are rejected.
 - Cross-Store batches preserve indexes, duplicate keys, Lua references, global
@@ -19,9 +19,8 @@ implementation are unchanged. No release or production rollout is included.
   when requests are coalesced. Saturating one Store's forwarding allowance leaves
   another Store's allowance available.
 - A request retains one route snapshot. Invalid reloads retain the previous
-  snapshot. Removing and re-adding a route cannot reassign its database identity.
-- At the identity-history limit, existing route updates remain allowed; adding
-  another identity is rejected without replacing the valid snapshot.
+  snapshot. Duplicate Store names are rejected at startup and on reload. A removed
+  Store can be re-added with a new Engine address without retaining identity history.
 - Connections are lazy, bounded, and expire when idle. Active calls are protected
   from eviction. Real loopback DNS tests cover scale-out, scale-in, and SERVFAIL
   without replaying writes or rebuilding healthy connections.
@@ -97,8 +96,8 @@ request mixes, and latency targets.
 
 - Local qualification does not establish multi-broker Kafka fault tolerance,
   production-network behavior, long-duration soak, or actual KEDA autoscaling.
-- `database_id` validation cannot prove the configured URI targets the intended
-  asset. The deployment inventory owns global database uniqueness.
+- Store name validation cannot prove the configured URI targets the intended
+  database. The deployment inventory owns global Store name and database uniqueness.
 - Resource limits are logical budgets, not hard RSS ceilings. Deployment controls
   replica limits and aggregate database connection capacity.
 - Gateway remains a shared entry point. Exhausting its CPU, memory, or global
@@ -106,3 +105,16 @@ request mixes, and latency targets.
   isolate execution and database connections.
 - Production route migration and removal of old deployed workloads are outside
   this source-code cleanup.
+
+## Store name identity follow-up
+
+The configured identity is now only `storage.name` (Gateway routes use `store`).
+Local race tests cover duplicate route names, invalid reload snapshot retention,
+re-adding a Store at a new Engine address, and rejection of old forwarding versions
+or mismatched envelope/operation Stores before writes. The public protobuf is
+unchanged. Real MongoDB/Kafka quickstart tests pass through Gateway for public
+record operations, native methods, and asynchronous Worker completion.
+
+The annotated `config.example.yaml` covers all 52 supported main-configuration leaf
+fields and the separate route-file fields. Its Engine, Worker, OpenSearch,
+Elasticsearch, and Gateway variants were checked with the offline config command.

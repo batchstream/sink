@@ -92,12 +92,11 @@ func resolve(file configFile) (Config, error) {
 		return loaded, errors.New("gateway configuration requires gateway mode")
 	}
 	if file.Storage == nil {
-		return loaded, errors.New("engine and worker require singular storage with database_id")
+		return loaded, errors.New("engine and worker require singular storage with name")
 	}
-	for _, identity := range []string{file.Storage.Name, file.Storage.DatabaseID} {
-		if identity == "" || len(identity) > 256 || !utf8.ValidString(identity) || strings.TrimSpace(identity) != identity || strings.ContainsAny(identity, "\x00\r\n\t") {
-			return loaded, errors.New("storage.name and database_id must be nonempty valid identities of at most 256 bytes")
-		}
+	name := file.Storage.Name
+	if name == "" || len(name) > 256 || !utf8.ValidString(name) || strings.TrimSpace(name) != name || strings.ContainsAny(name, "\x00\r\n\t") {
+		return loaded, errors.New("storage.name must be a nonempty valid identity of at most 256 bytes")
 	}
 	configured, err := resolveStorage("storage", *file.Storage)
 	if err != nil {

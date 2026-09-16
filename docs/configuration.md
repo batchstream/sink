@@ -33,7 +33,7 @@ separate routes file atomically.
 | --- | --- |
 | `mode`, `shutdown_timeout` | Process role and shutdown |
 | `grpc`, `prometheus` | Transport and observability listeners |
-| `storage` | Engine/Worker Store identity, database identity, backend and Kafka path |
+| `storage` | Engine/Worker Store identity, backend and Kafka path |
 | `gateway` | Gateway route file, forwarding capacity, connection cache and discovery |
 | `service.request` | Request deadline, operation count, and returned document budget |
 | `service.execution` | Storage execution capacity, with Scan sublimits |
@@ -67,7 +67,7 @@ for the complete old-to-new mapping. The gRPC and SDK contracts are unchanged.
 
 ## One Store per Engine or Worker
 
-Each Engine/Worker process binds to exactly one Store and one stable `database_id`.
+Each Engine/Worker process binds to exactly one globally unique `storage.name`.
 Choose MongoDB, Elasticsearch, or OpenSearch for that Store. Different Stores must
 own different database targets; replicas of the same Store share its identity.
 A request's Store must match the process binding before any side effect.
@@ -80,7 +80,6 @@ prometheus:
   address: ":9090"
 storage:
   name: catalog
-  database_id: catalog-database
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
@@ -105,7 +104,7 @@ shutdown_timeout: 15s
 Kafka is optional for Engine. Without it, synchronous calls remain available and
 asynchronous mutations return per-operation `UNAVAILABLE`. Worker requires Kafka
 and `storage.kafka.consumer.group_id`. Deploy Worker separately with the same
-Store/database identity, backend, topic and topic policy.
+Store name, backend, topic and topic policy.
 
 Gateway handles cross-Store batches and preserves original result order, including
 mixed asynchronous batches whose Stores have different publishing availability.
@@ -175,8 +174,7 @@ use the lowercase spelling shown below. Storage names are also case-sensitive.
 | `grpc.max_send_message_bytes` | byte size | No | `64MiB` | Size greater than `0B` | Maximum encoded gRPC response size sent by the server. |
 | `prometheus.address` | string | No | empty (disabled) | Empty or any valid TCP listen address | HTTP listen address for Prometheus `/metrics`. Available in every runtime mode. |
 | `storage` | object | Engine/Worker | none | Exactly one storage object | The process-bound Store; forbidden in Gateway. |
-| `storage.database_id` | string | Engine/Worker | none | Nonempty UTF-8 identity, at most 256 bytes | Stable database inventory identity; must match its Gateway route and sibling Worker/Engine. |
-| `storage.name` | string | Yes | none | Nonempty UTF-8 identity, at most 256 bytes | Exact value selected by `address.store`. |
+| `storage.name` | string | Yes | none | Nonempty UTF-8 identity, at most 256 bytes | Globally unique Store name selected by `address.store`; all replicas of that Store use the same name. |
 | `storage.driver` | enum string | Yes | none | `mongodb`, `elasticsearch`, `opensearch` | Adapter used by this storage instance. See [Storage driver values](#storage-driver-values). |
 | `storage.mongodb.uri` | string | Conditionally | none | Valid MongoDB connection string | Required when the entry's driver is `mongodb`. |
 | `storage.mongodb.metadata_field` | string | No | `__sink` | Any valid MongoDB field except `_id`; cannot contain `.`, `$`, or a null byte | Reserved top-level field where Sink stores internal metadata such as the record revision; removed from documents returned to clients. |
@@ -303,7 +301,7 @@ mutation results must not be retried without business idempotence.
 | Value | Behavior |
 | --- | --- |
 | `gateway` | Routes public RPCs to per-Store Engines; see [isolated configuration](store-isolation.md). |
-| `engine` | Opens the gRPC listener for exactly one `storage`, validates Store/database identity, executes synchronously and publishes async mutations. |
+| `engine` | Opens the gRPC listener for exactly one `storage`, validates Store name, executes synchronously and publishes async mutations. |
 | `worker` | Requires exactly one Kafka-enabled Store, consumes and applies its mutations locally without opening the gRPC listener. |
 
 ### Storage driver values

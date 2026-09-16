@@ -93,7 +93,6 @@ grpc:
   address: "127.0.0.1:0"
 storage:
   name: failed
-  database_id: failed-database
   driver: opensearch
   search:
     endpoints: [%q]

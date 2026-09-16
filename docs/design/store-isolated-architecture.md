@@ -2,7 +2,7 @@
 
 Status: **Implemented and locally validated; not released or deployed to production**
 
-Version: D3, 2026-09-16
+Version: D4, 2026-09-16
 
 Baseline used to verify existing behavior: `005a056`
 
@@ -78,23 +78,29 @@ Store is the stable public routing identity. A database target is a stable backe
 DNS aliases, node addresses, or different credentials for the same database must not be used to register multiple Stores.
 A database target may contain multiple replica nodes. Existing namespace/dataset semantics remain unchanged and are not reinterpreted as Stores during this redesign.
 
-Use a non-sensitive `database_id` as the configured identity. The deployment asset inventory is responsible for matching it to the actual database:
+Use the globally unique Store name as the sole configured identity. Engine and Worker
+bind it through `storage.name`; Gateway routes and public requests carry the same
+value as `store`. Replicas of one Store share that name, while different Stores
+must have different names. No additional database identifier is required.
 
-- Gateway routes declare the expected Store and database_id without storing database connection details.
-- Engine/Worker startup configuration binds the same identities. Engine returns its identity in every internal response.
-- Gateway checks identity when forwarding. Engine must still validate every operation's Store rather than trusting Gateway alone.
+- Gateway routes declare Store names without storing database connection details.
+- Engine/Worker startup configuration binds one Store. Engine returns its Store name in every internal response.
+- Gateway checks the response Store, and Engine validates the forwarded Store and every operation's Store before execution.
 - Engine rejects an entire request containing the wrong Store before any write or publication occurs.
 - Worker does not execute messages for the wrong Store. It treats them as explicit permanent errors and does not commit the corresponding offset until DLQ delivery is acknowledged.
 
-Configuration tooling can detect duplicate identities within one inventory. Without a central asset inventory, it cannot prove that different URIs refer to different databases.
-The first version does not introduce a global runtime registry for this purpose. The deployment configuration source owns global uniqueness; local validation does not claim to cover every instance.
+Gateway rejects duplicate Store names in a route snapshot. The deployment inventory
+owns uniqueness across configurations and the one-Store-to-one-database mapping.
+Name checks cannot detect an incorrect URI under a matching Store name, or prove
+that two different connection URIs refer to different databases. No global runtime
+registry or historical Store/database association cache is introduced.
 
 ## 4. Route Configuration, Updates, and Migration
 
 ### 4.1 Platform-Neutral Route Input
 
 The first version uses ordinary configuration files and DNS or explicit service addresses. Request handling does not call configuration services or deployment-platform APIs.
-Each route contains a Store, database_id, Engine target address, transport settings, and route state. Concurrency, byte, and connection limits belong to Gateway process configuration.
+Each route contains a Store name, Engine target address, transport settings, and route state. Concurrency, byte, and connection limits belong to Gateway process configuration.
 See the [runtime guide](../store-isolation.md#configuration) for the final YAML fields.
 
 Gateway periodically checks for file-content changes, reads and validates a complete candidate configuration, and atomically replaces an immutable route snapshot.
@@ -124,7 +130,7 @@ Route states are `active`, `draining`, and `disabled`:
 | Change Engine address for the same database target | Use the new address from the new snapshot | Keep the original snapshot and drain within a deadline | Never automatically replay writes already sent |
 | Set draining | Return temporary unavailability for this Store | Continue draining | Confirm configuration versions and in-flight counts on each Gateway |
 | Delete or disable | Reject new requests for this Store | Finish according to the drain policy | Removing a route does not delete its database, topic, or deployment |
-| Change database_id | Reject an ordinary hot reload in the first version | No online data migration | Requires a separate data migration plan and explicit authorization |
+| Change the backend database | Configure through Engine/Worker deployment, not Gateway routing | Requires a controlled drain and data migration plan | Store name validation cannot detect a changed database URI |
 
 Removing a Gateway route does not forcibly revoke every old instance's ability to operate. Emergency write suspension must also be enforced at Engine/access-control boundaries.
 Change credentials or physical database connection targets through controlled Engine/Worker rolling updates, without silently switching live database clients.
@@ -164,7 +170,7 @@ Gateway and Engine use a versioned internal forwarding contract while the public
 The internal contract adds only Store identity, request correlation, budget grants/settlements, and capability information. Business requests and responses reuse the public messages.
 This is a new internal capability introduced by the design and requires implementation and validation.
 
-Internal protocol v1 has a fixed set of seven methods and four document-budget categories. Each call validates version and identity without a separate capability-negotiation round trip. Request limits are validated in each process's configuration.
+Internal protocol v2 has a fixed set of seven methods and four document-budget categories. Each call validates version and identity without a separate capability-negotiation round trip. Request limits are validated in each process's configuration. Version 2 uses only the Store name for identity; the removed database field number and name remain reserved. Gateway and Engine must run matching protocol versions; a version mismatch fails before execution.
 An incompatible target makes only its route unavailable. Internal methods must not become unprotected entry points that bypass public limits.
 Gateway does not trust internal control fields supplied by clients. Engine uses the smaller of each internal grant and its local limit.
 When Engine combines multiple original calls, it retains their separate budget ownership and never pools one request's allowance with another's.
@@ -358,8 +364,8 @@ The following engineering decisions follow that authorization. They do not imply
 | ID | Decision | Status and boundary |
 | --- | --- | --- |
 | R01 | Gateway / Engine / Worker; one binary, three runtime modes, independent assembly | Implemented; Gateway branches early without constructing the execution core or storage/Kafka clients |
-| R02 | Use `database_id`; validate protocol version, Store, and database identity on every internal forward | Implemented; the deployment asset inventory still guarantees actual database uniqueness |
-| R03 | Files + DNS; complete snapshots, one version per request, bounded on-demand connections, periodic DNS refresh | Implemented; reject hot-reload database-identity migration and retain bounded identity history |
+| R02 | Use globally unique Store names; validate protocol version and Store on every internal forward | Implemented; deployment inventory guarantees names and actual database ownership across configurations |
+| R03 | Files + DNS; complete snapshots, one version per request, bounded on-demand connections, periodic DNS refresh | Implemented; reject duplicate names and invalid snapshots without retaining identity history |
 | R04 | A private protobuf Forward contract carries budget grants/settlements; budget-sensitive groups run sequentially | Implemented; read snapshots, inputs, outputs, and returned documents are accounted for separately; CAS uses category peaks, conservatively relative to the old path |
 | R05 | Unknown write outcomes are neither replayed nor marked safe to retry; preserve other Stores' known results | Implemented; no public effect field is added, and cancellation may prevent delivery of partial responses |
 | R06 | Separate process readiness from dependency capability health; each role exposes metrics | Implemented; Gateway does not proxy legacy named dependency health services; the seven public business RPCs remain unchanged |

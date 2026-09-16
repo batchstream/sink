@@ -104,12 +104,11 @@ type Lua struct {
 }
 
 type Storage struct {
-	DatabaseID string
-	Name       string
-	Driver     Driver
-	MongoDB    MongoDB
-	Search     Search
-	Kafka      Kafka
+	Name    string
+	Driver  Driver
+	MongoDB MongoDB
+	Search  Search
+	Kafka   Kafka
 }
 
 type MongoDB struct {

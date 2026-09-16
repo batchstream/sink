@@ -17,6 +17,7 @@ import (
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/config"
 	"github.com/liran/sink/internal/engine"
+	"github.com/liran/sink/internal/forwarding"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/service"
 	"github.com/liran/sink/internal/storage/memory"
@@ -50,7 +51,7 @@ func testEngine(t testing.TB, store string, maximum int) fixtureEngine {
 		t.Fatal(err)
 	}
 	t.Cleanup(batched.Close)
-	engineOpts := engine.Options{Service: batched, Store: store, DatabaseID: "db-" + store, MaxReadBytes: maximum}
+	engineOpts := engine.Options{Service: batched, Store: store, MaxReadBytes: maximum}
 	backend, err := engine.New(engineOpts)
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +78,7 @@ func serveEngine(t testing.TB, backend forward.EngineServer, public ...sink.Sink
 func routeText(engines ...fixtureEngine) string {
 	text := "routes:\n"
 	for _, e := range engines {
-		text += fmt.Sprintf("  - store: %s\n    database_id: db-%s\n    target: %s\n    tls: {insecure: true}\n", e.store, e.store, e.target)
+		text += fmt.Sprintf("  - store: %s\n    target: %s\n    tls: {insecure: true}\n", e.store, e.target)
 	}
 	return text
 }
@@ -282,9 +283,8 @@ func (e *controlledEngine) Forward(ctx context.Context, req *forward.ForwardRequ
 		return nil, status.Error(codes.Unavailable, "reply lost after mutation")
 	}
 	response := emptyResponse(req, len(req.GetWrite().GetOperations()))
-	response.Version = 1
+	response.Version = forwarding.Version
 	response.Store = e.store
-	response.DatabaseId = "db-" + e.store
 	response.Used = &forward.Budget{}
 	for i := range req.GetWrite().GetOperations() {
 		result := &sink.WriteResult{OperationIndex: uint32(i), Status: sink.WriteStatus_WRITE_STATUS_APPLIED}
@@ -408,16 +408,20 @@ func TestGatewayAdmissionAndConcurrentBudgets(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-func TestRoutesRejectDuplicateDatabaseIdentity(t *testing.T) {
-	a := testEngine(t, "a", 4096)
-	b := testEngine(t, "b", 4096)
-	gateway := testGateway(t, 4096, a, b)
-	text := strings.ReplaceAll(routeText(a, b), "db-b", "db-a")
-	if err := os.WriteFile(gateway.config.RoutesFile, []byte(text), 0600); err != nil {
+func TestRoutesRejectDuplicateStoreNames(t *testing.T) {
+	a := fixtureEngine{store: "a", target: "127.0.0.1:1"}
+	gateway := testGateway(t, 4096, a)
+	previous := gateway.current.Load()
+	duplicate := a
+	duplicate.target = "127.0.0.1:2"
+	if err := os.WriteFile(gateway.config.RoutesFile, []byte(routeText(a, duplicate)), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := gateway.Reload(); err == nil {
-		t.Fatal("shared database was accepted")
+	if _, err := readRoutes(gateway.config.RoutesFile); err == nil || !strings.Contains(err.Error(), "duplicate Store") {
+		t.Fatalf("duplicate name accepted at startup: %v", err)
+	}
+	if err := gateway.Reload(); err == nil || gateway.current.Load() != previous {
+		t.Fatal("duplicate name replaced the valid route snapshot")
 	}
 }
 
@@ -454,7 +458,7 @@ func (n *nativeFixture) Scan(_ context.Context, _ *sink.ScanRequest) (*sink.Scan
 }
 func TestNativeForwardingPreservesDetailsAndCancellation(t *testing.T) {
 	native := &nativeFixture{cancelled: make(chan struct{})}
-	opts := engine.Options{Service: native, Store: "a", DatabaseID: "db-a", MaxReadBytes: 4096}
+	opts := engine.Options{Service: native, Store: "a", MaxReadBytes: 4096}
 	backend, err := engine.New(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -550,9 +554,9 @@ func TestFanoutIsBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-func TestReloadRejectsDatabaseReassignmentAfterRemoval(t *testing.T) {
-	a := testEngine(t, "a", 4096)
-	b := testEngine(t, "b", 4096)
+func TestReloadReaddsStoreWithNewEngineAddress(t *testing.T) {
+	a := fixtureEngine{store: "a", target: "127.0.0.1:1"}
+	b := fixtureEngine{store: "b", target: "127.0.0.1:2"}
 	gateway := testGateway(t, 4096, a, b)
 	if err := os.WriteFile(gateway.config.RoutesFile, []byte(routeText(b)), 0600); err != nil {
 		t.Fatal(err)
@@ -560,12 +564,15 @@ func TestReloadRejectsDatabaseReassignmentAfterRemoval(t *testing.T) {
 	if err := gateway.Reload(); err != nil {
 		t.Fatal(err)
 	}
-	moved := strings.ReplaceAll(routeText(a, b), "db-a", "db-moved")
-	if err := os.WriteFile(gateway.config.RoutesFile, []byte(moved), 0600); err != nil {
+	a.target = "127.0.0.1:3"
+	if err := os.WriteFile(gateway.config.RoutesFile, []byte(routeText(a, b)), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := gateway.Reload(); err == nil {
-		t.Fatal("removed Store was rebound to a different database")
+	if err := gateway.Reload(); err != nil {
+		t.Fatal(err)
+	}
+	if routes := gateway.current.Load().routes; len(routes) != 2 || routes[a.store].Target != a.target {
+		t.Fatal("re-added Store did not use its new Engine address")
 	}
 }
 
@@ -588,35 +595,40 @@ func TestInvalidEngineResultsCannotOverwriteKnownSuccess(t *testing.T) {
 	}
 }
 
-func TestReloadAtIdentityCapacityAllowsExistingRoutes(t *testing.T) {
-	initial := fixtureEngine{store: "current", target: "127.0.0.1:1"}
-	gateway := testGateway(t, 4096, initial)
-	// Simulate identities retained after older routes were removed.
-	for i := range 19999 {
-		name := fmt.Sprintf("retired-%d", i)
-		gateway.identities[name] = "db-" + name
-		gateway.databases["db-"+name] = name
-	}
-	updated := initial
-	updated.target = "127.0.0.1:2"
-	if err := os.WriteFile(gateway.config.RoutesFile, []byte(routeText(updated)), 0600); err != nil {
+func TestEngineRejectsStaleProtocolAndMismatchedStoreBeforeWrites(t *testing.T) {
+	a := testEngine(t, "a", 4096)
+	opts := engine.Options{Service: a.core, Store: "a", MaxReadBytes: 4096}
+	backend, err := engine.New(opts)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := gateway.Reload(); err != nil {
-		t.Fatalf("existing identity update rejected at capacity: %v", err)
+	tests := []struct {
+		name    string
+		version uint32
+		store   string
+		body    string
+		code    codes.Code
+	}{
+		{name: "previous protocol", version: 1, store: "a", body: "a", code: codes.FailedPrecondition},
+		{name: "wrong envelope Store", version: forwarding.Version, store: "b", body: "a", code: codes.FailedPrecondition},
+		{name: "wrong operation Store", version: forwarding.Version, store: "a", body: "b", code: codes.InvalidArgument},
 	}
-	if gateway.current.Load().routes[initial.store].Target != updated.target {
-		t.Fatal("existing route target was not updated")
-	}
-	last := gateway.current.Load()
-	addition := fixtureEngine{store: "new", target: "127.0.0.1:3"}
-	if err := os.WriteFile(gateway.config.RoutesFile, []byte(routeText(updated, addition)), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := gateway.Reload(); err == nil || gateway.current.Load() != last {
-		t.Fatal("identity overflow replaced the valid route snapshot")
-	}
-	if len(gateway.identities) != 20000 || len(gateway.databases) != 20000 {
-		t.Fatal("rejected reload consumed identity capacity")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			write := &sink.WriteRequest{CompletionMode: sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, Operations: []*sink.WriteOperation{put(test.body, test.name, false)}}
+			body := &forward.ForwardRequest_Write{Write: write}
+			grant := &forward.Budget{Snapshots: 4096, Inputs: 4096, Outputs: 4096, Returns: 4096}
+			request := &forward.ForwardRequest{Version: test.version, Store: test.store, Grant: grant, Request: body}
+			response, err := backend.Forward(t.Context(), request)
+			if err != nil || response.GetCode() != uint32(test.code) || !response.GetNotStarted() {
+				t.Fatalf("request was not rejected before execution: %v, %v", response, err)
+			}
+			op := &sink.ReadOperation{Address: address("a", test.name)}
+			read := &sink.ReadRequest{Operations: []*sink.ReadOperation{op}}
+			result, err := a.core.Read(t.Context(), read)
+			if err != nil || result.Results[0].Status != sink.ReadStatus_READ_STATUS_NOT_FOUND {
+				t.Fatalf("rejected request wrote a record: %v, %v", result, err)
+			}
+		})
 	}
 }

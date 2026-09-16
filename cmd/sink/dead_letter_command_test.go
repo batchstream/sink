@@ -73,7 +73,6 @@ func TestDeadLetterReplayPreservesPublisherRouting(t *testing.T) {
 				contents := fmt.Sprintf(`mode: engine
 storage:
   name: primary
-  database_id: test-database
   driver: %s
 %s  kafka:
     enabled: true

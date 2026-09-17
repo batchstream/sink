@@ -19,7 +19,7 @@ const (
 )
 
 type marshalVTMessage interface {
-	MarshalVT() ([]byte, error)
+	MarshalToSizedBufferVT([]byte) (int, error)
 	SizeVT() int
 }
 
@@ -37,14 +37,14 @@ func MarshalMutation(mutation Mutation) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	payload, err := message.MarshalVT()
-	if err != nil {
+	headerSize := len(envelopeMagic) + 2
+	envelope := make([]byte, headerSize+message.SizeVT())
+	copy(envelope, envelopeMagic[:])
+	envelope[len(envelopeMagic)] = envelopeVersion
+	envelope[len(envelopeMagic)+1] = kind
+	if _, err := message.MarshalToSizedBufferVT(envelope[headerSize:]); err != nil {
 		return nil, fmt.Errorf("marshal queue mutation: %w", err)
 	}
-	envelope := make([]byte, 0, len(envelopeMagic)+2+len(payload))
-	envelope = append(envelope, envelopeMagic[:]...)
-	envelope = append(envelope, envelopeVersion, kind)
-	envelope = append(envelope, payload...)
 	return envelope, nil
 }
 

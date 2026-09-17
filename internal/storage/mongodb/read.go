@@ -146,12 +146,18 @@ func (s *Store) readGroup(ctx context.Context, group *readGroup, results []stora
 			found[idKey] = true
 			continue
 		}
-		for _, index := range indexes {
-			results[index] = storage.ReadResult{
+		for duplicate, index := range indexes {
+			// userDocument owns its bytes; only repeated results need a copy.
+			result := storage.ReadResult{
 				Status:   storage.ReadStatusFound,
-				Document: cloneDocument(document),
-				Revision: cloneRevision(revision),
+				Document: document,
+				Revision: revision,
 			}
+			if duplicate > 0 {
+				result.Document = storage.CloneDocument(document)
+				result.Revision = cloneRevision(revision)
+			}
+			results[index] = result
 		}
 		found[idKey] = true
 	}
@@ -182,10 +188,6 @@ func (s *Store) setReadGroupError(group *readGroup, results []storage.ReadResult
 func setReadError(result *storage.ReadResult, err error) {
 	result.Status = storage.ReadStatusFailed
 	result.Err = err
-}
-
-func cloneDocument(document storage.Document) storage.Document {
-	return storage.CloneDocument(document)
 }
 
 func cloneRevision(revision storage.Revision) storage.Revision {

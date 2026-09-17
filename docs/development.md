@@ -112,6 +112,32 @@ reuse; it does not measure database throughput or deployment capacity. Fixed
 iteration counts also keep the default-pool comparison from exhausting local
 ephemeral ports during longer runs.
 
+### Payload allocation comparisons
+
+Read benchmarks exercise the adapter against a local HTTP backend for search
+and the MongoDB driver's offline wire fixture. Compare revisions with:
+
+```shell
+go test ./internal/storage/search ./internal/storage/mongodb -run '^$' -bench '^(BenchmarkSearchReadDocument|BenchmarkMongoReadDocument)$' -benchtime=50x -benchmem -count=5
+go test ./internal/queue -run '^$' -bench '^BenchmarkMutationEnvelope$' -benchtime=100x -benchmem -count=5
+```
+
+On an Apple M2, transferring an already-owned document into the first read
+result reduced median allocated bytes as follows (five samples):
+
+| Adapter | Document size | Before (B/op) | After (B/op) | Reduction |
+| --- | --- | ---: | ---: | ---: |
+| Search | 64 KiB | 322,748 | 246,350 | 23.7% |
+| Search | 1 MiB | 4,406,891 | 3,346,838 | 24.1% |
+| MongoDB | 64 KiB | 386,795 | 306,979 | 20.6% |
+| MongoDB | 1 MiB | 5,909,091 | 4,576,522 | 22.6% |
+
+Repeated results still own separate mutable documents and revisions. The read
+measurements include the local harness and do not establish database throughput.
+Encoding queue messages directly into their final envelope reduced allocations
+from two to one and allocated bytes by 50% for 4 KiB, 64 KiB, and 1 MiB payloads.
+The queue wire format is unchanged.
+
 ## Repository layout
 
 - `proto/sink` defines the public gRPC contract.

@@ -172,9 +172,10 @@ func applyMultiGetDocument(result *storage.ReadResult, document multiGetDocument
 		return
 	}
 	result.Status = storage.ReadStatusFound
+	// JSON decoding gives each document its own Source buffer.
 	result.Document = storage.Document{
 		Encoding: storage.DocumentEncodingJSON,
-		Payload:  bytes.Clone(document.Source),
+		Payload:  document.Source,
 	}
 	result.Revision = revision
 }

@@ -116,6 +116,12 @@ otherwise report success, absence or a permanent failure. Index aliases can
 return concrete index names, so those names are required but are not compared
 to the requested alias.
 
+Search requests never follow HTTP redirects. Record operations return a backend
+failure for a redirect; native Execute returns the original HTTP status and body.
+Native requests reject `Idempotency-Key` and `X-Idempotency-Key` because they
+would enable hidden transport retries after a lost mutation acknowledgement.
+Reconcile business state before explicitly retrying an ambiguous mutation.
+
 Search response byte limits trigger read splitting without retrying the same
 oversized batch on other endpoints. Byte limits and caller cancellation do not
 mark an endpoint unhealthy. Transport failures and temporary HTTP errors still

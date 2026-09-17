@@ -99,6 +99,11 @@ func New(opts Options) (*Store, error) {
 		transport.MaxIdleConnsPerHost = defaultIdleConnections
 		client = &http.Client{Timeout: defaultRequestTimeout, Transport: transport}
 	}
+	// A redirect can resend a mutation or move a read away from its configured
+	// endpoint. Apply one policy without changing a caller-owned client.
+	copiedClient := *client
+	copiedClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+	client = &copiedClient
 	maxResponseSize := opts.MaxResponseSize
 	if maxResponseSize == 0 {
 		maxResponseSize = defaultMaxResponseSize

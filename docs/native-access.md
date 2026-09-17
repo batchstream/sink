@@ -63,7 +63,10 @@ HTTP transport may decode compression and normalize header names; this is not
 byte-for-byte forwarding of HTTP packets. Redirects are returned without being
 followed. Request headers are forwarded except transport-owned headers:
 `Authorization`, `Proxy-Authorization`, `Host`, `Connection`, `Proxy-Connection`,
-`Keep-Alive`, `TE`, `Trailer`, `Transfer-Encoding`, `Upgrade`, and `Content-Length`.
+`Keep-Alive`, `TE`, `Trailer`, `Transfer-Encoding`, `Upgrade`, `Content-Length`,
+`Idempotency-Key`, and `X-Idempotency-Key`. The two idempotency headers would
+enable automatic HTTP transport retries after an ambiguous mutation response;
+Sink rejects them before execution and does not deduplicate their values.
 Set `content_type` directly; `Content-Type` in request headers is rejected.
 The query field uses URL query encoding and preserves repeated parameter values.
 Nonempty payloads require a valid content type; no encoding is inferred from paths.
@@ -381,9 +384,12 @@ initial empty cursor starts at the beginning of the current live query.
 
 During rolling updates, the old server drains active page requests within its
 shutdown deadline. If a request is interrupted, another server can accept the
-same Command and saved cursor. The SDK and server do not automatically retry
-transport or backend failures. The server may reduce the requested hit count after an oversized search response;
-this keeps the same seek position and never returns the rejected page.
+same Command and saved cursor. The SDK does not automatically retry transport or
+backend failures. The server can fail over a managed search page to another
+configured endpoint after a transport or temporary HTTP failure, within the
+original deadline. It may also reduce the requested hit count after an oversized
+search response; both cases keep the same seek position and never return the
+rejected page.
 Cancellation does not invalidate a saved cursor.
 
 Updated Go clients retry temporary Scan admission rejections carrying
@@ -467,7 +473,8 @@ budgets are not an exact process memory limit.
 
 Execute and Scan do not use the record micro-batcher or asynchronous queue. The
 SDK never retries Execute and retries Scan only for marked temporary admission
-rejections as described above. Each native search attempt uses one endpoint;
+rejections as described above. Search Execute uses one endpoint without automatic
+mutation replay; managed Query, Count and Scan may fail over safe reads.
 MongoDB command execution uses the driver's ordinary command path and its
 configured retry behavior. Native mutations can have taken effect even when an
 acknowledgement is lost. Callers must inspect native results and determine

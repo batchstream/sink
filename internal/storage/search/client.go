@@ -27,7 +27,6 @@ type requestOptions struct {
 	retrySafe   bool
 	headers     http.Header
 	maxBytes    int64
-	native      bool
 }
 
 type apiResponse struct {
@@ -121,13 +120,7 @@ func (s *Store) performOnce(ctx context.Context, opts requestOptions, endpoint *
 		request.SetBasicAuth(s.username, s.password)
 	}
 
-	client := s.client
-	if opts.native {
-		copied := *s.client
-		copied.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
-		client = &copied
-	}
-	httpResponse, err := client.Do(request)
+	httpResponse, err := s.client.Do(request)
 	if err != nil {
 		return empty, storage.BackendError(err)
 	}

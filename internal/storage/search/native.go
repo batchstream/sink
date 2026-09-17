@@ -63,10 +63,12 @@ func (s *Store) nativeOptions(req storage.NativeRequest) (requestOptions, error)
 		if !httpguts.ValidHeaderFieldName(name) {
 			return opts, errors.New("invalid HTTP header name")
 		}
+		// Idempotency headers make Go's transport replay otherwise unsafe
+		// mutations after a lost reply, even though Sink does not deduplicate.
 		switch strings.ToLower(name) {
 		case "content-type":
 			return opts, errors.New("set content_type directly, not in headers")
-		case "authorization", "proxy-authorization", "host", "connection", "proxy-connection", "keep-alive", "te", "trailer", "transfer-encoding", "upgrade", "content-length":
+		case "authorization", "proxy-authorization", "host", "connection", "proxy-connection", "keep-alive", "te", "trailer", "transfer-encoding", "upgrade", "content-length", "idempotency-key", "x-idempotency-key":
 			return opts, fmt.Errorf("request header %q is managed by Sink's transport", name)
 		}
 		for _, value := range values {
@@ -86,7 +88,7 @@ func (s *Store) nativeOptions(req storage.NativeRequest) (requestOptions, error)
 		}
 	}
 	opts = requestOptions{method: command.Method, path: decoded, rawPath: path, payload: command.Payload,
-		query: query, headers: headers, contentType: command.ContentType, maxBytes: int64(req.MaxBytes), native: true}
+		query: query, headers: headers, contentType: command.ContentType, maxBytes: int64(req.MaxBytes)}
 	return opts, nil
 }
 

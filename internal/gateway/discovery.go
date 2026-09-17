@@ -213,10 +213,10 @@ func affinityRoute(identity string, routes []Route) Route {
 	}
 	var owner Route
 	var highest uint64
-	identityDigest := sha256.Sum256([]byte(identity))
-	// DNS endpoints are usually IP:port strings. Keep their hash input on the
-	// stack; append still supports longer resolver addresses without truncation.
+	// Keep common record identities and DNS endpoints on the stack; append
+	// still supports longer values without truncation.
 	var buffer [256]byte
+	identityDigest := sha256.Sum256(append(buffer[:0], identity...))
 	prefix := append(buffer[:0], identityDigest[:]...)
 	prefix = append(prefix, 0)
 	for i, route := range routes {

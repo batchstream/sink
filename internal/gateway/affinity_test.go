@@ -98,6 +98,18 @@ func TestAffinityRoutingKeepsPublishedHashMapping(t *testing.T) {
 			t.Fatalf("record %d mapped to %q, want %q", i, got.endpoint, routes[expected].endpoint)
 		}
 	}
+	// Preserve the same mapping at and beyond the identity buffer boundary.
+	longIdentities := []struct {
+		length int
+		owner  int
+	}{{255, 1}, {256, 1}, {257, 0}, {1024, 2}}
+	const prefix = "sink://catalog/products/items/s:"
+	for _, vector := range longIdentities {
+		identity := prefix + strings.Repeat("x", vector.length-len(prefix))
+		if got := affinityRoute(identity, routes); got != routes[vector.owner] {
+			t.Fatalf("%d-byte identity mapped to %q, want %q", vector.length, got.endpoint, routes[vector.owner].endpoint)
+		}
+	}
 }
 
 func replicaView(t *testing.T, gateway *Server, engines []fixtureEngine) *discovery {

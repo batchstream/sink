@@ -32,7 +32,9 @@ services:
       - "127.0.0.1::8081"
       - "127.0.0.1::9090"
 YAML
-"${compose[@]}" up --build --detach --wait --wait-timeout 180
+# Build the shared local image before starting image-only roles.
+"${compose[@]}" build
+"${compose[@]}" up --detach --wait --wait-timeout 180
 for role in engine worker; do
   health_address="$("${compose[@]}" port "${role}" 8081)"
   endpoint="http://${health_address}/readyz"

@@ -4,7 +4,9 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 compose=(docker compose --env-file /dev/null --project-directory "${script_dir}" --file "${script_dir}/compose.yaml")
 
-"${compose[@]}" up --build --detach --wait
+# Build the shared local image before starting image-only roles.
+"${compose[@]}" build
+"${compose[@]}" up --detach --wait
 for role in engine worker; do
   health_address="$("${compose[@]}" port "${role}" 8081)"
   endpoint="http://${health_address}/readyz"

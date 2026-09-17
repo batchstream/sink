@@ -400,3 +400,39 @@ The configuration can contain database URIs, passwords, or API keys. Do not
 commit a production configuration file. Limit its filesystem permissions and
 mount it read-only in the container. The example files contain placeholders or
 local-development values only.
+
+
+For Kubernetes Secrets or another file-based credential provider, use
+`storage.mongodb.uri_file`, `storage.search.username_file`,
+`storage.search.password_file`, or `storage.search.api_key_file` instead of the
+corresponding inline field. Each must be an absolute path to a readable regular
+file. Kubernetes projected-volume symlinks are supported. A field and its `_file`
+variant are mutually exclusive, including an explicitly empty inline string.
+Search basic authentication still requires both username and password and cannot
+be combined with an API key. MongoDB uses a complete URI, including any required
+percent-encoding of credentials; there is no password interpolation into URIs.
+
+```yaml
+mode: engine
+storage:
+  name: orders
+  driver: mongodb
+  mongodb:
+    uri_file: /etc/sink-secrets/mongodb-uri
+```
+
+Files must contain 1 byte to 1 MiB of UTF-8 text without NUL. Their bytes are used
+exactly, including leading/trailing spaces and newlines; avoid adding a trailing
+newline when creating a credential. Values are never parsed as YAML or expanded
+as environment variables. Missing/unreadable/invalid files fail startup and
+`sink config check`; file-resolution errors identify the field without printing
+its contents. `config check` needs access to the mounted files but does not
+connect to the backend or prove that credentials authenticate successfully.
+
+Credentials are read only at startup. Updating a projected Secret does not reload
+a running client's connections. Prefer a new immutable Secret name and a rolling
+update; keep both credentials valid until all old Engine and Worker Pods have
+fully terminated. Changing only the Secret data requires an explicit workload
+restart. A rollback also requires the referenced Secret and its credential to
+remain valid. Revoking the old credential before its Pods exit can cause errors,
+regardless of discovery and graceful-shutdown budgets.

@@ -102,17 +102,21 @@ type storageFile struct {
 }
 
 type mongoDBFile struct {
-	URI                 string `yaml:"uri"`
-	MetadataField       string `yaml:"metadata_field"`
-	MaxConcurrentWrites *int   `yaml:"max_concurrent_writes"`
-	MaxConcurrentGroups *int   `yaml:"max_concurrent_groups"`
+	URI                 *string `yaml:"uri"`
+	URIFile             *string `yaml:"uri_file"`
+	MetadataField       string  `yaml:"metadata_field"`
+	MaxConcurrentWrites *int    `yaml:"max_concurrent_writes"`
+	MaxConcurrentGroups *int    `yaml:"max_concurrent_groups"`
 }
 
 type searchFile struct {
-	Endpoints []string `yaml:"endpoints"`
-	Username  string   `yaml:"username"`
-	Password  string   `yaml:"password"`
-	APIKey    string   `yaml:"api_key"`
+	Endpoints    []string `yaml:"endpoints"`
+	Username     *string  `yaml:"username"`
+	UsernameFile *string  `yaml:"username_file"`
+	Password     *string  `yaml:"password"`
+	PasswordFile *string  `yaml:"password_file"`
+	APIKey       *string  `yaml:"api_key"`
+	APIKeyFile   *string  `yaml:"api_key_file"`
 }
 
 type kafkaFile struct {

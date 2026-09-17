@@ -18,7 +18,11 @@ func resolveStorage(prefix string, file storageFile) (Storage, error) {
 	switch loaded.Driver {
 	case DriverMongoDB:
 		mongo := &loaded.MongoDB
-		mongo.URI = strings.TrimSpace(file.MongoDB.URI)
+		var err error
+		mongo.URI, err = resolveSecret(prefix+".mongodb.uri", file.MongoDB.URI, file.MongoDB.URIFile)
+		if err != nil {
+			return loaded, err
+		}
 		if mongo.URI == "" {
 			return loaded, fmt.Errorf("%s.mongodb.uri is required when driver is mongodb", prefix)
 		}
@@ -31,9 +35,19 @@ func resolveStorage(prefix string, file storageFile) (Storage, error) {
 		if len(search.Endpoints) == 0 {
 			return loaded, fmt.Errorf("%s.search.endpoints is required for a search driver", prefix)
 		}
-		search.Username = strings.TrimSpace(file.Search.Username)
-		search.Password = strings.TrimSpace(file.Search.Password)
-		search.APIKey = strings.TrimSpace(file.Search.APIKey)
+		var err error
+		search.Username, err = resolveSecret(prefix+".search.username", file.Search.Username, file.Search.UsernameFile)
+		if err != nil {
+			return loaded, err
+		}
+		search.Password, err = resolveSecret(prefix+".search.password", file.Search.Password, file.Search.PasswordFile)
+		if err != nil {
+			return loaded, err
+		}
+		search.APIKey, err = resolveSecret(prefix+".search.api_key", file.Search.APIKey, file.Search.APIKeyFile)
+		if err != nil {
+			return loaded, err
+		}
 		if (search.Username == "") != (search.Password == "") {
 			return loaded, fmt.Errorf("%s.search.username and %s.search.password must be configured together", prefix, prefix)
 		}

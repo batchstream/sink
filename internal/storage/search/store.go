@@ -20,6 +20,7 @@ const (
 	defaultRequestTimeout   = 30 * time.Second
 	defaultMaxResponseSize  = 64 << 20
 	defaultEndpointCooldown = 5 * time.Second
+	defaultIdleConnections  = 128
 )
 
 type Driver string
@@ -48,6 +49,7 @@ type Store struct {
 	password        string
 	apiKey          string
 	client          *http.Client
+	transport       *http.Transport
 	maxResponseSize int64
 	nextEndpoint    atomic.Uint64
 	scanSizes       scanSizeCache
@@ -88,8 +90,14 @@ func New(opts Options) (*Store, error) {
 		endpoints = append(endpoints, state)
 	}
 	client := opts.HTTPClient
+	var transport *http.Transport
 	if client == nil {
-		client = &http.Client{Timeout: defaultRequestTimeout}
+		transport = http.DefaultTransport.(*http.Transport).Clone()
+		// Retain a concurrent burst instead of closing all but two connections
+		// per endpoint. The Store-wide limit bounds idle sockets across endpoints.
+		transport.MaxIdleConns = defaultIdleConnections
+		transport.MaxIdleConnsPerHost = defaultIdleConnections
+		client = &http.Client{Timeout: defaultRequestTimeout, Transport: transport}
 	}
 	maxResponseSize := opts.MaxResponseSize
 	if maxResponseSize == 0 {
@@ -103,9 +111,18 @@ func New(opts Options) (*Store, error) {
 		password:        opts.Password,
 		apiKey:          opts.APIKey,
 		client:          client,
+		transport:       transport,
 		maxResponseSize: maxResponseSize,
 	}
 	return store, nil
+}
+
+// Close releases this Store's idle connections after its requests have drained.
+// A supplied HTTPClient remains owned by its caller.
+func (s *Store) Close() {
+	if s.transport != nil {
+		s.transport.CloseIdleConnections()
+	}
 }
 
 func parseEndpoint(raw string) (*url.URL, error) {

@@ -96,6 +96,22 @@ without external services. The opt-in `BenchmarkSynchronousStorage` exercises
 the actual gRPC codec, dispatcher, Lua engine, and disposable MongoDB/OpenSearch
 backends, then verifies every writer's persisted counter.
 
+### Search connection reuse
+
+Compare the default Go HTTP pool with the Store pool using synchronized bursts
+of 16 requests against a local HTTP/1.1 backend:
+
+```shell
+go test ./internal/storage/search -run '^$' -bench '^BenchmarkSearchConnectionReuse$' -benchtime=100x -benchmem -count=5
+```
+
+On an Apple M2, five 100-burst samples reduced median time from 570 to 241
+microseconds per burst and allocation from 309 to 129 KB per burst. After warmup,
+new connections fell from 14 per burst to zero. This isolates HTTP connection
+reuse; it does not measure database throughput or deployment capacity. Fixed
+iteration counts also keep the default-pool comparison from exhausting local
+ephemeral ports during longer runs.
+
 ## Repository layout
 
 - `proto/sink` defines the public gRPC contract.

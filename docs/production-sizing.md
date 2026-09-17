@@ -40,6 +40,12 @@ Adding replicas for one Store must not create another Store's database clients.
 Gateway remains shared ingress: a process-wide CPU, memory or admission shortage
 can affect multiple Stores, so it needs independent capacity planning.
 
+Each search Store owns its HTTP connection pool and retains at most 128 idle
+connections across all endpoints, with a 90-second idle timeout. This avoids
+reopening most connections after concurrent bursts. Active requests remain
+bounded by execution admission; 128 is an idle-cache limit, not a limit on active
+connections. Shutdown releases the Store's idle connections after work drains.
+
 ## Scaling signals
 
 | Role | Useful signals | Constraint |

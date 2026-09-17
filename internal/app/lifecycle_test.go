@@ -143,3 +143,47 @@ storage:
 	}
 	_ = reopened.Close()
 }
+
+func TestApplicationCloseReleasesSearchConnections(t *testing.T) {
+	closed := make(chan struct{}, 1)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	backend := httptest.NewUnstartedServer(handler)
+	backend.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateClosed {
+			closed <- struct{}{}
+		}
+	}
+	backend.Start()
+	t.Cleanup(backend.Close)
+	input := fmt.Sprintf(`mode: engine
+health:
+  address: "127.0.0.1:0"
+grpc:
+  address: "127.0.0.1:0"
+storage:
+  name: primary
+  driver: opensearch
+  search:
+    endpoints: [%q]
+shutdown_timeout: 1s
+`, backend.URL)
+	loaded, err := config.Decode(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{Config: loaded, Version: "test"}
+	application, err := New(t.Context(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(application.Close)
+	if err := application.storage.Ping(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	application.Close()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("application shutdown retained an idle search connection")
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	searchstorage "github.com/liran/sink/internal/storage/search"
 	"google.golang.org/grpc"
 )
 
@@ -127,6 +128,9 @@ func (app *Application) Close() {
 	}
 	if app.kafkaPublisher != nil {
 		app.kafkaPublisher.Close()
+	}
+	if store, ok := app.storage.(*searchstorage.Store); ok {
+		store.Close()
 	}
 	disconnectMongoClient(app.mongoClient, app.config.ShutdownTimeout)
 }

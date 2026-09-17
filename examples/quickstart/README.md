@@ -4,7 +4,8 @@ This example runs Gateway, Engine and Worker as separate containers with real
 MongoDB and Kafka. Run `make quickstart` to start them and exercise the public API.
 
 ```shell
-docker compose --env-file /dev/null -f examples/quickstart/compose.yaml up --build -d --wait
+docker compose --env-file /dev/null -f examples/quickstart/compose.yaml build
+docker compose --env-file /dev/null -f examples/quickstart/compose.yaml up -d --wait
 ```
 
 The public endpoint is `127.0.0.1:8080`. Gateway, Engine and Worker metrics are at

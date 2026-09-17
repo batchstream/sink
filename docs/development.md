@@ -96,6 +96,21 @@ without external services. The opt-in `BenchmarkSynchronousStorage` exercises
 the actual gRPC codec, dispatcher, Lua engine, and disposable MongoDB/OpenSearch
 backends, then verifies every writer's persisted counter.
 
+### Gateway routing allocations
+
+Compare record-affinity routing across replica counts with:
+
+```shell
+go test ./internal/gateway -run '^$' -bench '^BenchmarkAffinityRoute$' -benchtime=200ms -benchmem -count=5
+```
+
+On an Apple M2 with Go 1.27, reusing the existing stack buffer for the record
+identity reduced the benchmark's 3, 16, 64, and 256-replica cases from 48 B and
+one allocation per route to zero. The single-replica fast path was already
+allocation-free. SHA-256 inputs and owner selection remain unchanged; identities
+and endpoints exceeding the buffer still use an allocation without truncation.
+This isolates routing allocation, not end-to-end deployment throughput.
+
 ### Search connection reuse
 
 Compare the default Go HTTP pool with the Store pool using synchronized bursts

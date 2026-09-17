@@ -146,7 +146,7 @@ With the same tagged image used in production:
 ```shell
 docker run --rm \
   --mount type=bind,source="$(pwd)",target=/workspace,readonly \
-  ghcr.io/liran/sink:0.8.0 \
+  ghcr.io/batchstream/sink:0.15.0 \
   lua test \
   --script /workspace/merge/product.lua \
   --cases /workspace/merge/testdata

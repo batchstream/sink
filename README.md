@@ -161,7 +161,7 @@ cp configs/engine.yaml config.yaml
 # Edit config.yaml for the target backend.
 docker run --rm -p 8080:8080 \
   --mount type=bind,source="$(pwd)/config.yaml",target=/etc/sink/config.yaml,readonly \
-  ghcr.io/liran/sink:latest --config /etc/sink/config.yaml
+  ghcr.io/batchstream/sink:latest --config /etc/sink/config.yaml
 ```
 
 HTTP health endpoints are always available at `health.address` (default `:8081`).

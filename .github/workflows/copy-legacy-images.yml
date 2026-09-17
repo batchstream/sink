@@ -1,0 +1,84 @@
+name: Copy legacy container images
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: copy-legacy-container-images
+  cancel-in-progress: false
+
+jobs:
+  copy:
+    name: Copy images without changing the legacy package
+    if: github.repository == 'batchstream/sink'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SOURCE_IMAGE: ghcr.io/liran/sink
+      DESTINATION_IMAGE: ghcr.io/batchstream/sink
+    steps:
+      - name: Install Skopeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes skopeo
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Snapshot source digests and existing destination tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          skopeo list-tags --no-creds "docker://${SOURCE_IMAGE}" > "${RUNNER_TEMP}/source-tags.json"
+          jq -er '.Tags[]' "${RUNNER_TEMP}/source-tags.json" | sort > "${RUNNER_TEMP}/source-tags.txt"
+          while IFS= read -r tag; do
+            skopeo inspect --no-creds --raw "docker://${SOURCE_IMAGE}:${tag}" > "${RUNNER_TEMP}/manifest.json"
+            digest=$(skopeo manifest-digest "${RUNNER_TEMP}/manifest.json")
+            printf '%s\t%s\n' "${tag}" "${digest}" >> "${RUNNER_TEMP}/source-images.tsv"
+          done < "${RUNNER_TEMP}/source-tags.txt"
+
+          if gh api orgs/batchstream/packages/container/sink > /dev/null 2> "${RUNNER_TEMP}/package-error.txt"; then
+            skopeo list-tags "docker://${DESTINATION_IMAGE}" > "${RUNNER_TEMP}/destination-tags.json"
+          elif grep -Fq '(HTTP 404)' "${RUNNER_TEMP}/package-error.txt"; then
+            printf '{"Tags":[]}\n' > "${RUNNER_TEMP}/destination-tags.json"
+          else
+            cat "${RUNNER_TEMP}/package-error.txt" >&2
+            exit 1
+          fi
+
+      - name: Copy all platforms and attestations with unchanged digests
+        run: |
+          printf '| Tag | Digest | Result |\n| --- | --- | --- |\n' >> "${GITHUB_STEP_SUMMARY}"
+          while IFS=$'\t' read -r tag digest; do
+            if jq -e --arg tag "${tag}" '.Tags | index($tag) != null' "${RUNNER_TEMP}/destination-tags.json" > /dev/null; then
+              skopeo inspect --raw "docker://${DESTINATION_IMAGE}:${tag}" > "${RUNNER_TEMP}/manifest.json"
+              if [[ "$(skopeo manifest-digest "${RUNNER_TEMP}/manifest.json")" != "${digest}" ]]; then
+                echo "Refusing to overwrite ${DESTINATION_IMAGE}:${tag}: its digest differs from the legacy image." >&2
+                exit 1
+              fi
+              result='Already present'
+            else
+              skopeo copy --all --preserve-digests --src-no-creds --retry-times 3 \
+                "docker://${SOURCE_IMAGE}@${digest}" "docker://${DESTINATION_IMAGE}:${tag}"
+              skopeo inspect --raw "docker://${DESTINATION_IMAGE}:${tag}" > "${RUNNER_TEMP}/manifest.json"
+              test "$(skopeo manifest-digest "${RUNNER_TEMP}/manifest.json")" = "${digest}"
+              result='Copied and verified'
+            fi
+            printf '| `%s` | `%s` | %s |\n' "${tag}" "${digest}" "${result}" >> "${GITHUB_STEP_SUMMARY}"
+          done < "${RUNNER_TEMP}/source-images.tsv"
+
+      - name: Upload source digest inventory
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: legacy-image-digests
+          path: ${{ runner.temp }}/source-images.tsv
+          if-no-files-found: ignore

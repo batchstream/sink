@@ -119,14 +119,21 @@ backends, then verifies every writer's persisted counter.
 Publishing a GitHub Release triggers `.github/workflows/release-image.yml`.
 Semantic version tags such as `v0.3.2` publish `0.3.2`, `0.3`, and `0` image
 tags. A non-prerelease also publishes `latest`. Images are available for
-`linux/amd64` and `linux/arm64` at `ghcr.io/liran/sink`.
+`linux/amd64` and `linux/arm64` at `ghcr.io/batchstream/sink`.
+
+The legacy `ghcr.io/liran/sink` package remains unchanged. The manual
+`copy-legacy-images.yml` workflow copies its existing tags to the organization
+package, preserving manifest digests, all platforms, and embedded attestations.
+It refuses to overwrite an organization tag with a different digest. New
+releases publish to the current repository's GHCR namespace only. The
+organization package must be public for anonymous pulls.
 
 The Release description is updated after publication with the complete tagged
 image address, pull command, and immutable image digest. For `v0.3.2`, the
 primary image is:
 
 ```text
-ghcr.io/liran/sink:0.3.2
+ghcr.io/batchstream/sink:0.3.2
 ```
 
 Every Release also includes `checksums.txt` and standalone archives for these

@@ -41,7 +41,7 @@ spec:
               app.kubernetes.io/name: sink-catalog-engine
       containers:
         - name: sink
-          image: ghcr.io/liran/sink:REPLACE_WITH_TESTED_RELEASE
+          image: ghcr.io/batchstream/sink:REPLACE_WITH_TESTED_RELEASE
           args: ["--config", "/etc/sink/sink.yaml"]
           resources:
             requests:

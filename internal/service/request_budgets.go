@@ -45,8 +45,16 @@ func (b *requestBudgets) add(count int) {
 }
 
 func sharedSnapshotBudget(owners []int, budgets []*storage.ReadBudget) *storage.ReadBudget {
-	shared := make([]*storage.ReadBudget, 0, len(owners))
-	seen := make(map[int]bool, len(owners))
+	if len(owners) == 1 {
+		return budgets[owners[0]]
+	}
+	if len(budgets) == 1 && len(owners) > 0 {
+		return budgets[0]
+	}
+	// Repeated operations do not add callers or need separate snapshot charges.
+	maximum := min(len(owners), len(budgets))
+	shared := make([]*storage.ReadBudget, 0, maximum)
+	seen := make(map[int]bool, maximum)
 	for _, owner := range owners {
 		if !seen[owner] {
 			shared = append(shared, budgets[owner])

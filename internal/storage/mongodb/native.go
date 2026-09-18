@@ -191,7 +191,11 @@ func (s *Store) scanDocuments(ctx context.Context, req storage.ScanRequest, send
 		_ = cursor.Close(cleanup)
 	}()
 	batch := make([]storage.Document, 0, req.BatchSize)
-	budget := storage.NewResponseBudget(ctx, req.Request.MaxBytes)
+	// Count consumes each page synchronously; these documents never become RPC
+	// output. Reuse a working-set lease after the visitor discards a page.
+	lease := capacity.FromContext(ctx).NewLease()
+	defer capacity.Close(lease)
+	budget := storage.WithMemoryBudget(ctx, storage.NewReadBudget(req.Request.MaxBytes), lease)
 	for cursor.Next(ctx) {
 		if err := budget.Reserve(len(cursor.Current)); err != nil {
 			if len(batch) == 0 {
@@ -200,8 +204,11 @@ func (s *Store) scanDocuments(ctx context.Context, req storage.ScanRequest, send
 			if err := send(batch); err != nil {
 				return err
 			}
+			if lease != nil {
+				lease.Shrink(lease.Bytes())
+			}
 			batch = make([]storage.Document, 0, req.BatchSize)
-			budget = storage.NewResponseBudget(ctx, req.Request.MaxBytes)
+			budget = storage.WithMemoryBudget(ctx, storage.NewReadBudget(req.Request.MaxBytes), lease)
 			if err := budget.Reserve(len(cursor.Current)); err != nil {
 				return err
 			}
@@ -212,8 +219,11 @@ func (s *Store) scanDocuments(ctx context.Context, req storage.ScanRequest, send
 			if err := send(batch); err != nil {
 				return err
 			}
+			if lease != nil {
+				lease.Shrink(lease.Bytes())
+			}
 			batch = make([]storage.Document, 0, req.BatchSize)
-			budget = storage.NewResponseBudget(ctx, req.Request.MaxBytes)
+			budget = storage.WithMemoryBudget(ctx, storage.NewReadBudget(req.Request.MaxBytes), lease)
 		}
 	}
 	if err := cursor.Err(); err != nil {

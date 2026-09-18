@@ -44,6 +44,8 @@ responses and sustained saturation still require smaller requests or capacity.
 - Generated `SizeVT()` measures protobuf wire size, not Go heap size. Input
   accounting adds object/envelope allowances. Known returned documents reserve
   their retained payload and eventual encoded copy together, before commit.
+  Shared Lua declarations remain shared during parsing; asynchronous writes
+  reserve their expanded queue envelopes before serialization and enqueueing.
 - Read snapshots acquire capacity before adapter copies. Original caller outputs
   acquire separately before response copies. Logical snapshot/input/output/
   returned-document quotas still belong to the original RPC across retries,
@@ -51,11 +53,14 @@ responses and sustained saturation still require smaller requests or capacity.
 - Search HTTP bodies acquire backing-array capacity before growth, including the
   overlap of old/new arrays and JSON decoding space. Lua VM allocation is not
   controlled by protobuf size; existing Lua limits and process headroom remain
-  necessary. Candidates acquire capacity before retention and commit.
+  necessary. Discarded HTTP bodies and rejected candidates release capacity
+  immediately; retained decoded documents keep their own reservations.
+  Candidates acquire capacity before retention and commit.
 - MongoDB hides complete wire allocation inside its driver. Reads and native
   operations reserve a temporary 48 MiB allowance around database work. It is
   included in used bytes and reported separately as opaque reservation. It is
   not charged at RPC entry and does not scale with the configured response limit.
+  Count's internal cursor pages release working-set capacity after consumption.
 - Small completion envelopes are acquired before execution. Failure to acquire a
   returned document fails that operation before its write; completed operations
   keep their result. Transport failure after a write remains an ambiguous reply,

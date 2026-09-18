@@ -174,8 +174,10 @@ func resolveLuaProgram(program *sink.LuaProgram, programs luaPrograms) (merge.Pr
 	if !ok {
 		return resolved, errors.New("lua program SHA-256 reference was not declared in the write request")
 	}
-	resolved.Source = bytes.Clone(declared.Source)
-	resolved.SHA256 = bytes.Clone(declared.SHA256)
+	// Declarations already own their buffers and compiled programs are immutable.
+	// Preserve sharing when many operations reference one declaration.
+	resolved.Source = declared.Source
+	resolved.SHA256 = declared.SHA256
 	return resolved, nil
 }
 

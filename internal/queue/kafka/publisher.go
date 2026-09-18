@@ -113,21 +113,24 @@ func (p *Publisher) Publish(ctx context.Context, req queue.PublishRequest) (queu
 		}
 		pending.Add(1)
 		p.client.TryProduce(ctx, record, func(_ *kgo.Record, err error) {
-			result := queue.PublishResult{Status: queue.PublishStatusAccepted}
-			if err != nil {
-				result.Status = queue.PublishStatusFailed
-				result.Err = publishError(err)
-			}
-			response.Results[index] = result
+			response.Results[index].Err = err
 			pending.Done()
 		})
 	}
 	pending.Wait()
 	accepted := 0
-	for _, result := range response.Results {
-		if result.Status == queue.PublishStatusAccepted {
-			accepted++
+	for index := range response.Results {
+		result := &response.Results[index]
+		if result.Status == queue.PublishStatusFailed {
+			continue
 		}
+		if result.Err != nil {
+			result.Status = queue.PublishStatusFailed
+			result.Err = publishError(result.Err)
+			continue
+		}
+		result.Status = queue.PublishStatusAccepted
+		accepted++
 	}
 	p.metrics.ObserveKafkaPublish(p.store, time.Since(started), accepted, len(response.Results)-accepted)
 	return response, nil

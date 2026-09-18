@@ -80,17 +80,11 @@ func (s *Store) Read(ctx context.Context, req storage.ReadRequest) (storage.Read
 		}
 		for index, document := range documents {
 			result := &response.Results[batch[index].resultIndex]
-			if document.Found != nil && *document.Found {
-				budget := req.Operations[batch[index].resultIndex].Budget
-				if budget == nil {
-					budget = req.Budget
-				}
-				if err := budget.Reserve(len(document.Source)); err != nil {
-					setReadError(result, err)
-					continue
-				}
+			budget := req.Operations[batch[index].resultIndex].Budget
+			if budget == nil {
+				budget = req.Budget
 			}
-			applyMultiGetDocument(result, document)
+			applyMultiGetDocument(result, document, budget)
 		}
 	}
 	return response, nil
@@ -141,7 +135,7 @@ func (s *Store) multiGet(ctx context.Context, works []readWork, source bool) ([]
 	return decoded.Documents, nil
 }
 
-func applyMultiGetDocument(result *storage.ReadResult, document multiGetDocument) {
+func applyMultiGetDocument(result *storage.ReadResult, document multiGetDocument, budget *storage.ReadBudget) {
 	if document.Error != nil {
 		if isIndexNotFound(document.Error) {
 			result.Status = storage.ReadStatusNotFound
@@ -168,6 +162,12 @@ func applyMultiGetDocument(result *storage.ReadResult, document multiGetDocument
 	}
 	revision, err := encodeRevision(*document.Sequence, *document.PrimaryTerm)
 	if err != nil {
+		setReadError(result, err)
+		return
+	}
+	// Only retained documents consume snapshot capacity; failed reads must
+	// neither spend a sibling's budget nor hide their error behind quota failure.
+	if err := budget.Reserve(len(document.Source)); err != nil {
 		setReadError(result, err)
 		return
 	}

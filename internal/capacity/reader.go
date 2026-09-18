@@ -8,12 +8,12 @@ import (
 // ReadAll acquires each new backing array before allocating it. During growth
 // both arrays are charged; after copying only the retained allocation remains.
 // The second copy covers JSON decoding while adapters own the response body.
-func ReadAll(ctx context.Context, reader io.Reader, maximum int64) ([]byte, error) {
-	scope := FromContext(ctx)
-	if scope == nil {
+// The caller owns lease and releases it when the body and decoded working set
+// are discarded or transferred to separately charged output buffers.
+func ReadAll(ctx context.Context, reader io.Reader, maximum int64, lease *Lease) ([]byte, error) {
+	if lease == nil {
 		return io.ReadAll(io.LimitReader(reader, maximum))
 	}
-	lease := scope.NewLease()
 	var body []byte
 	for {
 		if len(body) == cap(body) {

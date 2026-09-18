@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/storage"
 )
 
@@ -79,6 +80,7 @@ func (s *Store) performQuery(ctx context.Context, opts requestOptions) (scanPage
 		}
 		return page, err
 	}
+	defer response.close()
 	if response.statusCode < 200 || response.statusCode >= 300 {
 		return page, responseError(s.driver, response)
 	}
@@ -102,6 +104,8 @@ func (s *Store) performQuery(ctx context.Context, opts requestOptions) (scanPage
 			return page, errors.New("search query returned incomplete cluster results")
 		}
 	}
+	page.memory = response.memory
+	response.memory = nil
 	return page, nil
 }
 
@@ -158,6 +162,7 @@ func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.Qu
 	if err != nil {
 		return empty, err
 	}
+	defer capacity.Close(page.memory)
 	if len(page.Hits.Hits) > req.PageSize {
 		return empty, errors.New("search query exceeded its requested result count")
 	}
@@ -228,6 +233,7 @@ func (s *Store) Count(ctx context.Context, req storage.CountRequest) (storage.Co
 	if err != nil {
 		return empty, err
 	}
+	defer capacity.Close(page.memory)
 	var total struct {
 		Value    *int64 `json:"value"`
 		Relation string `json:"relation"`

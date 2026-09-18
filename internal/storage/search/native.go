@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/liran/sink-go/uri"
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/storage"
 	"golang.org/x/net/http/httpguts"
 )
@@ -115,6 +116,7 @@ func (s *Store) Execute(ctx context.Context, req storage.NativeRequest) (storage
 }
 
 type scanPage struct {
+	memory          *capacity.Lease
 	ScrollID        string    `json:"_scroll_id"`
 	Hits            *scanHits `json:"hits"`
 	TimedOut        *bool     `json:"timed_out"`

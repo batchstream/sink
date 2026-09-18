@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/storage"
 )
 
@@ -37,6 +38,7 @@ type multiGetDocument struct {
 }
 
 type multiGetResponse struct {
+	memory    *capacity.Lease
 	Documents []multiGetDocument `json:"docs"`
 }
 
@@ -78,7 +80,7 @@ func (s *Store) Read(ctx context.Context, req storage.ReadRequest) (storage.Read
 			}
 			continue
 		}
-		for index, document := range documents {
+		for index, document := range documents.Documents {
 			result := &response.Results[batch[index].resultIndex]
 			budget := req.Operations[batch[index].resultIndex].Budget
 			if budget == nil {
@@ -86,11 +88,13 @@ func (s *Store) Read(ctx context.Context, req storage.ReadRequest) (storage.Read
 			}
 			applyMultiGetDocument(result, document, budget)
 		}
+		capacity.Close(documents.memory)
 	}
 	return response, nil
 }
 
-func (s *Store) multiGet(ctx context.Context, works []readWork, source bool) ([]multiGetDocument, error) {
+func (s *Store) multiGet(ctx context.Context, works []readWork, source bool) (multiGetResponse, error) {
+	var empty multiGetResponse
 	references := make([]multiGetDocumentReference, 0, len(works))
 	for _, work := range works {
 		reference := multiGetDocumentReference{Index: work.document.index, ID: work.document.id}
@@ -102,7 +106,7 @@ func (s *Store) multiGet(ctx context.Context, works []readWork, source bool) ([]
 	requestBody := multiGetRequest{Documents: references}
 	payload, err := json.Marshal(requestBody)
 	if err != nil {
-		return nil, fmt.Errorf("encode search multi-get request: %w", err)
+		return empty, fmt.Errorf("encode search multi-get request: %w", err)
 	}
 	opts := requestOptions{
 		method:      http.MethodPost,
@@ -113,26 +117,29 @@ func (s *Store) multiGet(ctx context.Context, works []readWork, source bool) ([]
 	}
 	response, err := s.perform(ctx, opts)
 	if err != nil {
-		return nil, fmt.Errorf("read search documents: %w", err)
+		return empty, fmt.Errorf("read search documents: %w", err)
 	}
+	defer response.close()
 	if response.statusCode < 200 || response.statusCode >= 300 {
-		return nil, responseError(s.driver, response)
+		return empty, responseError(s.driver, response)
 	}
 	var decoded multiGetResponse
 	if err := json.Unmarshal(response.body, &decoded); err != nil {
-		return nil, fmt.Errorf("decode search multi-get response: %w", err)
+		return empty, fmt.Errorf("decode search multi-get response: %w", err)
 	}
 	if len(decoded.Documents) != len(works) {
-		return nil, fmt.Errorf("search returned %d multi-get results for %d operations", len(decoded.Documents), len(works))
+		return empty, fmt.Errorf("search returned %d multi-get results for %d operations", len(decoded.Documents), len(works))
 	}
 	for index, document := range decoded.Documents {
 		// An alias request returns the concrete index name, which need not
 		// equal the requested name. IDs must still match in request order.
 		if document.Index == "" || document.ID != works[index].document.id {
-			return nil, fmt.Errorf("search multi-get result %d has a missing index or mismatched document ID", index)
+			return empty, fmt.Errorf("search multi-get result %d has a missing index or mismatched document ID", index)
 		}
 	}
-	return decoded.Documents, nil
+	decoded.memory = response.memory
+	response.memory = nil
+	return decoded, nil
 }
 
 func applyMultiGetDocument(result *storage.ReadResult, document multiGetDocument, budget *storage.ReadBudget) {

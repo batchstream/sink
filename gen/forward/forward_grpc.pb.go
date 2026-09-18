@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Engine_Forward_FullMethodName = "/sink.forward.v1.Engine/Forward"
+	Engine_Forward_FullMethodName       = "/sink.forward.v1.Engine/Forward"
+	Engine_ForwardStream_FullMethodName = "/sink.forward.v1.Engine/ForwardStream"
 )
 
 // EngineClient is the client API for Engine service.
@@ -29,6 +30,9 @@ const (
 // Private Gateway-to-Engine protocol. Never used by public clients.
 type EngineClient interface {
 	Forward(ctx context.Context, in *ForwardRequest, opts ...grpc.CallOption) (*ForwardResponse, error)
+	// The first frame announces the encoded response size; subsequent frames
+	// contain bounded chunks. Public clients continue using unary Sink RPCs.
+	ForwardStream(ctx context.Context, in *ForwardRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ResponseFrame], error)
 }
 
 type engineClient struct {
@@ -49,6 +53,25 @@ func (c *engineClient) Forward(ctx context.Context, in *ForwardRequest, opts ...
 	return out, nil
 }
 
+func (c *engineClient) ForwardStream(ctx context.Context, in *ForwardRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ResponseFrame], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Engine_ServiceDesc.Streams[0], Engine_ForwardStream_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ForwardRequest, ResponseFrame]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Engine_ForwardStreamClient = grpc.ServerStreamingClient[ResponseFrame]
+
 // EngineServer is the server API for Engine service.
 // All implementations must embed UnimplementedEngineServer
 // for forward compatibility.
@@ -56,6 +79,9 @@ func (c *engineClient) Forward(ctx context.Context, in *ForwardRequest, opts ...
 // Private Gateway-to-Engine protocol. Never used by public clients.
 type EngineServer interface {
 	Forward(context.Context, *ForwardRequest) (*ForwardResponse, error)
+	// The first frame announces the encoded response size; subsequent frames
+	// contain bounded chunks. Public clients continue using unary Sink RPCs.
+	ForwardStream(*ForwardRequest, grpc.ServerStreamingServer[ResponseFrame]) error
 	mustEmbedUnimplementedEngineServer()
 }
 
@@ -68,6 +94,9 @@ type UnimplementedEngineServer struct{}
 
 func (UnimplementedEngineServer) Forward(context.Context, *ForwardRequest) (*ForwardResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Forward not implemented")
+}
+func (UnimplementedEngineServer) ForwardStream(*ForwardRequest, grpc.ServerStreamingServer[ResponseFrame]) error {
+	return status.Errorf(codes.Unimplemented, "method ForwardStream not implemented")
 }
 func (UnimplementedEngineServer) mustEmbedUnimplementedEngineServer() {}
 func (UnimplementedEngineServer) testEmbeddedByValue()                {}
@@ -108,6 +137,17 @@ func _Engine_Forward_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Engine_ForwardStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ForwardRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(EngineServer).ForwardStream(m, &grpc.GenericServerStream[ForwardRequest, ResponseFrame]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Engine_ForwardStreamServer = grpc.ServerStreamingServer[ResponseFrame]
+
 // Engine_ServiceDesc is the grpc.ServiceDesc for Engine service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -120,6 +160,12 @@ var Engine_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Engine_Forward_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "ForwardStream",
+			Handler:       _Engine_ForwardStream_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "forward/forward.proto",
 }

@@ -7,6 +7,12 @@
 # See ../docs/configuration.md for constraints and supported storage drivers.
 mode: engine # Required process role.
 
+# One shared process pool; max_bytes is normally detected automatically.
+memory:
+  # max_bytes: 256MiB # Optional explicit capacity, including completion reserve.
+  burst_percent: 10 # Completion reserve; 1..99; new requests use ordinary capacity.
+  wait_timeout: 2s # Response growth wait, bounded by the original request deadline.
+
 # Public RPC and gRPC health listener.
 grpc:
   address: ":8080" # TCP listen address.
@@ -69,27 +75,7 @@ service:
     max_read_bytes: 32MiB # Read/returned-write/native document budget; <=half gRPC send limit.
     max_operations: 1000 # Maximum operations in one Read, Write, or Delete request.
 
-  # Storage execution for all synchronous methods, not only the Execute RPC.
-  execution:
-    max_requests: 128 # Concurrent admitted execution requests; maximum 10000.
-    max_bytes: 256MiB # Admitted input/output reservations; <=16GiB; not a heap/RSS cap.
-    # Waiting direct synchronous calls; separate from batching and Scan queues.
-    queue:
-      max_requests: 1024 # Pending direct requests; maximum 10000.
-      max_bytes: 32MiB # Waiting input/bookkeeping; default min(32MiB, execution.max_bytes).
-      max_wait: 2s # Default min(2s, request.timeout); cannot exceed request.timeout.
-    # Scan pages also consume the total execution capacity above.
-    scan:
-      max_requests: 64 # Default max(1, execution.max_requests/2); <= execution.max_requests.
-      max_bytes: 128MiB # Default max(1, execution.max_bytes/2); <= execution.max_bytes.
-      admission_wait: 2s # Default min(2s, request.timeout); included in page deadline.
-
-  # Engine asynchronous Write/Delete admission; independent of storage execution.
-  publish:
-    max_requests: 32 # Concurrent publishing requests; maximum 10000.
-    max_bytes: 256MiB # Publication reservations; <=16GiB; Kafka buffers are additional.
-
-  # Engine Read/Write/Delete batching is always active; these are collection targets.
+  # Cross-request batching; inputs also acquire the shared memory pool.
   batching:
     max_wait: 2ms # Collection delay starting with the first request in a batch.
     max_operations: 1000 # Default request.max_operations; cannot exceed that limit.

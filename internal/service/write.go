@@ -11,6 +11,7 @@ import (
 	"github.com/liran/sink/internal/protocol"
 
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/forwarding"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/storage"
@@ -420,14 +421,15 @@ func (s *Server) executeWriteAttempt(
 }
 
 type writeAttempt struct {
-	options       writeExecutionOptions
-	results       []*sink.WriteResult
-	snapshots     []*storage.ReadBudget
-	inputs        []*storage.ReadBudget
-	outputs       []*storage.ReadBudget
-	output        *storage.ReadBudget
-	snapshotBytes int
-	finalCommit   bool
+	options               writeExecutionOptions
+	results               []*sink.WriteResult
+	snapshots             []*storage.ReadBudget
+	inputs                []*storage.ReadBudget
+	outputs               []*storage.ReadBudget
+	output                *storage.ReadBudget
+	snapshotBytes         int
+	pendingCandidateBytes int
+	finalCommit           bool
 }
 
 type writeChunkOutcome struct {
@@ -448,6 +450,7 @@ func (s *Server) readWriteSnapshots(ctx context.Context, groups []writeGroup, at
 		if attempt.options.budgets.callerCount() > 1 {
 			budget = storage.NewWorkingSetReadBudget(budget, working)
 		}
+		budget = storage.WithMemoryBudget(ctx, budget, attempt.options.memory.reservation.managed)
 		readOperation := storage.ReadOperation{Address: operation.address, Budget: budget}
 		readOperations = append(readOperations, readOperation)
 	}
@@ -486,6 +489,12 @@ func (s *Server) applyWriteSnapshots(ctx context.Context, groups []writeGroup, s
 			candidate, include = s.prepareBatchedWriteGroup(ctx, preparation)
 		}
 		if include {
+			if err := capacity.Grow(ctx, opts.memory.reservation.managed, 3*(len(candidate.operation.Document.Payload)+128)); err != nil {
+				failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: storage.ResourceExhaustedError(err)}
+				applyWriteGroupResult(group, results, failure)
+				opts.complete(group, results)
+				continue
+			}
 			if err := opts.returns.reserve(group, candidate.operation.Document); err != nil {
 				failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: err}
 				applyWriteGroupResult(group, results, failure)
@@ -502,11 +511,16 @@ func (s *Server) applyWriteSnapshots(ctx context.Context, groups []writeGroup, s
 			}
 			candidateBytes := len(candidate.operation.Document.Payload) + 128
 			if opts.budgets.callerCount() > 1 && len(candidates) > 0 && candidateBytes > s.maxReadBytes-outputBytes {
+				attempt.pendingCandidateBytes = candidateBytes
 				conflicts, err := s.commitWriteCandidates(ctx, candidates, attempt)
+				attempt.pendingCandidateBytes = 0
 				if err != nil {
 					return outcome, err
 				}
 				outcome.conflicts = append(outcome.conflicts, conflicts...)
+				if opts.memory.reservation.managed != nil {
+					opts.memory.reservation.managed.Shrink(3 * int64(outputBytes))
+				}
 				clear(candidates)
 				candidates = candidates[:0]
 				outputBytes = 0
@@ -531,7 +545,7 @@ func (s *Server) commitWriteCandidates(ctx context.Context, candidates []writeGr
 	if err := contextError(ctx); err != nil {
 		return nil, err
 	}
-	if attempt.finalCommit {
+	if attempt.finalCommit || attempt.options.memory.reservation.managed != nil {
 		candidateBytes := 0
 		for _, candidate := range candidates {
 			candidateBytes += len(candidate.operation.Document.Payload) + 128
@@ -539,8 +553,16 @@ func (s *Server) commitWriteCandidates(ctx context.Context, candidates []writeGr
 		// All candidates in this chunk are now known. Keep the still-live
 		// snapshot slice, output and copy allowance; return unused capacity
 		// throughout the storage call, including refresh=wait_for latency.
-		if err := attempt.options.memory.retain(attempt.snapshotBytes, candidateBytes); err != nil {
-			return nil, err
+		if err := attempt.options.memory.retain(attempt.snapshotBytes, candidateBytes+attempt.pendingCandidateBytes); err != nil {
+			if attempt.options.memory.reservation.managed == nil {
+				return nil, err
+			}
+			for _, candidate := range candidates {
+				failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: storage.ResourceExhaustedError(err)}
+				applyWriteGroupResult(candidate.group, attempt.results, failure)
+				attempt.options.complete(candidate.group, attempt.results)
+			}
+			return nil, nil
 		}
 	}
 

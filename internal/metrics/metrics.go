@@ -737,3 +737,7 @@ func (m *Metrics) SetWorkerOffsetGap(store string, gap bool) {
 	}
 	m.workerOffsetGap.WithLabelValues(m.storeLabel(store)).Set(value)
 }
+
+func (m *Metrics) Register(collector prometheus.Collector) error {
+	return m.registry.Register(collector)
+}

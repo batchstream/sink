@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/forwarding"
 	"github.com/liran/sink/internal/protocol"
 	"github.com/liran/sink/internal/storage"
@@ -38,11 +39,19 @@ func (s *Server) read(ctx context.Context, req *sink.ReadRequest, budgets *reque
 	}
 	admission := admissionRequest{encodedBytes: req.SizeVT() + failureResponseBytes(len(req.GetOperations())) + 2*s.maxReadBytes, stores: operationStores(req.GetOperations()), wait: budgets != nil}
 	admission.inputBytes = req.SizeVT() + 128*len(req.GetOperations())
+	admission.resultBytes = failureResponseBytes(len(req.GetOperations()))
+	admission.sharedInput = budgets.ownsInput()
 	ctx, release, err := s.admitRequest(ctx, admission)
 	if err != nil {
 		return outcome, err
 	}
 	defer release()
+	if budgets == nil {
+		budgets = contextBudgets(ctx, len(req.GetOperations()))
+	}
+	if budgets != nil {
+		budgets.producer = capacity.FromContext(ctx)
+	}
 
 	response := &sink.ReadResponse{
 		Results: make([]*sink.ReadResult, len(req.GetOperations())),
@@ -87,12 +96,14 @@ func (s *Server) read(ctx context.Context, req *sink.ReadRequest, budgets *reque
 	}
 	snapshotBudgets := budgets.fresh(forwarding.Snapshots, s.maxReadBytes)
 	working := storage.NewReadBudget(s.maxReadBytes)
+	snapshots := capacity.FromContext(ctx).NewLease()
+	defer capacity.Close(snapshots)
 	for index := range storageOperations {
 		budget := sharedSnapshotBudget(owners[index], snapshotBudgets)
 		if budgets.callerCount() > 1 {
 			budget = storage.NewWorkingSetReadBudget(budget, working)
 		}
-		storageOperations[index].Budget = budget
+		storageOperations[index].Budget = storage.WithMemoryBudget(ctx, budget, snapshots)
 	}
 	storageRequest := storage.ReadRequest{Operations: storageOperations, Budget: storage.NewReadBudget(s.maxReadBytes)}
 	storageResponse, err := s.storage.Read(ctx, storageRequest)
@@ -143,7 +154,14 @@ func (s *Server) read(ctx context.Context, req *sink.ReadRequest, budgets *reque
 		if outcome.deferred[budgets.owner(operationIndex)] || result.Status != sink.ReadStatus_READ_STATUS_UNSPECIFIED {
 			continue
 		}
-		applyReadResult(result, storageResponse.Results[storageIndexes[index]])
+		stored := storageResponse.Results[storageIndexes[index]]
+		if stored.Status == storage.ReadStatusFound {
+			if err := budgets.output(budgets.owner(operationIndex), len(stored.Document.Payload)+128); err != nil {
+				setReadFailure(result, sink.FailureCode_FAILURE_CODE_RESOURCE_EXHAUSTED, err, true)
+				continue
+			}
+		}
+		applyReadResult(result, stored)
 	}
 	return outcome, nil
 }

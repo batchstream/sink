@@ -78,7 +78,7 @@ func (p *connections) acquire(route Route) (*connection, error) {
 	if route.endpoint != "" {
 		target = "passthrough:///" + route.endpoint
 	}
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(transport), grpc.WithDisableRetry(), grpc.WithDisableServiceConfig(), grpc.WithDefaultCallOptions(grpc.ForceCodecV2(codec), grpc.MaxCallRecvMsgSize(p.messageBytes), grpc.MaxCallSendMsgSize(p.messageBytes)))
+	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(transport), grpc.WithDisableRetry(), grpc.WithStaticStreamWindowSize(64<<10), grpc.WithStaticConnWindowSize(1<<20), grpc.WithDisableServiceConfig(), grpc.WithDefaultCallOptions(grpc.ForceCodecV2(codec), grpc.MaxCallRecvMsgSize(p.messageBytes), grpc.MaxCallSendMsgSize(p.messageBytes)))
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, "cannot create Engine connection")
 	}

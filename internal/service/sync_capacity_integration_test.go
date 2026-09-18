@@ -24,6 +24,7 @@ import (
 	"github.com/liran/sink/internal/testuri"
 
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/protocol"
 	"github.com/liran/sink/internal/storage"
@@ -313,6 +314,12 @@ func TestSynchronousStorageStreamsLargeRecords(t *testing.T) {
 				backend := &syncCapacityStorage{Storage: fixture.backend}
 				server := completionServer(t, backend)
 				server.server.maxReadBytes = 1024
+				memoryOptions := capacity.Options{Bytes: 128 << 20, BurstPercent: 10, WaitTimeout: time.Second}
+				pool, err := capacity.New(memoryOptions)
+				if err != nil {
+					t.Fatal(err)
+				}
+				server.server.memory = pool
 				var seed storage.WriteRequest
 				var read storage.ReadRequest
 				var calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]
@@ -342,7 +349,12 @@ func TestSynchronousStorageStreamsLargeRecords(t *testing.T) {
 					seed.Operations = append(seed.Operations, writeOperation)
 					readOperation := storage.ReadOperation{Address: address}
 					read.Operations = append(read.Operations, readOperation)
-					call := completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, operation)
+					scope := pool.NewScope()
+					ctx := capacity.WithScope(t.Context(), scope)
+					if err := scope.Admit(ctx, 4096); err != nil {
+						t.Fatal(err)
+					}
+					call := completionWriteCall(ctx, sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, operation)
 					calls = append(calls, call)
 				}
 				seeded, err := fixture.backend.Write(t.Context(), seed)
@@ -363,6 +375,15 @@ func TestSynchronousStorageStreamsLargeRecords(t *testing.T) {
 					if len(result.response.Results[0].GetDocument().GetPayload()) < 700 {
 						t.Fatal("chunk lost returned document")
 					}
+				}
+				if pool.Used() == 0 {
+					t.Fatal("returned documents were released before callers finished")
+				}
+				for _, call := range calls {
+					capacity.FromContext(call.ctx).Release()
+				}
+				if pool.Used() != 0 {
+					t.Fatalf("write memory leaked: %d", pool.Used())
 				}
 				if backend.writes.Load() < 2 || (scenario == "snapshots" && backend.reads.Load() < 2) {
 					t.Fatalf("records did not stream: reads=%d writes=%d", backend.reads.Load(), backend.writes.Load())

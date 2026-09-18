@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/protocol"
 
 	sink "github.com/liran/sink/gen/sink"
@@ -43,6 +44,8 @@ type admissionPool struct {
 
 type admissionRequest struct {
 	encodedBytes int
+	resultBytes  int
+	sharedInput  bool
 	stores       []string
 	wait         bool
 	timeout      time.Duration
@@ -55,6 +58,9 @@ type admissionRequest struct {
 }
 
 func (s *Server) admitRequest(ctx context.Context, request admissionRequest) (context.Context, context.CancelFunc, error) {
+	if s.memory != nil {
+		return s.admitMemory(ctx, request)
+	}
 	if request.publish {
 		return s.publishAdmission.admitRequest(ctx, request)
 	}
@@ -329,6 +335,10 @@ type writeExecutionEstimate struct {
 
 func (s *Server) estimateWriteExecution(req *sink.WriteRequest, callers int, returningCallers int) writeExecutionEstimate {
 	estimate := writeExecutionEstimate{}
+	if s.memory != nil {
+		estimate.bytes = 2*req.SizeVT() + failureResponseBytes(len(req.GetOperations()))
+		return estimate
+	}
 	bytes := req.SizeVT() + failureResponseBytes(len(req.GetOperations()))
 	bytes += s.estimateWriteReturns(req, returningCallers)
 	largestSource := 0
@@ -420,4 +430,40 @@ func returningCallerCount(req *sink.WriteRequest, budgets *requestBudgets) int {
 		}
 	}
 	return len(owners)
+}
+
+// The application always supplies the process pool. The old admission fields
+// remain for explicit legacy-limit regression and benchmark fixtures.
+func (s *Server) admitMemory(ctx context.Context, request admissionRequest) (context.Context, context.CancelFunc, error) {
+	execution, cancel := context.WithTimeout(ctx, s.requestTimeout)
+	scope := capacity.FromContext(execution)
+	releaseScope := func() {}
+	if scope == nil {
+		scope = s.memory.NewScope()
+		execution = capacity.WithScope(execution, scope)
+		releaseScope = scope.Release
+		bytes := 2*request.inputBytes + 2*request.resultBytes + 4096
+		if request.sharedInput {
+			// Coalescing aliases original request messages. Their RPC scopes already
+			// own those bytes; acquire only batch bookkeeping and result structures.
+			bytes = request.resultBytes + 4096
+		}
+		if err := scope.Admit(execution, bytes); err != nil {
+			cancel()
+			releaseScope()
+			return ctx, nil, err
+		}
+	}
+	if request.reservation != nil {
+		request.reservation.managed = scope.NewLease()
+		request.reservation.ctx = execution
+	}
+	release := func() {
+		cancel()
+		if request.reservation != nil {
+			capacity.Close(request.reservation.managed)
+		}
+		releaseScope()
+	}
+	return execution, release, nil
 }

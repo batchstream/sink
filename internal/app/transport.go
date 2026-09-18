@@ -26,6 +26,10 @@ func (app *Application) configureGRPC(server sink.SinkServer, observed *sinkmetr
 		return fmt.Errorf("listen for gRPC: %w", err)
 	}
 	serverOptions := make([]grpc.ServerOption, 0, 4)
+	memoryStats := &protocol.MemoryStats{Pool: app.memory, Timeout: app.config.Service.Request.Timeout}
+	if app.memory != nil {
+		serverOptions = append(serverOptions, grpc.StatsHandler(memoryStats))
+	}
 	overhead := 0
 	if app.config.Mode == config.ModeEngine {
 		overhead = forwarding.EnvelopeBytes
@@ -35,6 +39,9 @@ func (app *Application) configureGRPC(server sink.SinkServer, observed *sinkmetr
 	vtCodec := protocol.NewVTProtoCodec()
 	serverOptions = append(serverOptions, grpc.ForceServerCodecV2(vtCodec))
 	interceptors := make([]grpc.UnaryServerInterceptor, 0, 2)
+	if app.memory != nil {
+		interceptors = append(interceptors, protocol.MemoryInterceptor)
+	}
 	if app.gateway != nil {
 		interceptors = append(interceptors, app.gateway.UnaryInterceptor())
 	}

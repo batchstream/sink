@@ -117,7 +117,7 @@ func (s *Store) Scan(ctx context.Context, req storage.ScanRequest) (storage.Scan
 		return empty, errors.New("search Scan exceeded its requested result count")
 	}
 	documents := make([]storage.Document, 0, req.BatchSize)
-	budget := storage.NewReadBudget(req.Request.MaxBytes)
+	budget := storage.NewResponseBudget(ctx, req.Request.MaxBytes)
 	previous := seek.Position
 	var position []byte
 	more := false

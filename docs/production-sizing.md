@@ -10,15 +10,13 @@ capacity measurements with the [rollout drain budget](rolling-upgrades.md).
 
 ## Process budgets
 
-- Gateway: bound admitted requests, retained bytes, concurrent Store forwards,
-  fanout, and cached downstream connections. Reserve CPU and memory for protobuf
-  decoding/encoding and result merging in addition to document allowances.
-- Engine: size execution, publishing, Scan, batching queues, Lua, and database
-  pools for that Store's workload. These are process limits; no second Store
-  subquota applies. A logical byte reservation is not an RSS hard limit.
-- Worker: size consumption and execution for message size, processing time,
-  database capacity and Kafka partition assignment. It connects directly to the
-  database and does not consume Engine execution slots.
+All roles use the `memory` pool: automatic detection leaves half the effective
+runtime/container limit for non-managed memory, with 10% of managed capacity
+reserved for completion. Override `memory.max_bytes` and `memory.burst_percent`
+only with workload measurements. No request execution concurrency cap is added.
+Batch queues, Gateway fanout/connections, backend pools, Kafka buffers and Lua
+limits remain separately bounded. See the [reserve experiment](../benchmarks/memory-admission/README.md)
+and [memory/KEDA signals](observability.md#memory-capacity-and-keda).
 
 A 2 CPU / 4 GiB allocation alone does not determine safe RPC concurrency. A small
 Put, a returned-document Merge, and a BSON Scan have different memory and CPU
@@ -42,8 +40,8 @@ can affect multiple Stores, so it needs independent capacity planning.
 
 Each search Store owns its HTTP connection pool and retains at most 128 idle
 connections across all endpoints, with a 90-second idle timeout. This avoids
-reopening most connections after concurrent bursts. Active requests remain
-bounded by execution admission; 128 is an idle-cache limit, not a limit on active
+reopening most connections after concurrent bursts. Active requests acquire
+managed memory capacity; 128 is an idle-cache limit, not a limit on active
 connections. Shutdown releases the Store's idle connections after work drains.
 
 ## Scaling signals

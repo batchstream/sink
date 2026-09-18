@@ -62,6 +62,9 @@ func (r *writeReturns) reserve(group writeGroup, document storage.Document) erro
 		if difference > r.remaining[owner] {
 			return storage.ResourceExhaustedError(errors.New("returned write documents exceed response byte budget"))
 		}
+		if err := r.owners.output(owner, difference); err != nil {
+			return storage.ResourceExhaustedError(err)
+		}
 		r.remaining[owner] -= difference
 		r.owners.tracker(owner).Observe(forwarding.Returns, r.maximum[owner]-r.remaining[owner])
 		r.sizes[operation.index] = max(charge, r.sizes[operation.index])
@@ -91,7 +94,10 @@ func (r *writeReturns) settle(group writeGroup, results []*sink.WriteResult) {
 		if document := results[operation.index].GetDocument(); document != nil {
 			retained = len(document.GetPayload()) + 128
 		}
-		r.remaining[r.owners.owner(operation.index)] += max(0, reserved-retained)
+		owner := r.owners.owner(operation.index)
+		unused := max(0, reserved-retained)
+		r.remaining[owner] += unused
+		r.owners.releaseOutput(owner, unused)
 		delete(r.sizes, operation.index)
 	}
 }

@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"context"
 	"errors"
+	"github.com/liran/sink/internal/capacity"
 	"sync"
 )
 
@@ -21,6 +23,9 @@ type ReadBudget struct {
 	caller    *ReadBudget
 	working   *ReadBudget
 	observe   func(int)
+	memory    *capacity.Lease
+	context   context.Context
+	output    *capacity.Scope
 }
 
 func NewReadBudget(maxBytes int) *ReadBudget {
@@ -56,7 +61,42 @@ func NewWorkingSetReadBudget(caller, working *ReadBudget) *ReadBudget {
 	return budget
 }
 
+func WithMemoryBudget(ctx context.Context, budget *ReadBudget, lease *capacity.Lease) *ReadBudget {
+	if lease == nil {
+		return budget
+	}
+	managed := &ReadBudget{caller: budget, memory: lease, context: ctx}
+	return managed
+}
+
+func NewResponseBudget(ctx context.Context, maximum int) *ReadBudget {
+	budget := NewReadBudget(maximum)
+	if scope := capacity.FromContext(ctx); scope != nil {
+		managed := &ReadBudget{caller: budget, context: ctx, output: scope}
+		return managed
+	}
+	return budget
+}
+
 func (b *ReadBudget) Reserve(size int) error {
+	if b.output != nil {
+		if err := b.caller.Reserve(size); err != nil {
+			return err
+		}
+		if err := b.output.Output(b.context, size+128); err != nil {
+			return ResourceExhaustedError(err)
+		}
+		return nil
+	}
+	if b.memory != nil {
+		if err := b.caller.Reserve(size); err != nil {
+			return err
+		}
+		if err := capacity.Grow(b.context, b.memory, size+128); err != nil {
+			return ResourceExhaustedError(err)
+		}
+		return nil
+	}
 	if b.working != nil {
 		if err := b.working.Reserve(size); err != nil {
 			if size >= 0 && size <= b.working.maximum-128 {

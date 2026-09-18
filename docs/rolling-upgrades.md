@@ -6,6 +6,16 @@ snapshot for each Store throughout an accepted public batch. Stopping an Engine
 as soon as one DNS lookup removes it can still interrupt a later group of an
 already accepted request.
 
+## Memory-admission protocol upgrade
+
+Upgrade all Engines before Gateways when introducing demand-based memory
+admission. New Gateways call the private `ForwardStream` method; old Gateways
+remain compatible with the retained unary `Forward` method on new Engines.
+There is no fallback that replays a mutation or receives an unreserved maximum
+unary response. Roll back Gateways before Engines. Public Sink RPCs and SDK
+messages do not change. Migrate autoscaling to the `sink_memory_*` metrics before
+using the new policy; legacy admission settings no longer control CLI capacity.
+
 ## Budget both intervals
 
 For a headless Engine Service, use a measured conservative budget:

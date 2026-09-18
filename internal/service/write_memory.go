@@ -6,6 +6,9 @@ type writeMemoryReservation struct {
 }
 
 func (m *writeMemoryReservation) retain(snapshotBytes int, candidateBytes int) error {
+	if m.reservation.managed != nil {
+		return m.reservation.resize(2*snapshotBytes + 3*candidateBytes)
+	}
 	// This refines the existing payload reservation, not the process RSS limit.
 	// Keep all original input, Lua source and returned-document allowances.
 	// The snapshots remain live until applyWriteSnapshots returns. Allow an

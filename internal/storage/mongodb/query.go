@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/storage"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -31,6 +32,11 @@ func appendQueryStages(command bson.D, stages bson.A) (bson.D, error) {
 
 func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.QueryResponse, error) {
 	var empty storage.QueryResponse
+	wire, err := acquireWireMemory(ctx)
+	if err != nil {
+		return empty, storage.ResourceExhaustedError(err)
+	}
+	defer capacity.Close(wire)
 	if err := req.Validate(); err != nil {
 		return empty, err
 	}
@@ -104,7 +110,7 @@ func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.Qu
 		_ = cursor.Close(cleanup)
 	}()
 	result := storage.QueryResponse{}
-	budget := storage.NewReadBudget(req.Request.MaxBytes)
+	budget := storage.NewResponseBudget(ctx, req.Request.MaxBytes)
 	for cursor.Next(ctx) {
 		// Lookahead proves HasMore but is never retained or returned to the
 		// caller, so a large following document must not reject this page.
@@ -197,6 +203,11 @@ func canEstimateCount(command bson.D) bool {
 
 func (s *Store) Count(ctx context.Context, req storage.CountRequest) (storage.CountResponse, error) {
 	var empty storage.CountResponse
+	wire, err := acquireWireMemory(ctx)
+	if err != nil {
+		return empty, storage.ResourceExhaustedError(err)
+	}
+	defer capacity.Close(wire)
 	request := req.Request
 	database, command, err := s.validateNativeCommand(request, true)
 	if err != nil {

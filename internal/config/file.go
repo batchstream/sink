@@ -5,6 +5,7 @@ import "time"
 // File types preserve omission so defaults can depend on other configured limits.
 // Runtime code receives only resolved values through Config.
 type configFile struct {
+	Memory          memoryFile     `yaml:"memory"`
 	Storage         *storageFile   `yaml:"storage"`
 	Gateway         *gatewayFile   `yaml:"gateway"`
 	Mode            Mode           `yaml:"mode"`
@@ -168,4 +169,10 @@ type gatewayFile struct {
 	MaxRequests         *int           `yaml:"max_requests"`
 	MaxBytes            *byteSize      `yaml:"max_bytes"`
 	MaxFanout           *int           `yaml:"max_fanout"`
+}
+
+type memoryFile struct {
+	MaxBytes     *byteSize      `yaml:"max_bytes"`
+	BurstPercent *int           `yaml:"burst_percent"`
+	WaitTimeout  *time.Duration `yaml:"wait_timeout"`
 }

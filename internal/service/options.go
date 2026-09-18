@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/merge"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
 	"github.com/liran/sink/internal/queue"
@@ -17,6 +18,7 @@ const (
 )
 
 type Options struct {
+	Memory               *capacity.Pool
 	BoundStore           string
 	Storage              storage.Storage
 	Lua                  *merge.LuaEngine
@@ -139,6 +141,7 @@ func New(opts Options) (*Server, error) {
 	}
 	server := &Server{
 		boundStore:       opts.BoundStore,
+		memory:           opts.Memory,
 		storage:          opts.Storage,
 		lua:              opts.Lua,
 		publisher:        opts.Publisher,

@@ -1,6 +1,11 @@
 .git
 .github
 .env
+.env.*
+*.pem
+*.key
+.ssh
+credentials
 *.out
 coverage.*
 README.md

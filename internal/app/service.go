@@ -23,6 +23,7 @@ func (app *Application) newService(observed *sinkmetrics.Metrics) (*service.Serv
 		return nil, err
 	}
 	serverOptions := service.Options{
+		Memory:               app.memory,
 		RequestTimeout:       loaded.Service.Request.Timeout,
 		MaxInFlightRequests:  loaded.Service.Execution.MaxRequests,
 		MaxInFlightBytes:     loaded.Service.Execution.MaxBytes,

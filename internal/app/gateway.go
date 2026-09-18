@@ -6,12 +6,16 @@ import (
 
 func newGateway(opts Options) (*Application, error) {
 	loaded := opts.Config
-	gatewayOpts := gateway.Options{Gateway: loaded.Gateway, Request: loaded.Service.Request, MaxMessageBytes: max(loaded.GRPC.MaxSendMessageBytes, loaded.GRPC.MaxReceiveMessageBytes)}
+	memory, err := newMemory(loaded)
+	if err != nil {
+		return nil, err
+	}
+	gatewayOpts := gateway.Options{Memory: memory, Gateway: loaded.Gateway, Request: loaded.Service.Request, MaxMessageBytes: max(loaded.GRPC.MaxSendMessageBytes, loaded.GRPC.MaxReceiveMessageBytes)}
 	server, err := gateway.New(gatewayOpts)
 	if err != nil {
 		return nil, err
 	}
-	app := &Application{config: loaded, gateway: server}
+	app := &Application{config: loaded, gateway: server, memory: memory}
 	ready := false
 	defer func() {
 		if !ready {

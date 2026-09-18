@@ -9,6 +9,7 @@ import (
 	"time"
 
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/merge"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
 	"github.com/liran/sink/internal/protocol"
@@ -21,6 +22,7 @@ import (
 
 type Server struct {
 	boundStore string
+	memory     *capacity.Pool
 	sink.UnimplementedSinkServer
 	*admissionPool
 
@@ -60,6 +62,8 @@ func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *req
 	reservation := &admissionReservation{}
 	admission := admissionRequest{encodedBytes: estimate.bytes, stores: operationStores(req.GetOperations()), wait: budgets != nil, reservation: reservation}
 	admission.inputBytes = req.SizeVT() + 128*len(req.GetOperations())
+	admission.resultBytes = failureResponseBytes(len(req.GetOperations()))
+	admission.sharedInput = budgets.ownsInput()
 	admission.publish = req.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED
 	started := time.Now()
 	ctx, release, err := s.admitRequest(ctx, admission)
@@ -68,6 +72,12 @@ func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *req
 		return nil, err
 	}
 	defer release()
+	if budgets == nil {
+		budgets = contextBudgets(ctx, len(req.GetOperations()))
+	}
+	if budgets != nil {
+		budgets.producer = capacity.FromContext(ctx)
+	}
 	started = time.Now()
 	luaPrograms, err := parseLuaPrograms(req.GetLuaPrograms())
 	if err != nil {
@@ -165,6 +175,8 @@ func (s *Server) delete(ctx context.Context, req *sink.DeleteRequest, budgets *r
 	}
 	admission := admissionRequest{encodedBytes: req.SizeVT() + failureResponseBytes(len(req.GetOperations())), stores: operationStores(req.GetOperations()), wait: budgets != nil}
 	admission.inputBytes = req.SizeVT() + 128*len(req.GetOperations())
+	admission.resultBytes = failureResponseBytes(len(req.GetOperations()))
+	admission.sharedInput = budgets.ownsInput()
 	admission.publish = req.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED
 	ctx, release, err := s.admitRequest(ctx, admission)
 	if err != nil {

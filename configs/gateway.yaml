@@ -7,6 +7,11 @@
 # Restart Gateway after changing any settings, including Store routes.
 mode: gateway # Required process role.
 
+memory:
+  # max_bytes: 256MiB # Omit to detect from runtime/container memory limits.
+  burst_percent: 10 # Reserved for completion; never used for new request admission.
+  wait_timeout: 2s # Capacity growth wait; a shorter caller deadline wins.
+
 # Public RPC and gRPC health listener.
 grpc:
   address: ":8080" # TCP listen address.
@@ -40,9 +45,6 @@ gateway: # Stateless routing, bounded forwarding, and lazy downstream connection
   dns_refresh_interval: 30s # Refresh DNS-backed Engine replica addresses.
   idle_timeout: 5m # Evict unused downstream channels after this idle duration.
   max_connections: 256 # Cached endpoint channels and discovery views; <=10000; active calls protected.
-  max_requests: 128 # Concurrent public Gateway requests; maximum 10000.
-  max_requests_per_store: 32 # Default min(32, max_requests); per-Store forwarding cap.
-  max_bytes: 256MiB # Input/envelope/response reservations; maximum 1TiB.
   max_fanout: 8 # Concurrent Store groups per RPC; <=128; budget-sensitive groups serialize.
 
 shutdown_timeout: 15s # Grace period for draining public RPCs and closing connections.

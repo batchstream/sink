@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/storage"
 )
 
@@ -129,8 +129,7 @@ func (s *Store) performOnce(ctx context.Context, opts requestOptions, endpoint *
 	if opts.maxBytes > 0 {
 		maximum = min(maximum, opts.maxBytes)
 	}
-	limited := io.LimitReader(httpResponse.Body, maximum+1)
-	body, err := io.ReadAll(limited)
+	body, err := capacity.ReadAll(ctx, httpResponse.Body, maximum+1)
 	if err != nil {
 		return empty, storage.BackendError(err)
 	}

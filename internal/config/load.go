@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/liran/sink/internal/capacity"
 	"gopkg.in/yaml.v3"
 )
 
@@ -70,6 +71,14 @@ func resolve(file configFile) (Config, error) {
 		return loaded, errors.New("mode is required and must be gateway, engine, or worker")
 	}
 	v := validator{}
+	if file.Memory.MaxBytes != nil {
+		loaded.Memory.MaxBytes = v.bytes("memory.max_bytes", file.Memory.MaxBytes, 256<<20, math.MaxInt)
+		if loaded.Memory.MaxBytes < 1024 {
+			v.reject(errors.New("memory.max_bytes must be at least 1KiB"))
+		}
+	}
+	loaded.Memory.BurstPercent = v.bounded("memory.burst_percent", file.Memory.BurstPercent, capacity.DefaultBurstPercent, 99)
+	loaded.Memory.WaitTimeout = v.duration("memory.wait_timeout", file.Memory.WaitTimeout, 2*time.Second)
 	loaded.GRPC.Address = valueOrDefault(file.GRPC.Address, ":8080")
 	loaded.GRPC.MaxReceiveMessageBytes = v.bytes("grpc.max_receive_message_bytes", file.GRPC.MaxReceiveMessageBytes, 64<<20, math.MaxInt)
 	loaded.GRPC.MaxSendMessageBytes = v.bytes("grpc.max_send_message_bytes", file.GRPC.MaxSendMessageBytes, 64<<20, math.MaxInt)

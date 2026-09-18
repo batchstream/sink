@@ -8,6 +8,9 @@ import "google/protobuf/any.proto";
 // Private Gateway-to-Engine protocol. Never used by public clients.
 service Engine {
   rpc Forward(ForwardRequest) returns (ForwardResponse);
+  // The first frame announces the encoded response size; subsequent frames
+  // contain bounded chunks. Public clients continue using unary Sink RPCs.
+  rpc ForwardStream(ForwardRequest) returns (stream ResponseFrame);
 }
 
 // Independent logical document budgets, including per-record envelope charges.
@@ -52,4 +55,9 @@ message ForwardResponse {
     sink.v1.CountResponse count = 15;
     sink.v1.ScanResponse scan = 16;
   }
+}
+
+message ResponseFrame {
+  uint64 size = 1;
+  bytes data = 2;
 }

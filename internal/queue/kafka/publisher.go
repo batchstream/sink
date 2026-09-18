@@ -84,8 +84,7 @@ func (p *Publisher) Publish(ctx context.Context, req queue.PublishRequest) (queu
 		}
 		return response, nil
 	}
-	records := make([]*kgo.Record, 0, len(req.Mutations))
-	indexes := make(map[*kgo.Record]int, len(req.Mutations))
+	records := make([]*kgo.Record, len(req.Mutations))
 	for index, mutation := range req.Mutations {
 		key, err := queue.MutationKey(mutation)
 		if err != nil {
@@ -104,43 +103,33 @@ func (p *Publisher) Publish(ctx context.Context, req queue.PublishRequest) (queu
 			continue
 		}
 		record := &kgo.Record{Topic: p.topic, Key: key, Value: value}
-		records = append(records, record)
-		indexes[record] = index
-	}
-	if len(records) == 0 {
-		p.metrics.ObserveKafkaPublish(p.store, time.Since(started), 0, len(req.Mutations))
-		return response, nil
+		records[index] = record
 	}
 
-	produced := make([]kgo.ProduceResult, len(records))
 	var pending sync.WaitGroup
-	pending.Add(len(records))
 	for index, record := range records {
-		p.client.TryProduce(ctx, record, func(record *kgo.Record, err error) {
-			produced[index] = kgo.ProduceResult{Record: record, Err: err}
+		if record == nil {
+			continue
+		}
+		pending.Add(1)
+		p.client.TryProduce(ctx, record, func(_ *kgo.Record, err error) {
+			result := queue.PublishResult{Status: queue.PublishStatusAccepted}
+			if err != nil {
+				result.Status = queue.PublishStatusFailed
+				result.Err = publishError(err)
+			}
+			response.Results[index] = result
 			pending.Done()
 		})
 	}
 	pending.Wait()
 	accepted := 0
-	failed := len(req.Mutations) - len(records)
-	for _, result := range produced {
-		index, exists := indexes[result.Record]
-		if !exists {
-			continue
+	for _, result := range response.Results {
+		if result.Status == queue.PublishStatusAccepted {
+			accepted++
 		}
-		if result.Err != nil {
-			failed++
-			response.Results[index] = queue.PublishResult{
-				Status: queue.PublishStatusFailed,
-				Err:    publishError(result.Err),
-			}
-			continue
-		}
-		response.Results[index].Status = queue.PublishStatusAccepted
-		accepted++
 	}
-	p.metrics.ObserveKafkaPublish(p.store, time.Since(started), accepted, failed)
+	p.metrics.ObserveKafkaPublish(p.store, time.Since(started), accepted, len(response.Results)-accepted)
 	return response, nil
 }
 

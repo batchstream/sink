@@ -26,8 +26,8 @@ Puts and Merges fold within a group; repeated Reads and Deletes execute once per
 full address. Executions use their live callers' deadlines and cancellation signals.
 
 Write/Delete dispatchers can collect and execute later batches while an earlier
-batch waits for refresh. Each store/method has at most
-`service.execution.max_requests` active batches. Record
+batch waits for refresh. Active batches acquire from the shared memory pool;
+there is no separate request concurrency cap. Record
 dependencies cover both active and queued RPCs: an RPC touching several records
 waits for every predecessor, while unrelated RPCs may pass it. Ordering does not
 extend across methods, bypass requests, or server replicas. Queue budgets and
@@ -45,8 +45,9 @@ caller touching it has finished its remaining operations for that address,
 even if their RPCs still contain other unfinished documents. Caller cancellation
 alone does not release an executing document. Backend bulk calls still return
 together; Sink cannot acknowledge an item whose backend result is not yet known.
-Execution slots and byte reservations remain held until the owning execution
-ends, so early completion cannot bypass admission or memory limits.
+Producer references retain input until execution finishes. Each caller retains
+its output through transport completion, so early completion cannot release
+still-owned memory.
 
 Gateway splits cross-Store requests before forwarding them. Engine accepts only its
 bound Store and never bypasses that check through the batching layer. Budget-sensitive
@@ -60,37 +61,19 @@ new single-store request that would cross its queue's limit fails with gRPC
 omitted. Once a batch is dispatched, other live callers in that batch continue
 even if one caller cancels. Once all callers cancel, execution is cancelled too.
 Execution is capped by the server request timeout even without caller deadlines.
-Dispatched micro-batches wait for shared execution capacity within their
-existing deadlines; direct requests use their bounded admission queue.
-Asynchronous Write and Delete use an independent publishing pool with
-`service.publish.max_requests` and `service.publish.max_bytes`. Synchronous snapshot reservations,
-store saturation, and fair byte waiters cannot block Kafka publishing. A full
-publishing pool rejects before enqueueing, and acceptance still requires the
-publisher's durable acknowledgement. The total execution reservation bound is the sum of both byte limits;
-producer buffers, batching queues, and VM/driver overhead remain additional.
-Each coalesced RPC has its own read, conditional snapshot, and output budgets.
-A shared snapshot is fetched if any interested RPC has room, and every response
-copy is charged to its original RPC. Conditional chains evaluate each RPC's
-budget before incorporating its state into the next caller's operations.
-Batches are split at RPC boundaries when worst-case byte reservations would
-exceed `service.execution.max_bytes`. Reads reserve both snapshot and response space;
-coalesced conditional writes stream through a shared bounded working set while
-retaining each original RPC's snapshot and output quotas across chunks. A full
-read chunk defers records without charging their caller quotas or consuming a
-conflict attempt. Output chunks commit independently, and only actual conflicts
-are retried. With the default 32 MiB read budget, the conditional working-set
-reservation is at most 96 MiB per execution: one read chunk, one output batch,
-and one candidate prepared before flushing that batch. A single retained record
-needs 64 MiB. Encoded inputs, expanded Lua sources, and requested response
-documents are reserved separately. VM and driver overhead are additional.
+Dispatched micro-batches acquire known working allocations from the shared
+`memory` pool. Response growth has priority over new arrivals and may borrow its
+completion reserve. Request entry fails if ordinary capacity is unavailable;
+already admitted queue entries retain their input charge. Async publication
+uses the same memory pool; Kafka producer buffers keep their separate bounds.
 
-The default 256 MiB execution cap therefore permits larger micro-batches of
-small conditional writes without reducing the maximum valid document size.
-Read reservations scale with original RPC count. Returned-write response space
-is reserved only for the original RPCs requesting documents, even in mixed
-batches. Direct calls keep their existing snapshot/output reservation and quotas.
-Core admission limits also cover requests that bypass batching. Graceful shutdown first drains active gRPC calls,
-then stops its batch dispatchers.
+Each original RPC retains its snapshot/input/output/returned-document quotas
+across chunks, retries and shared-key folding. A full read working set defers
+records without consuming caller quota; conditional write chunks retain earlier
+successful results. Returned documents acquire capacity before their commit.
+Batch splitting uses known request sizes and actual working allocations, rather
+than maximum legal responses per caller. Graceful shutdown drains gRPC calls
+before stopping batch dispatchers. See [memory admission](design/demand-based-admission.md).
 
 Batching happens only among requests for the same store reaching the same Sink
 process. More pods increase aggregate queue and storage concurrency, but they

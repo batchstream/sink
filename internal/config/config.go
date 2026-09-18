@@ -21,6 +21,7 @@ const (
 
 // Config contains resolved runtime values. Construct it with Load or Decode.
 type Config struct {
+	Memory          Memory
 	Gateway         Gateway
 	Mode            Mode
 	GRPC            GRPC
@@ -29,6 +30,14 @@ type Config struct {
 	Storage         Storage
 	Service         Service
 	ShutdownTimeout time.Duration
+}
+
+// Memory is one process-local capacity shared by all request classes.
+// MaxBytes == 0 selects runtime detection.
+type Memory struct {
+	MaxBytes     int
+	BurstPercent int
+	WaitTimeout  time.Duration
 }
 
 type GRPC struct {

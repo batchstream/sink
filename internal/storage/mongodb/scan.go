@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/storage"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
@@ -134,6 +135,11 @@ func scanFind(command bson.D, req storage.ScanRequest, position []byte) (bson.D,
 
 func (s *Store) Scan(ctx context.Context, req storage.ScanRequest) (storage.ScanResponse, error) {
 	var empty storage.ScanResponse
+	wire, err := acquireWireMemory(ctx)
+	if err != nil {
+		return empty, storage.ResourceExhaustedError(err)
+	}
+	defer capacity.Close(wire)
 	seek, err := req.Resume()
 	if err != nil {
 		return empty, err
@@ -156,7 +162,7 @@ func (s *Store) Scan(ctx context.Context, req storage.ScanRequest) (storage.Scan
 		_ = cursor.Close(cleanup)
 	}()
 	documents := make([]storage.Document, 0, req.BatchSize)
-	budget := storage.NewReadBudget(req.Request.MaxBytes)
+	budget := storage.NewResponseBudget(ctx, req.Request.MaxBytes)
 	var position []byte
 	more := false
 	for cursor.Next(ctx) {

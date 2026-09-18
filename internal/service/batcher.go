@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/liran/sink/internal/capacity"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -17,6 +18,8 @@ type batchResult[Response any] struct {
 
 type batchCall[Request any, Response any] struct {
 	ctx            context.Context
+	releaseMemory  func()
+	executing      bool
 	request        Request
 	operationCount int
 	encodedBytes   int
@@ -33,6 +36,7 @@ type batchCall[Request any, Response any] struct {
 
 type requestBatcherOptions[Request any, Response any] struct {
 	MaxConcurrent       int
+	Unlimited           bool
 	Records             func(Request) []recordIdentity
 	Partition           func(Request) batchPartition
 	Store               string
@@ -93,6 +97,9 @@ func newRequestBatcher[Request any, Response any](opts requestBatcherOptions[Req
 		cancel:              cancel,
 		input:               make(chan *batchCall[Request, Response], opts.MaxQueuedOperations),
 	}
+	if opts.Unlimited {
+		batcher.maxConcurrent = 0
+	}
 	if batcher.executionTimeout == 0 {
 		batcher.executionTimeout = defaultRequestTimeout
 	}
@@ -122,6 +129,7 @@ func (b *requestBatcher[Request, Response]) Submit(
 
 	call := &batchCall[Request, Response]{
 		ctx:            ctx,
+		releaseMemory:  capacity.FromContext(ctx).Retain(),
 		request:        request,
 		operationCount: operationCount,
 		encodedBytes:   encodedBytes,
@@ -143,6 +151,7 @@ func (b *requestBatcher[Request, Response]) Submit(
 	select {
 	case <-b.ctx.Done():
 		b.release(call)
+		call.releaseMemory()
 		return empty, status.Error(codes.Unavailable, "synchronous batcher is shutting down")
 	default:
 	}
@@ -150,9 +159,11 @@ func (b *requestBatcher[Request, Response]) Submit(
 	case b.input <- call:
 	case <-ctx.Done():
 		b.release(call)
+		call.releaseMemory()
 		return empty, contextError(ctx)
 	case <-b.ctx.Done():
 		b.release(call)
+		call.releaseMemory()
 		return empty, status.Error(codes.Unavailable, "synchronous batcher is shutting down")
 	}
 
@@ -222,8 +233,8 @@ func (b *requestBatcher[Request, Response]) run() {
 	pending := make([]*batchCall[Request, Response], 0)
 	// Each active record stays occupied until every selected caller releases it.
 	active := make(map[recordIdentity]int)
-	recordsDone := make(chan []recordIdentity, b.maxConcurrent)
-	completed := make(chan []*batchCall[Request, Response], b.maxConcurrent)
+	recordsDone := make(chan []recordIdentity, max(1, min(1024, b.maxConcurrent)))
+	completed := make(chan []*batchCall[Request, Response], max(1, min(1024, b.maxConcurrent)))
 	running := 0
 	for {
 		if b.ctx.Err() != nil {
@@ -259,13 +270,14 @@ func (b *requestBatcher[Request, Response]) run() {
 		pending = live
 		var timer *time.Timer
 		var deadline <-chan time.Time
-		if running < b.maxConcurrent {
+		if b.maxConcurrent == 0 || running < b.maxConcurrent {
 			selected, remaining, reason := b.selectReady(pending, active)
 			if len(selected) > 0 {
 				wait := b.maxWait - time.Since(selected[0].enqueuedAt)
 				if reason != "max_wait" || wait <= 0 {
 					pending = remaining
 					for _, call := range selected {
+						call.executing = true
 						b.release(call)
 						call.pendingRecords = make(map[recordIdentity]bool, len(call.records))
 						for _, key := range call.records {
@@ -372,6 +384,13 @@ func (b *requestBatcher[Request, Response]) executeBatch(
 	calls []*batchCall[Request, Response],
 	reason string,
 ) {
+	defer func() {
+		for _, call := range calls {
+			if call.releaseMemory != nil {
+				call.releaseMemory()
+			}
+		}
+	}()
 	operationCount := 0
 	encodedBytes := 0
 	oldest := calls[0].enqueuedAt
@@ -480,6 +499,9 @@ func completeCall[Request any, Response any](
 	err error,
 ) {
 	call.resultOnce.Do(func() {
+		if !call.executing && call.releaseMemory != nil {
+			defer call.releaseMemory()
+		}
 		result := batchResult[Response]{response: response, err: err}
 		call.result <- result
 		call.finishRecords(call.records)

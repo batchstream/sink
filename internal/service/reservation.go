@@ -1,7 +1,9 @@
 package service
 
 import (
+	"context"
 	"errors"
+	"github.com/liran/sink/internal/capacity"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -11,6 +13,8 @@ import (
 // storage. Growth is atomic and nonblocking: waiting while retaining documents
 // could deadlock several writers that all need their next working set.
 type admissionReservation struct {
+	managed  *capacity.Lease
+	ctx      context.Context
 	pool     *admissionPool
 	stores   []string
 	bytes    int
@@ -19,6 +23,14 @@ type admissionReservation struct {
 }
 
 func (r *admissionReservation) resize(bytes int) error {
+	if r.managed != nil {
+		current := r.managed.Bytes()
+		if int64(bytes) < current {
+			r.managed.Shrink(current - int64(bytes))
+			return nil
+		}
+		return r.managed.Grow(r.ctx, int64(bytes)-current, capacity.Response)
+	}
 	pool := r.pool
 	pool.admissionMu.Lock()
 	defer pool.admissionMu.Unlock()

@@ -208,16 +208,9 @@ counts multiply capacity. Configure the same Kafka policy on servers and workers
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `service.request.timeout` | `30s` | Unary request timeout including batching queue wait and each Scan page; at most 300 seconds. A shorter caller deadline wins. |
-| `service.execution.max_requests` | `128` | Storage execution request count, at most 10000, for the bound Store. Asynchronous publishing uses its own pool. |
-| `service.execution.max_bytes` | `256MiB` | Admitted request/output reservation bytes, at most 16 GiB. Reads reserve snapshot and response budgets; Merge and folded conditional Put chains reserve current and output budgets; Lua source expansion and bounded per-operation failure responses are charged. This is not an RSS or VM heap limit. |
-| `service.publish.max_requests` | `32` | Concurrent asynchronous Write/Delete requests, at most 10000, independent of storage execution. |
-| `service.publish.max_bytes` | `256MiB` | Asynchronous request, expanded-source, and bounded failure-response reservations, at most 16 GiB, additional to `service.execution.max_bytes`. Kafka producer buffers are additional. |
-| `service.execution.queue.max_requests` | `1024` | Direct synchronous RPCs waiting for execution, at most 10000. Separate from batching and Scan queues. |
-| `service.execution.queue.max_bytes` | min(`32MiB`, execution byte limit) | Input plus bookkeeping bytes retained by pending direct RPCs, at most 16 GiB. Additional to execution and batching budgets. |
-| `service.execution.queue.max_wait` | min(`2s`, `service.request.timeout`) | Maximum direct admission wait; cannot exceed the request timeout. A shorter caller deadline wins. |
-| `service.execution.scan.max_requests` | half `service.execution.max_requests`, at least 1 | Scan-only request sublimit, no greater than the total request limit. |
-| `service.execution.scan.max_bytes` | half `service.execution.max_bytes`, at least 1 | Scan-only byte sublimit; global byte admission still applies. BSON Scan reserves 48 MiB driver wire space plus page copies. |
-| `service.execution.scan.admission_wait` | min(`2s`, `service.request.timeout`) | Maximum Scan admission wait, included in the page deadline. Cannot exceed `service.request.timeout`. |
+| `memory.max_bytes` | automatic | Shared managed capacity for this process; omit to use half the smallest detected Go/cgroup/host memory limit, or 256 MiB fallback. Explicit values must be at least 1 KiB. Not an RSS cap. |
+| `memory.burst_percent` | `10` | Completion reserve as a percentage of total capacity, from 1 to 99. New requests cannot enter through this reserve. |
+| `memory.wait_timeout` | `2s` | Maximum response/working-set growth wait. Caller deadlines take precedence. New requests fail immediately when ordinary capacity is unavailable. |
 | `service.request.max_read_bytes` | min(`32MiB`, half gRPC send limit) | Per-original-RPC Read or returned-Write documents, conditional write snapshot/output per attempt, and native Execute response. Scan pages use the smaller of this limit and 4 MiB. Cannot exceed half the gRPC send limit. |
 | `storage.kafka.dead_letter.retention` | `720h` | Independent DLQ retention, 30 days; at least `1ms` and bounded by Go duration range. |
 | `storage.kafka.topic.min_insync_replicas` | min(`2`, replication factor) | Minimum ISR, at most replication factor. Publishers require all ISR acknowledgements. |
@@ -225,55 +218,34 @@ counts multiply capacity. Configure the same Kafka policy on servers and workers
 | `storage.kafka.producer.max_buffered_bytes` | `64MiB` | Producer buffer capacity, at most 1 GiB. Full buffers return retryable resource exhaustion. |
 | `storage.kafka.consumer.processing_timeout` | `20s` | Backend work per fetched batch, at most 20 seconds, followed by at most 5 seconds of offset/DLQ settlement. |
 
-Native Execute and Scan share process request admission and reserve input
-plus response/page buffers. MongoDB native calls additionally reserve 48 MiB for
-the driver's complete wire response, which arrives before the smaller Sink
-response/page limit can be enforced. Returned writes reserve an additional
-response budget per original RPC before execution. See [native access](native-access.md)
-for stateless Scan checkpoints, page-local cleanup, cancellation and retry semantics.
+All request classes share the same process pool. Input, small completion
+envelopes and forwarding scratch space acquire ordinary capacity. Document
+copies and response encoding acquire capacity using known sizes; increasing the
+legal maximum response does not increase the price of every small request.
+Responses have priority over new arrivals. A selected completion owner may use
+the reserve; waits remain bounded even when a response cannot make progress.
+There is no separate request concurrency cap in this version.
 
-Query, Count, Execute and Read/Write/Delete calls that bypass cross-RPC batching
-wait for transient execution saturation instead of immediately rejecting it.
-Their shared input queue has independent count, byte and time bounds
-under `service.execution.queue`. Waiting consumes no execution slot or document
-buffer reservation. The request timeout includes admission wait; caller
-cancellation removes the pending entry. A full queue, expired admission wait or
-reservation that can never fit still returns `RESOURCE_EXHAUSTED`. A caller's
-own deadline returns `DEADLINE_EXCEEDED`. Asynchronous publication retains its
-independent pool and immediate backpressure.
+The default reserve was chosen from the [reproducible saturation experiment](../benchmarks/memory-admission/README.md).
+Override it for your measured workload. Automatic capacity detection runs once
+at startup, leaving half the effective limit for unmanaged runtime/driver/GC
+memory. The source is exported in `sink_memory_capacity_source_info`.
 
-For returned Put documents, admission uses the known payload sizes plus envelope
-allowances instead of reserving a maximum-size response for every caller. A
-mixed batch with any returned Merge retains the conservative per-caller response
-allowance because Lua results are not known before execution.
+MongoDB reads and native commands keep a temporary 48 MiB driver wire allowance
+only around database work; actual document copies are accounted separately.
+Search bodies acquire actual backing-array capacity as they grow. Lua VM heaps,
+Kafka buffers, ingress decoding and GC still require process headroom.
+Returned-document capacity is acquired before the corresponding commit. Scope
+ownership follows batching and gRPC buffers beyond handler return and cancellation.
+See [memory admission](design/demand-based-admission.md) and
+[metrics/KEDA migration](observability.md#memory-capacity-and-keda).
 
-Scan waits fairly for execution capacity for at most
-`service.execution.scan.admission_wait`. Its separate waiting queue is bounded
-by `service.execution.scan.max_requests` and `service.execution.scan.max_bytes`; these
-limits apply independently to queued and executing pages. Queued pages are
-charged the full conservative reservation, but do not occupy execution slots.
-Cancellation and timeout remove their queue entries immediately. Requests that
-cannot fit the total or Scan byte limit fail immediately without advertising a
-retry. Temporary Scan admission failures carry the retry detail documented in
-[native access](native-access.md#limits-deadlines-and-retries).
-
-Conditional writes initially reserve their peak document working set. Once a
-chunk's snapshots and final candidates are known, Sink reduces that reservation
-to retained payload sizes plus copy allowances for the final storage call,
-including `WAIT_UNTIL_VISIBLE`. Input, Lua-source and returned-document allowances
-remain reserved. Before a later read or conflict retry it atomically restores the
-peak allowance. Restoration never waits while holding documents: if process
-capacity or an older runnable waiter prevents growth, only the unexecuted
-operations receive retryable per-operation `RESOURCE_EXHAUSTED` failures. Earlier
-successful operations retain their results. This is document accounting, not an
-RSS limit; driver buffers, Lua heaps, transport buffers and garbage collection
-still require process memory headroom. BSON Scan's wire allowance is unchanged.
-
-Execution byte limits apply to the whole single-Store process. Scale Engine and
-Worker independently, and size each process with `service.execution.max_bytes`.
-Gateway per-Store forwarding limits bound pressure before it reaches an Engine.
-Micro-batches split at the process byte limit; an individual RPC that cannot fit
-fails before execution. Reservation growth failures report the `resize` reason.
+Legacy `gateway.max_bytes`, `gateway.max_requests`,
+`gateway.max_requests_per_store`, `service.execution` and `service.publish`
+admission fields remain accepted and validated, but no longer control CLI
+admission. Replace their sizing with `memory`. Batch queue bounds, logical RPC
+limits, backend limits and deadlines remain active. Engine and Worker still
+scale separately, and Gateway connection/fanout bounds still apply.
 
 MongoDB group concurrency is shared across concurrent calls. Sink sets
 `w=majority` and `journal=true` on its client, overriding weaker URI concerns;

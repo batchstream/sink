@@ -186,7 +186,7 @@ func (s *Server) Scan(ctx context.Context, req *sink.ScanRequest) (*sink.ScanRes
 	if mediaType != "application/bson" {
 		encodedBytes += 2 * (storage.ScanBackendBytes(maximum) - maximum)
 	}
-	admission := admissionRequest{encodedBytes: encodedBytes, stores: []string{protocol.CommandStore(req.GetCommand())}, scan: true, wait: true}
+	admission := admissionRequest{encodedBytes: encodedBytes, inputBytes: req.SizeVT(), stores: []string{protocol.CommandStore(req.GetCommand())}, scan: true, wait: true}
 	ctx, release, err := s.admitRequest(ctx, admission)
 	if err != nil {
 		return nil, err

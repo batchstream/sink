@@ -9,6 +9,7 @@ import (
 
 	forward "github.com/liran/sink/gen/forward"
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/config"
 	"github.com/liran/sink/internal/forwarding"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
@@ -19,6 +20,7 @@ import (
 type Server struct {
 	sink.UnimplementedSinkServer
 	config         config.Gateway
+	memory         *capacity.Pool
 	request        config.Request
 	current        *snapshot
 	pool           connections
@@ -30,6 +32,7 @@ type Server struct {
 	nativeSequence atomic.Uint64
 }
 type Options struct {
+	Memory          *capacity.Pool
 	Gateway         config.Gateway
 	Request         config.Request
 	MaxMessageBytes int
@@ -43,7 +46,10 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	server := &Server{config: opts.Gateway, request: opts.Request, metrics: newMetrics()}
+	server := &Server{config: opts.Gateway, request: opts.Request, metrics: newMetrics(), memory: opts.Memory}
+	if opts.Memory != nil {
+		server.metrics.registry.MustRegister(opts.Memory)
+	}
 	server.activeStores = make(map[string]int)
 	server.pool.entries = make(map[Route]*connection)
 	server.pool.maximum = opts.Gateway.MaxConnections
@@ -71,6 +77,9 @@ func (s *Server) Run(ctx context.Context) {
 }
 func (s *Server) Close() { s.pool.close() }
 func (s *Server) begin(ctx context.Context, req *forward.ForwardRequest) (context.Context, func(), error) {
+	if s.memory != nil {
+		return s.beginMemory(ctx, req)
+	}
 	// Reserve input, forwarding envelopes and bounded response documents together.
 	charge := s.reservation(req)
 	if err := ctx.Err(); err != nil {
@@ -109,7 +118,7 @@ func (s *Server) forward(ctx context.Context, route Route, req *forward.ForwardR
 		route = targets[(s.nativeSequence.Add(1)-1)%uint64(len(targets))]
 	}
 	s.mu.Lock()
-	if s.activeStores[route.Store] >= s.config.MaxRequestsPerStore {
+	if s.memory == nil && s.activeStores[route.Store] >= s.config.MaxRequestsPerStore {
 		s.mu.Unlock()
 		s.metrics.rejected.Inc()
 		return localRejection(route, codes.ResourceExhausted, "Store forwarding capacity is occupied"), nil
@@ -132,7 +141,12 @@ func (s *Server) forward(ctx context.Context, route Route, req *forward.ForwardR
 	}
 	defer s.pool.release(entry)
 	started := time.Now()
-	response, err := entry.client.Forward(ctx, req)
+	var response *forward.ForwardResponse
+	if s.memory != nil {
+		response, err = s.forwardStream(ctx, entry, req)
+	} else {
+		response, err = entry.client.Forward(ctx, req)
+	}
 	s.metrics.downstream.Observe(time.Since(started).Seconds())
 	if err != nil {
 		return nil, err
@@ -186,4 +200,23 @@ func localRejection(route Route, code codes.Code, message string) *forward.Forwa
 	usage := &forward.Budget{}
 	response := &forward.ForwardResponse{Version: forwarding.Version, Store: route.Store, Used: usage, Code: uint32(code), Message: message, NotStarted: true}
 	return response
+}
+
+func (s *Server) beginMemory(ctx context.Context, req *forward.ForwardRequest) (context.Context, func(), error) {
+	ctx, cancel := context.WithTimeout(ctx, s.request.Timeout)
+	scope := capacity.FromContext(ctx)
+	release := func() {}
+	if scope == nil {
+		scope = s.memory.NewScope()
+		ctx = capacity.WithScope(ctx, scope)
+		release = scope.Release
+		if err := scope.Admit(ctx, 2*req.SizeVT()+1024); err != nil {
+			cancel()
+			release()
+			return ctx, nil, err
+		}
+	}
+	s.metrics.inFlight.Inc()
+	done := func() { cancel(); release(); s.metrics.inFlight.Dec() }
+	return ctx, done, nil
 }

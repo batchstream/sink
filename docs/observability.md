@@ -170,3 +170,52 @@ specific capability. Worker `/readyz` checks its database, Kafka, and consumer;
 independent from dependency readiness to avoid restart loops during an outage.
 
 See the [configuration reference](configuration.md) for listener settings.
+
+## Memory capacity and KEDA
+
+The CLI's shared allocator replaces speculative execution/forwarding admission.
+Use these metrics for the new policy; legacy execution/Scan/publishing and
+Gateway reservation gauges describe the old allocator and must not drive new
+capacity decisions. Existing RPC, backend, Kafka and batch queue metrics remain
+useful. Every memory series has bounded `role` and `store` labels (Gateway's
+store is empty).
+
+| Metric | Type | Additional labels / meaning |
+| --- | --- | --- |
+| `sink_memory_capacity_bytes` | gauge | `pool=normal,burst`; sum is configured or detected managed capacity |
+| `sink_memory_used_bytes` | gauge | `pool=normal,burst`; held input, result, copies and driver capacity, not RSS |
+| `sink_memory_opaque_reserved_bytes` | gauge | Temporary driver allowance included in used bytes; do not add it again |
+| `sink_memory_waiting_bytes` | gauge | `phase=request,response`; additional requested allocation bytes |
+| `sink_memory_waiting_requests` | gauge | `phase`; waiting acquisitions, not a concurrency limit |
+| `sink_memory_oldest_wait_seconds` | gauge | `phase`; zero when idle |
+| `sink_memory_burst_borrowers` | gauge | Zero or one completion owner |
+| `sink_memory_admitted_total` | counter | `phase`; successful acquisitions |
+| `sink_memory_rejected_total` | counter | `phase`, `reason=busy,oversize,wait_timeout` |
+| `sink_memory_wait_seconds` | histogram | `phase`, `outcome=admitted,canceled`; timed-out waits count as canceled |
+| `sink_memory_capacity_source_info` | gauge | `source=configured,gomemlimit,cgroup,host,fallback` |
+
+Waiting and rejection series include idle zeros. Request admission fails
+immediately if full, so request wait gauges normally stay zero. Response wait
+bytes represent outstanding demand; retries can contribute repeated acquisition
+attempts to counters. Oversized allocations are permanent capacity failures and
+should not trigger autoscaling through a rejection-rate metric.
+
+The [KEDA example](../examples/autoscaling/memory-keda.yaml) uses two signals:
+held plus pending bytes divided by ordinary fleet capacity, and the recent
+fraction of temporary request refusals. Both use `metricType: Value` because they
+are fleet ratios. Scope every selector to exactly one Deployment, role and, for
+Engines/Workers, Store. Do not combine Gateway and Engine capacity or use raw
+monotonic counters as scaling values. Keep Worker Kafka lag triggers as well.
+
+Replace example job/namespace names with the actual scrape labels. The capacity
+query rejects incomplete scrapes rather than interpreting missing capacity as
+idle; `ignoreNullValues: "false"` makes missing data a scaler error. Maintain
+nonzero synchronous replica floors and monitor Prometheus target health.
+See KEDA's [Prometheus scaler](https://keda.sh/docs/2.18/scalers/prometheus/) and
+[metric types](https://keda.sh/docs/2.18/reference/scaledobject-spec/).
+
+Monitor `process_resident_memory_bytes` and Go heap metrics alongside these
+series. Managed ownership is not GC reclamation or RSS: ingress decoding,
+Kafka buffering, Lua and runtime objects require the automatic sizing headroom.
+A high opaque-reservation share identifies MongoDB wire protection rather than
+large logical response quotas.

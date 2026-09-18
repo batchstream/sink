@@ -166,7 +166,7 @@ func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.Qu
 		return empty, err
 	}
 	result := storage.QueryResponse{HasMore: hasMore}
-	budget := storage.NewReadBudget(req.Request.MaxBytes)
+	budget := storage.NewResponseBudget(ctx, req.Request.MaxBytes)
 	for _, hit := range page.Hits.Hits {
 		if err := budget.Reserve(len(hit)); err != nil {
 			return empty, err

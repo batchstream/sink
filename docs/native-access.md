@@ -431,22 +431,18 @@ from changing the record.
 
 ## Limits, deadlines, and retries
 
-Native RPCs use the existing per-process and per-store admission limits.
-Execute, Query, Count and each Scan page use `service.request.timeout`.
-A shorter caller deadline wins. Between Scan calls there is no admission
-reservation and no background cursor to keep alive.
+Native RPCs use the shared process memory pool and `service.request.timeout`.
+A shorter caller deadline wins. Between Scan calls there is no held request
+capacity or background cursor.
 
-Scan admission waits for at most `service.execution.scan.admission_wait`
-(default two seconds, capped by the page timeout), within the original page
-deadline. The Scan waiting queue has separate request, byte and per-store caps
-equal to the Scan execution sublimits. An older runnable waiter keeps its place;
-a store blocked by its own sublimit does not prevent another store from running.
-Temporary refusal or admission wait expiry returns `RESOURCE_EXHAUSTED` with
-`google.rpc.ErrorInfo` (`domain="sink"`, `reason="SCAN_ADMISSION_REJECTED"`,
-metadata `pool` and `reason`). It guarantees that this attempt did not enter
-backend execution. Oversized reservations, response limits and backend failures
-do not carry this detail. Caller cancellation and page deadline expiry retain
-`CANCELED` and `DEADLINE_EXCEEDED` respectively.
+New requests acquire ordinary memory capacity or fail immediately. Temporary
+refusal before backend execution preserves Scan's safe retry detail:
+`google.rpc.ErrorInfo` with `domain="sink"`, `reason="SCAN_ADMISSION_REJECTED"`
+and metadata `pool=memory`, `reason=busy`. Oversized requests and failures after
+execution begins do not advertise this pre-execution guarantee. Actual response
+growth may wait up to `memory.wait_timeout` (default 2s), bounded by the page's
+original deadline. Cancellation and deadline expiry retain `CANCELED` and
+`DEADLINE_EXCEEDED` respectively. See [memory admission](design/demand-based-admission.md).
 
 Execute responses and returned Write documents share `service.request.max_read_bytes`
 semantics; returned-document budgets are per original RPC even after batching.
@@ -458,8 +454,8 @@ Output space is reserved before committing a returned write. A candidate that
 cannot fit fails before its own write; earlier operations may already be applied.
 Scan pages use at most min(`service.request.max_read_bytes`, 4 MiB), with count and byte
 limits both enforced. A single oversized document fails with
-`RESOURCE_EXHAUSTED`. Search reserves a bounded backend response buffer for two
-page budgets plus 64 KiB of metadata, capped by the store response limit. It reduces the hit count
+`RESOURCE_EXHAUSTED`. Search grows its backend response buffer against actual capacity, within the
+logical limit of two page budgets plus 64 KiB of metadata and the store response limit. It reduces the hit count
 when that buffer is exceeded, preserving one lookahead hit and validating the
 complete response before returning a smaller page. A stricter store response
 limit can still reject a page that cannot fit one hit plus its lookahead.

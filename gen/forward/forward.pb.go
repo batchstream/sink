@@ -498,6 +498,58 @@ func (*ForwardResponse_Count) isForwardResponse_Response() {}
 
 func (*ForwardResponse_Scan) isForwardResponse_Response() {}
 
+type ResponseFrame struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Size          uint64                 `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
+	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResponseFrame) Reset() {
+	*x = ResponseFrame{}
+	mi := &file_forward_forward_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResponseFrame) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResponseFrame) ProtoMessage() {}
+
+func (x *ResponseFrame) ProtoReflect() protoreflect.Message {
+	mi := &file_forward_forward_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResponseFrame.ProtoReflect.Descriptor instead.
+func (*ResponseFrame) Descriptor() ([]byte, []int) {
+	return file_forward_forward_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ResponseFrame) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *ResponseFrame) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
 var File_forward_forward_proto protoreflect.FileDescriptor
 
 const file_forward_forward_proto_rawDesc = "" +
@@ -539,9 +591,13 @@ const file_forward_forward_proto_rawDesc = "" +
 	"\x05count\x18\x0f \x01(\v2\x16.sink.v1.CountResponseH\x00R\x05count\x12+\n" +
 	"\x04scan\x18\x10 \x01(\v2\x15.sink.v1.ScanResponseH\x00R\x04scanB\n" +
 	"\n" +
-	"\bresponse2V\n" +
+	"\bresponse\"7\n" +
+	"\rResponseFrame\x12\x12\n" +
+	"\x04size\x18\x01 \x01(\x04R\x04size\x12\x12\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data2\xaa\x01\n" +
 	"\x06Engine\x12L\n" +
-	"\aForward\x12\x1f.sink.forward.v1.ForwardRequest\x1a .sink.forward.v1.ForwardResponseB+Z)github.com/liran/sink/gen/forward;forwardb\x06proto3"
+	"\aForward\x12\x1f.sink.forward.v1.ForwardRequest\x1a .sink.forward.v1.ForwardResponse\x12R\n" +
+	"\rForwardStream\x12\x1f.sink.forward.v1.ForwardRequest\x1a\x1e.sink.forward.v1.ResponseFrame0\x01B+Z)github.com/liran/sink/gen/forward;forwardb\x06proto3"
 
 var (
 	file_forward_forward_proto_rawDescOnce sync.Once
@@ -555,49 +611,52 @@ func file_forward_forward_proto_rawDescGZIP() []byte {
 	return file_forward_forward_proto_rawDescData
 }
 
-var file_forward_forward_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_forward_forward_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_forward_forward_proto_goTypes = []any{
 	(*Budget)(nil),               // 0: sink.forward.v1.Budget
 	(*ForwardRequest)(nil),       // 1: sink.forward.v1.ForwardRequest
 	(*ForwardResponse)(nil),      // 2: sink.forward.v1.ForwardResponse
-	(*sink.ReadRequest)(nil),     // 3: sink.v1.ReadRequest
-	(*sink.WriteRequest)(nil),    // 4: sink.v1.WriteRequest
-	(*sink.DeleteRequest)(nil),   // 5: sink.v1.DeleteRequest
-	(*sink.ExecuteRequest)(nil),  // 6: sink.v1.ExecuteRequest
-	(*sink.QueryRequest)(nil),    // 7: sink.v1.QueryRequest
-	(*sink.CountRequest)(nil),    // 8: sink.v1.CountRequest
-	(*sink.ScanRequest)(nil),     // 9: sink.v1.ScanRequest
-	(*anypb.Any)(nil),            // 10: google.protobuf.Any
-	(*sink.ReadResponse)(nil),    // 11: sink.v1.ReadResponse
-	(*sink.WriteResponse)(nil),   // 12: sink.v1.WriteResponse
-	(*sink.DeleteResponse)(nil),  // 13: sink.v1.DeleteResponse
-	(*sink.ExecuteResponse)(nil), // 14: sink.v1.ExecuteResponse
-	(*sink.QueryResponse)(nil),   // 15: sink.v1.QueryResponse
-	(*sink.CountResponse)(nil),   // 16: sink.v1.CountResponse
-	(*sink.ScanResponse)(nil),    // 17: sink.v1.ScanResponse
+	(*ResponseFrame)(nil),        // 3: sink.forward.v1.ResponseFrame
+	(*sink.ReadRequest)(nil),     // 4: sink.v1.ReadRequest
+	(*sink.WriteRequest)(nil),    // 5: sink.v1.WriteRequest
+	(*sink.DeleteRequest)(nil),   // 6: sink.v1.DeleteRequest
+	(*sink.ExecuteRequest)(nil),  // 7: sink.v1.ExecuteRequest
+	(*sink.QueryRequest)(nil),    // 8: sink.v1.QueryRequest
+	(*sink.CountRequest)(nil),    // 9: sink.v1.CountRequest
+	(*sink.ScanRequest)(nil),     // 10: sink.v1.ScanRequest
+	(*anypb.Any)(nil),            // 11: google.protobuf.Any
+	(*sink.ReadResponse)(nil),    // 12: sink.v1.ReadResponse
+	(*sink.WriteResponse)(nil),   // 13: sink.v1.WriteResponse
+	(*sink.DeleteResponse)(nil),  // 14: sink.v1.DeleteResponse
+	(*sink.ExecuteResponse)(nil), // 15: sink.v1.ExecuteResponse
+	(*sink.QueryResponse)(nil),   // 16: sink.v1.QueryResponse
+	(*sink.CountResponse)(nil),   // 17: sink.v1.CountResponse
+	(*sink.ScanResponse)(nil),    // 18: sink.v1.ScanResponse
 }
 var file_forward_forward_proto_depIdxs = []int32{
 	0,  // 0: sink.forward.v1.ForwardRequest.grant:type_name -> sink.forward.v1.Budget
-	3,  // 1: sink.forward.v1.ForwardRequest.read:type_name -> sink.v1.ReadRequest
-	4,  // 2: sink.forward.v1.ForwardRequest.write:type_name -> sink.v1.WriteRequest
-	5,  // 3: sink.forward.v1.ForwardRequest.delete:type_name -> sink.v1.DeleteRequest
-	6,  // 4: sink.forward.v1.ForwardRequest.execute:type_name -> sink.v1.ExecuteRequest
-	7,  // 5: sink.forward.v1.ForwardRequest.query:type_name -> sink.v1.QueryRequest
-	8,  // 6: sink.forward.v1.ForwardRequest.count:type_name -> sink.v1.CountRequest
-	9,  // 7: sink.forward.v1.ForwardRequest.scan:type_name -> sink.v1.ScanRequest
+	4,  // 1: sink.forward.v1.ForwardRequest.read:type_name -> sink.v1.ReadRequest
+	5,  // 2: sink.forward.v1.ForwardRequest.write:type_name -> sink.v1.WriteRequest
+	6,  // 3: sink.forward.v1.ForwardRequest.delete:type_name -> sink.v1.DeleteRequest
+	7,  // 4: sink.forward.v1.ForwardRequest.execute:type_name -> sink.v1.ExecuteRequest
+	8,  // 5: sink.forward.v1.ForwardRequest.query:type_name -> sink.v1.QueryRequest
+	9,  // 6: sink.forward.v1.ForwardRequest.count:type_name -> sink.v1.CountRequest
+	10, // 7: sink.forward.v1.ForwardRequest.scan:type_name -> sink.v1.ScanRequest
 	0,  // 8: sink.forward.v1.ForwardResponse.used:type_name -> sink.forward.v1.Budget
-	10, // 9: sink.forward.v1.ForwardResponse.status_details:type_name -> google.protobuf.Any
-	11, // 10: sink.forward.v1.ForwardResponse.read:type_name -> sink.v1.ReadResponse
-	12, // 11: sink.forward.v1.ForwardResponse.write:type_name -> sink.v1.WriteResponse
-	13, // 12: sink.forward.v1.ForwardResponse.delete:type_name -> sink.v1.DeleteResponse
-	14, // 13: sink.forward.v1.ForwardResponse.execute:type_name -> sink.v1.ExecuteResponse
-	15, // 14: sink.forward.v1.ForwardResponse.query:type_name -> sink.v1.QueryResponse
-	16, // 15: sink.forward.v1.ForwardResponse.count:type_name -> sink.v1.CountResponse
-	17, // 16: sink.forward.v1.ForwardResponse.scan:type_name -> sink.v1.ScanResponse
+	11, // 9: sink.forward.v1.ForwardResponse.status_details:type_name -> google.protobuf.Any
+	12, // 10: sink.forward.v1.ForwardResponse.read:type_name -> sink.v1.ReadResponse
+	13, // 11: sink.forward.v1.ForwardResponse.write:type_name -> sink.v1.WriteResponse
+	14, // 12: sink.forward.v1.ForwardResponse.delete:type_name -> sink.v1.DeleteResponse
+	15, // 13: sink.forward.v1.ForwardResponse.execute:type_name -> sink.v1.ExecuteResponse
+	16, // 14: sink.forward.v1.ForwardResponse.query:type_name -> sink.v1.QueryResponse
+	17, // 15: sink.forward.v1.ForwardResponse.count:type_name -> sink.v1.CountResponse
+	18, // 16: sink.forward.v1.ForwardResponse.scan:type_name -> sink.v1.ScanResponse
 	1,  // 17: sink.forward.v1.Engine.Forward:input_type -> sink.forward.v1.ForwardRequest
-	2,  // 18: sink.forward.v1.Engine.Forward:output_type -> sink.forward.v1.ForwardResponse
-	18, // [18:19] is the sub-list for method output_type
-	17, // [17:18] is the sub-list for method input_type
+	1,  // 18: sink.forward.v1.Engine.ForwardStream:input_type -> sink.forward.v1.ForwardRequest
+	2,  // 19: sink.forward.v1.Engine.Forward:output_type -> sink.forward.v1.ForwardResponse
+	3,  // 20: sink.forward.v1.Engine.ForwardStream:output_type -> sink.forward.v1.ResponseFrame
+	19, // [19:21] is the sub-list for method output_type
+	17, // [17:19] is the sub-list for method input_type
 	17, // [17:17] is the sub-list for extension type_name
 	17, // [17:17] is the sub-list for extension extendee
 	0,  // [0:17] is the sub-list for field type_name
@@ -632,7 +691,7 @@ func file_forward_forward_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_forward_forward_proto_rawDesc), len(file_forward_forward_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/capacity"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
 	"github.com/liran/sink/internal/protocol"
 	"google.golang.org/grpc/codes"
@@ -53,6 +54,7 @@ func NewBatchingServer(server *Server, opts BatchingOptions) (*BatchingServer, e
 
 	readOptions := requestBatcherOptions[*sink.ReadRequest, *sink.ReadResponse]{
 		MaxConcurrent:       server.maxInFlightRequests,
+		Unlimited:           server.memory != nil,
 		Method:              "Read",
 		MaxWait:             normalized.MaxWait,
 		MaxOperations:       normalized.MaxOperations,
@@ -68,6 +70,7 @@ func NewBatchingServer(server *Server, opts BatchingOptions) (*BatchingServer, e
 
 	writeOptions := requestBatcherOptions[*sink.WriteRequest, *sink.WriteResponse]{
 		MaxConcurrent: server.maxInFlightRequests,
+		Unlimited:     server.memory != nil,
 		Records: func(request *sink.WriteRequest) []recordIdentity {
 			return mutationRequestRecords(request)
 		},
@@ -89,6 +92,7 @@ func NewBatchingServer(server *Server, opts BatchingOptions) (*BatchingServer, e
 
 	deleteOptions := requestBatcherOptions[*sink.DeleteRequest, *sink.DeleteResponse]{
 		MaxConcurrent: server.maxInFlightRequests,
+		Unlimited:     server.memory != nil,
 		Records: func(request *sink.DeleteRequest) []recordIdentity {
 			return mutationRequestRecords(request)
 		},
@@ -167,6 +171,11 @@ func (s *BatchingServer) Read(ctx context.Context, req *sink.ReadRequest) (*sink
 	if err := s.server.validateOperationCount(len(req.GetOperations())); err != nil {
 		return nil, err
 	}
+	ctx, release, err := s.server.beginBatchMemory(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	return s.reads.Submit(ctx, req, len(req.GetOperations()), req.SizeVT())
 }
 
@@ -193,6 +202,11 @@ func (s *BatchingServer) Write(ctx context.Context, req *sink.WriteRequest) (*si
 		return nil, status.Errorf(codes.InvalidArgument, "write request Lua programs: %v", err)
 	}
 	normalized := normalizeSynchronousWriteRequest(req, programs)
+	ctx, release, err := s.server.beginBatchMemory(ctx, normalized)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	return s.writes.Submit(ctx, normalized, len(normalized.GetOperations()), normalized.SizeVT())
 }
 
@@ -256,6 +270,11 @@ func (s *BatchingServer) Delete(ctx context.Context, req *sink.DeleteRequest) (*
 	if req.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED {
 		return s.server.Delete(ctx, req)
 	}
+	ctx, release, err := s.server.beginBatchMemory(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	return s.deletes.Submit(ctx, req, len(req.GetOperations()), req.SizeVT())
 }
 
@@ -268,7 +287,13 @@ func (s *BatchingServer) executeReads(
 	for len(calls) > 0 {
 		count := 0
 		bytes := 2 * s.server.maxReadBytes
+		if s.server.memory != nil {
+			bytes = 0
+		}
 		byteLimit := s.server.maxInFlightBytes
+		if s.server.memory != nil {
+			byteLimit = int(s.server.memory.Limit())
+		}
 		for count < min(limit, len(calls)) {
 			next := calls[count].request.SizeVT() + failureResponseBytes(len(calls[count].request.GetOperations()))
 			if count > 0 && next > byteLimit-bytes {
@@ -364,6 +389,9 @@ func (s *BatchingServer) executeWrites(
 			appliedBytes := s.server.estimateWriteExecution(applied, len(wave.applied), returningBatchCallers(wave.applied)).bytes
 			visibleBytes := s.server.estimateWriteExecution(visible, len(wave.visible), returningBatchCallers(wave.visible)).bytes
 			byteLimit := s.server.maxInFlightBytes
+			if s.server.memory != nil {
+				byteLimit = int(s.server.memory.Limit())
+			}
 			parallel = appliedBytes+visibleBytes <= byteLimit
 		}
 		var executions sync.WaitGroup
@@ -393,6 +421,9 @@ func (s *BatchingServer) executeWriteBatch(
 	defer cancel()
 	for start := 0; start < len(calls); {
 		byteLimit := s.server.maxInFlightBytes
+		if s.server.memory != nil {
+			byteLimit = int(s.server.memory.Limit())
+		}
 		end := len(calls)
 		combined := combinedWriteRequest(calls[start:end])
 		if s.server.estimateWriteExecution(combined, end-start, returningBatchCallers(calls[start:end])).bytes > byteLimit {
@@ -466,6 +497,9 @@ func (s *BatchingServer) executeDeletes(
 			visible := combinedDeleteRequest(wave.visible)
 			responseBytes := failureResponseBytes(len(applied.Operations) + len(visible.Operations))
 			byteLimit := s.server.maxInFlightBytes
+			if s.server.memory != nil {
+				byteLimit = int(s.server.memory.Limit())
+			}
 			parallel = applied.SizeVT()+visible.SizeVT()+responseBytes <= byteLimit
 		}
 		var executions sync.WaitGroup
@@ -496,6 +530,9 @@ func (s *BatchingServer) executeDeleteBatch(
 	for len(calls) > 0 {
 		count, bytes := 0, 0
 		byteLimit := s.server.maxInFlightBytes
+		if s.server.memory != nil {
+			byteLimit = int(s.server.memory.Limit())
+		}
 		for count < len(calls) {
 			next := calls[count].request.SizeVT() + failureResponseBytes(len(calls[count].request.GetOperations()))
 			if count > 0 && next > byteLimit-bytes {
@@ -570,4 +607,22 @@ func splitDeleteResponse(
 		completeCall(call, split, nil)
 		offset += count
 	}
+}
+
+// In-process callers have no gRPC stats scope. Give them the same input ownership
+// before queuing; Submit keeps a producer reference if the caller cancels.
+func (s *Server) beginBatchMemory(ctx context.Context, req interface{ SizeVT() int }) (context.Context, func(), error) {
+	if s.memory == nil || capacity.FromContext(ctx) != nil {
+		return ctx, func() {}, nil
+	}
+	scope := s.memory.NewScope()
+	if err := scope.Admit(ctx, 2*req.SizeVT()+1024); err != nil {
+		scope.Release()
+		return ctx, nil, err
+	}
+	if err := scope.AdmitCompletion(ctx, protocol.CompletionBytes(req)); err != nil {
+		scope.Release()
+		return ctx, nil, err
+	}
+	return capacity.WithScope(ctx, scope), scope.Release, nil
 }

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/config"
 	"github.com/liran/sink/internal/gateway"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
@@ -21,6 +22,7 @@ import (
 )
 
 type Application struct {
+	memory          *capacity.Pool
 	draining        atomic.Bool
 	gateway         *gateway.Server
 	topics          *queuekafka.TopicManager
@@ -55,12 +57,17 @@ func New(ctx context.Context, opts Options) (*Application, error) {
 	if loaded.Mode == config.ModeGateway {
 		return newGateway(opts)
 	}
+	memory, err := newMemory(loaded)
+	if err != nil {
+		return nil, err
+	}
 	opened, err := openConfiguredStorage(ctx, loaded)
 	if err != nil {
 		return nil, err
 	}
 	app := &Application{
 		config:       loaded,
+		memory:       memory,
 		mongoClient:  opened.mongoClient,
 		storage:      opened.value,
 		healthChecks: opened.healthChecks,
@@ -78,6 +85,9 @@ func New(ctx context.Context, opts Options) (*Application, error) {
 	if loaded.Prometheus.Enabled {
 		observed, err = sinkmetrics.New(opts.Version, loaded.Storage.Name)
 		if err != nil {
+			return nil, err
+		}
+		if err := observed.Register(memory); err != nil {
 			return nil, err
 		}
 		if err := app.configurePrometheus(observed.Handler()); err != nil {
@@ -103,4 +113,13 @@ func New(ctx context.Context, opts Options) (*Application, error) {
 	}
 	ready = true
 	return app, nil
+}
+
+func newMemory(loaded config.Config) (*capacity.Pool, error) {
+	bytes, source := int64(loaded.Memory.MaxBytes), "configured"
+	if bytes == 0 {
+		bytes, source = capacity.Detect()
+	}
+	opts := capacity.Options{Bytes: bytes, BurstPercent: loaded.Memory.BurstPercent, WaitTimeout: loaded.Memory.WaitTimeout, Role: string(loaded.Mode), Store: loaded.Storage.Name, Source: source}
+	return capacity.New(opts)
 }

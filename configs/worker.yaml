@@ -7,6 +7,12 @@
 # Engine must enable Kafka to publish mutations for this Worker.
 mode: worker # Required process role.
 
+# One shared process pool; max_bytes is normally detected automatically.
+memory:
+  # max_bytes: 256MiB # Optional explicit capacity, including completion reserve.
+  burst_percent: 10 # Completion reserve; 1..99; new requests use ordinary capacity.
+  wait_timeout: 2s # Response growth wait, bounded by the original request deadline.
+
 # Dedicated health listener; always available independently of Prometheus.
 health:
   address: ":8081" # Listen address for /livez and /readyz; default :8081.
@@ -70,17 +76,7 @@ service:
     max_read_bytes: 32MiB # Merge snapshot/output budget per execution call; default 32MiB.
     max_operations: 1000 # Caps consumer poll records and operations in each execution call.
 
-  # Storage execution capacity for applying consumed mutations.
-  execution:
-    max_requests: 128 # Concurrent admitted mutation execution calls; maximum 10000.
-    max_bytes: 256MiB # Admitted input/output reservations; <=16GiB; not a heap/RSS cap.
-    # Bounded waiting for synchronous mutation execution.
-    queue:
-      max_requests: 1024 # Pending direct requests; maximum 10000.
-      max_bytes: 32MiB # Waiting input/bookkeeping; default min(32MiB, execution.max_bytes).
-      max_wait: 2s # Default min(2s, request.timeout); cannot exceed request.timeout.
-
-  # Conditional mutation conflict handling and Lua limits, shared by Engine/Worker.
+  # Conditional mutation conflict handling and Lua limits.
   merge:
     max_attempts: 3 # Revision-conflict attempts for Merge and folded conditional Put.
     lua:

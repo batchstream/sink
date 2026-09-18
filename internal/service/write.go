@@ -174,8 +174,10 @@ func resolveLuaProgram(program *sink.LuaProgram, programs luaPrograms) (merge.Pr
 	if !ok {
 		return resolved, errors.New("lua program SHA-256 reference was not declared in the write request")
 	}
-	resolved.Source = bytes.Clone(declared.Source)
-	resolved.SHA256 = bytes.Clone(declared.SHA256)
+	// Declarations already own their buffers and compiled programs are immutable.
+	// Preserve sharing when many operations reference one declaration.
+	resolved.Source = declared.Source
+	resolved.SHA256 = declared.SHA256
 	return resolved, nil
 }
 
@@ -489,13 +491,18 @@ func (s *Server) applyWriteSnapshots(ctx context.Context, groups []writeGroup, s
 			candidate, include = s.prepareBatchedWriteGroup(ctx, preparation)
 		}
 		if include {
-			if err := capacity.Grow(ctx, opts.memory.reservation.managed, 3*(len(candidate.operation.Document.Payload)+128)); err != nil {
-				failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: storage.ResourceExhaustedError(err)}
+			candidateBytes := len(candidate.operation.Document.Payload) + 128
+			growthErr := capacity.Grow(ctx, opts.memory.reservation.managed, 3*candidateBytes)
+			if growthErr != nil {
+				failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: storage.ResourceExhaustedError(growthErr)}
 				applyWriteGroupResult(group, results, failure)
 				opts.complete(group, results)
 				continue
 			}
 			if err := opts.returns.reserve(group, candidate.operation.Document); err != nil {
+				if opts.memory.reservation.managed != nil {
+					opts.memory.reservation.managed.Shrink(3 * int64(candidateBytes))
+				}
 				failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: err}
 				applyWriteGroupResult(group, results, failure)
 				opts.complete(group, results)
@@ -503,13 +510,15 @@ func (s *Server) applyWriteSnapshots(ctx context.Context, groups []writeGroup, s
 			}
 			if opts.budgets == nil {
 				if err := attempt.output.Reserve(len(candidate.operation.Document.Payload)); err != nil {
+					if opts.memory.reservation.managed != nil {
+						opts.memory.reservation.managed.Shrink(3 * int64(candidateBytes))
+					}
 					failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: err}
 					applyWriteGroupResult(group, results, failure)
 					opts.complete(group, results)
 					continue
 				}
 			}
-			candidateBytes := len(candidate.operation.Document.Payload) + 128
 			if opts.budgets.callerCount() > 1 && len(candidates) > 0 && candidateBytes > s.maxReadBytes-outputBytes {
 				attempt.pendingCandidateBytes = candidateBytes
 				conflicts, err := s.commitWriteCandidates(ctx, candidates, attempt)

@@ -21,7 +21,13 @@ func (s *Server) forwardStream(ctx context.Context, entry *connection, req *forw
 	defer capacity.Close(scratch)
 	if scratch != nil {
 		if err := scratch.Grow(ctx, forwarding.StreamScratchBytes, capacity.Request); err != nil {
-			return nil, protocol.MemoryAdmissionError(req, err)
+			// No request has left this process. Preserve the zero usage settlement
+			// and safe-retry signal instead of reporting an ambiguous mutation.
+			marked := protocol.MemoryAdmissionError(req, err)
+			route := Route{Store: req.GetStore()}
+			rejected := localRejection(route, status.Code(marked), status.Convert(marked).Message())
+			rejected.StatusDetails = status.Convert(marked).Proto().GetDetails()
+			return rejected, nil
 		}
 	}
 	stream, err := entry.client.ForwardStream(ctx, req, grpc.MaxCallRecvMsgSize(forwarding.FrameMessageBytes))

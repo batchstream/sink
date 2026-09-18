@@ -49,6 +49,7 @@ func (s *Store) performBulk(ctx context.Context, request bulkRequest) ([]bulkIte
 	if err != nil {
 		return nil, fmt.Errorf("execute search bulk request: %w", err)
 	}
+	defer response.close()
 	if response.statusCode < 200 || response.statusCode >= 300 {
 		return nil, responseError(s.driver, response)
 	}

@@ -220,8 +220,8 @@ func (b *requestBatcher[Request, Response]) release(call *batchCall[Request, Res
 func (b *requestBatcher[Request, Response]) run() {
 	defer b.waitGroup.Done()
 	pending := make([]*batchCall[Request, Response], 0)
-	active := make(map[recordIdentity]bool)
-	references := make(map[recordIdentity]int)
+	// Each active record stays occupied until every selected caller releases it.
+	active := make(map[recordIdentity]int)
 	recordsDone := make(chan []recordIdentity, b.maxConcurrent)
 	completed := make(chan []*batchCall[Request, Response], b.maxConcurrent)
 	running := 0
@@ -273,8 +273,7 @@ func (b *requestBatcher[Request, Response]) run() {
 								continue
 							}
 							call.pendingRecords[key] = true
-							references[key]++
-							active[key] = true
+							active[key]++
 						}
 						call.onRecordsDone = func(keys []recordIdentity) {
 							select {
@@ -298,9 +297,8 @@ func (b *requestBatcher[Request, Response]) run() {
 			running--
 		case keys := <-recordsDone:
 			for _, key := range keys {
-				references[key]--
-				if references[key] == 0 {
-					delete(references, key)
+				active[key]--
+				if active[key] == 0 {
 					delete(active, key)
 				}
 			}
@@ -316,7 +314,7 @@ func (b *requestBatcher[Request, Response]) run() {
 
 // A blocked earlier RPC reserves all its keys in the dependency graph. Later
 // independent RPCs can pass it, while multi-record chains retain queue order.
-func (b *requestBatcher[Request, Response]) selectReady(pending []*batchCall[Request, Response], active map[recordIdentity]bool) ([]*batchCall[Request, Response], []*batchCall[Request, Response], string) {
+func (b *requestBatcher[Request, Response]) selectReady(pending []*batchCall[Request, Response], active map[recordIdentity]int) ([]*batchCall[Request, Response], []*batchCall[Request, Response], string) {
 	selected := make([]*batchCall[Request, Response], 0)
 	remaining := make([]*batchCall[Request, Response], 0)
 	blocked := make(map[recordIdentity]bool)
@@ -325,7 +323,7 @@ func (b *requestBatcher[Request, Response]) selectReady(pending []*batchCall[Req
 	for index, call := range pending {
 		dependent := false
 		for _, key := range call.records {
-			if active[key] || blocked[key] {
+			if active[key] > 0 || blocked[key] {
 				dependent = true
 				break
 			}
@@ -337,7 +335,7 @@ func (b *requestBatcher[Request, Response]) selectReady(pending []*batchCall[Req
 				remaining = append(remaining, call)
 			}
 			for _, key := range call.records {
-				if !active[key] {
+				if active[key] == 0 {
 					blocked[key] = true
 				}
 			}
@@ -495,7 +493,11 @@ func (call *batchCall[Request, Response]) finishRecords(keys []recordIdentity) {
 		return
 	}
 	call.recordMu.Lock()
-	finished := make([]recordIdentity, 0, len(keys))
+	if len(call.pendingRecords) == 0 {
+		call.recordMu.Unlock()
+		return
+	}
+	finished := make([]recordIdentity, 0, min(len(keys), len(call.pendingRecords)))
 	for _, key := range keys {
 		if call.pendingRecords[key] {
 			delete(call.pendingRecords, key)

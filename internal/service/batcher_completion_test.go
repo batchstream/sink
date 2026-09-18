@@ -174,7 +174,7 @@ func TestMutationPartitionsPreserveBlockedPredecessors(t *testing.T) {
 		call.encodedBytes = 1
 	}
 	batcher := &requestBatcher[*sink.WriteRequest, *sink.WriteResponse]{maxOperations: 100, maxBytes: 1000}
-	active := make(map[recordIdentity]bool)
+	active := make(map[recordIdentity]int)
 	selected, pending, _ := batcher.selectReady(calls, active)
 	if len(selected) != 1 || selected[0] != first || len(pending) != 3 {
 		t.Fatal("partition crossing or same-document predecessor overtaken")
@@ -190,7 +190,9 @@ func TestBatcherWaitsForEveryCallerOwningSharedDocument(t *testing.T) {
 	held := make(chan struct{})
 	var release sync.Once
 	key := recordIdentity("hot")
-	records := func(int) []recordIdentity { return []recordIdentity{key} }
+	// Repeated operations in one caller must count as one owner, while separate
+	// callers in the same batch must each release the record before it can run.
+	records := func(int) []recordIdentity { return []recordIdentity{key, key} }
 	execute := func(_ context.Context, calls []*batchCall[int, int]) {
 		for _, call := range calls {
 			if call.request == 2 {

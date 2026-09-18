@@ -29,6 +29,8 @@ const (
 )
 
 type Handler interface {
+	// HandleBatch treats mutations as read-only and stops using the slice
+	// before returning so the worker can reuse it for unresolved records.
 	HandleBatch(ctx context.Context, mutations []queue.Mutation) []error
 }
 
@@ -383,48 +385,44 @@ func resolvedPrefixes(records []*kgo.Record, results []error) ([]*kgo.Record, []
 	return ready, resolved, retained
 }
 
-type pendingMutation struct {
-	index    int
-	mutation queue.Mutation
-}
-
 func (w *Worker) handleWithRetry(ctx context.Context, mutations []queue.Mutation) []error {
 	backoff := w.retryBackoff
 	finalResults := make([]error, len(mutations))
-	pending := make([]pendingMutation, 0, len(mutations))
-	for index, mutation := range mutations {
-		work := pendingMutation{index: index, mutation: mutation}
-		pending = append(pending, work)
+	batch := append([]queue.Mutation(nil), mutations...)
+	pending := make([]int, len(mutations))
+	for index := range pending {
+		pending[index] = index
 	}
 	for attempt := 1; attempt <= w.maxRetryAttempts; attempt++ {
-		batch := make([]queue.Mutation, 0, len(pending))
-		for _, work := range pending {
-			batch = append(batch, work.mutation)
-		}
 		results := w.handler.HandleBatch(ctx, batch)
 		if len(results) != len(batch) {
 			err := storage.BackendError(errors.New("kafka mutation handler returned an invalid result count"))
-			for _, work := range pending {
-				finalResults[work.index] = err
+			for _, index := range pending {
+				finalResults[index] = err
 			}
 			return finalResults
 		}
-		next := make([]pendingMutation, 0, len(pending))
+		// Compact unresolved records in order, retaining their original result
+		// indexes. The caller's mutation slice stays unchanged.
+		next := 0
 		for index, err := range results {
 			if err == nil {
 				continue
 			}
-			work := pending[index]
 			if !isRetryable(err) || attempt == w.maxRetryAttempts {
-				finalResults[work.index] = err
+				finalResults[pending[index]] = err
 				continue
 			}
-			next = append(next, work)
+			batch[next] = batch[index]
+			pending[next] = pending[index]
+			next++
 		}
-		if len(next) == 0 {
+		if next == 0 {
 			return finalResults
 		}
-		w.metrics.ObserveKafkaRetry(w.store, len(next))
+		batch = batch[:next]
+		pending = pending[:next]
+		w.metrics.ObserveKafkaRetry(w.store, next)
 		delay := jitteredBackoff(backoff)
 		timer := time.NewTimer(delay)
 		select {
@@ -432,13 +430,12 @@ func (w *Worker) handleWithRetry(ctx context.Context, mutations []queue.Mutation
 			if !timer.Stop() {
 				<-timer.C
 			}
-			for _, work := range next {
-				finalResults[work.index] = ctx.Err()
+			for _, index := range pending {
+				finalResults[index] = ctx.Err()
 			}
 			return finalResults
 		case <-timer.C:
 		}
-		pending = next
 		backoff = min(backoff*2, w.maxRetryBackoff)
 	}
 	return finalResults

@@ -3,7 +3,7 @@
 Run the opt-in local allocator experiment:
 
 ```sh
-SINK_MEMORY_EXPERIMENT=1 go test ./internal/capacity -run '^TestBurstExperiment$' -v -count=1
+go test -tags=memoryexperiment ./internal/capacity -run '^TestBurstExperiment$' -v -count=1
 ```
 
 The [recorded sample](burst-sample.csv) was collected on 2026-09-18 with Go 1.27

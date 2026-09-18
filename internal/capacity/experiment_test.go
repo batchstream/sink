@@ -1,9 +1,10 @@
+//go:build memoryexperiment
+
 package capacity
 
 import (
 	"context"
 	"fmt"
-	"os"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -13,9 +14,6 @@ import (
 
 // Run explicitly; regular correctness tests do not depend on timing rankings.
 func TestBurstExperiment(t *testing.T) {
-	if os.Getenv("SINK_MEMORY_EXPERIMENT") != "1" {
-		t.Skip("opt-in load experiment")
-	}
 	profiles := []struct {
 		name     string
 		input    int64

@@ -13,6 +13,8 @@ import (
 
 	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/storage"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var errResponseTooLarge = errors.New("search response exceeds configured byte limit")
@@ -33,6 +35,12 @@ type apiResponse struct {
 	statusCode int
 	body       []byte
 	headers    http.Header
+	memory     *capacity.Lease
+}
+
+func (r *apiResponse) close() {
+	capacity.Close(r.memory)
+	r.body = nil
 }
 
 type errorDetail struct {
@@ -52,6 +60,7 @@ func (s *Store) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("ping %s: %w", s.driver, err)
 	}
+	defer response.close()
 	if response.statusCode < 200 || response.statusCode >= 300 {
 		return responseError(s.driver, response)
 	}
@@ -78,7 +87,8 @@ func (s *Store) perform(ctx context.Context, opts requestOptions) (apiResponse, 
 		if err != nil {
 			// Caller cancellation and local response limits say nothing about
 			// endpoint health. Let reads split oversized batches immediately.
-			if ctx.Err() != nil || errors.Is(err, errResponseTooLarge) {
+			code, _ := storage.ErrorDetails(err)
+			if ctx.Err() != nil || errors.Is(err, errResponseTooLarge) || code == storage.ErrorCodeResourceExhausted {
 				return empty, err
 			}
 			state.retryAfter.Store(time.Now().Add(defaultEndpointCooldown).UnixNano())
@@ -92,6 +102,7 @@ func (s *Store) perform(ctx context.Context, opts requestOptions) (apiResponse, 
 			state.retryAfter.Store(time.Now().Add(defaultEndpointCooldown).UnixNano())
 			lastErr = responseError(s.driver, response)
 			if opts.retrySafe {
+				response.close()
 				continue
 			}
 		}
@@ -129,14 +140,20 @@ func (s *Store) performOnce(ctx context.Context, opts requestOptions, endpoint *
 	if opts.maxBytes > 0 {
 		maximum = min(maximum, opts.maxBytes)
 	}
-	body, err := capacity.ReadAll(ctx, httpResponse.Body, maximum+1)
+	lease := capacity.FromContext(ctx).NewLease()
+	body, err := capacity.ReadAll(ctx, httpResponse.Body, maximum+1, lease)
 	if err != nil {
+		capacity.Close(lease)
+		if status.Code(err) == codes.ResourceExhausted {
+			return empty, storage.ResourceExhaustedError(err)
+		}
 		return empty, storage.BackendError(err)
 	}
 	if int64(len(body)) > maximum {
+		capacity.Close(lease)
 		return empty, fmt.Errorf("%w: %s maximum is %d bytes", errResponseTooLarge, s.driver, maximum)
 	}
-	response := apiResponse{statusCode: httpResponse.StatusCode, body: body, headers: httpResponse.Header.Clone()}
+	response := apiResponse{statusCode: httpResponse.StatusCode, body: body, headers: httpResponse.Header.Clone(), memory: lease}
 	return response, nil
 }
 

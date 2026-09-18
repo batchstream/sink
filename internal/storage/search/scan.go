@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/storage"
 )
 
@@ -113,6 +114,7 @@ func (s *Store) Scan(ctx context.Context, req storage.ScanRequest) (storage.Scan
 	if err != nil {
 		return empty, err
 	}
+	defer capacity.Close(page.memory)
 	if len(page.Hits.Hits) > pageSize+1 {
 		return empty, errors.New("search Scan exceeded its requested result count")
 	}

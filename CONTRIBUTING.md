@@ -34,15 +34,17 @@ It does not require a database or Docker; the first run may download Go
 dependencies. `make lint` checks without rewriting files. Use `make fmt` to
 apply formatting.
 
-Run `make test-integration` for adapter changes and `make quickstart` for
-end-to-end behavior. See the [development guide](docs/development.md) for
+Run `SINK_SERVER_DIR=/path/to/sink make test-server-integration` from the
+production-suite checkout for adapter changes. Use `make quickstart` here to
+try the product example. See the [development guide](docs/development.md) for
 workflow/link checks, protobuf generation, race tests, and qualification.
 
 ## Prepare a pull request
 
 - Keep the change focused and explain the observed problem and resulting behavior.
 - Add a regression test when fixing behavior; use disposable backends for
-  integration tests and keep external services out of the default test suite.
+  integration tests in the production-suite repository. Keep only component
+  unit tests in Sink; the suite owns all benchmarks, fuzzing and transport tests.
 - Update affected documentation and examples when configuration or APIs change.
 - Keep generated protobuf files consistent with the protocol. Coordinate
   public contract changes with the Go client and public suite.

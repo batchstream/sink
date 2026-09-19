@@ -43,6 +43,6 @@
 | [Internal logging design](design/internal-logging.md) | Accepted diagnostic logging scope, field contract and reliability boundaries |
 | [Contributing](../CONTRIBUTING.md) | Report an issue and prepare a focused pull request |
 | [Development](development.md) | Build, lint, generate protobuf code, run tests, and package releases |
-| [Lua benchmarks](../benchmarks/lua/README.md) | Compare Lua runtime workloads |
+| [Lua benchmarks](https://github.com/batchstream/sink-production-suite/blob/main/benchmarks/lua/README.md) | Compare Lua runtime workloads |
 | [Public production suite](https://github.com/liran/sink-production-suite) | Run public API conformance and sustained fault qualification |
 | [Security policy](../SECURITY.md) | Report a vulnerability privately |

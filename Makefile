@@ -1,4 +1,4 @@
-.PHONY: proto build test test-unit test-integration test-search-integration fmt check-format lint lint-workflows lint-docs quickstart quickstart-down test-isolated-quickstart
+.PHONY: proto build test test-unit fmt check-format lint lint-workflows lint-docs quickstart quickstart-down
 
 PROTO_DIR := proto
 GEN_DIR := gen
@@ -24,19 +24,7 @@ test:
 	go test ./... -v -count=1
 
 test-unit:
-	go test ./internal/... -v -count=1
-
-test-integration:
-	bash scripts/test-mongodb-integration.sh
-	bash scripts/test-search-integration.sh elasticsearch
-	bash scripts/test-search-integration.sh opensearch
-
-test-search-integration:
-	bash scripts/test-search-integration.sh elasticsearch
-	bash scripts/test-search-integration.sh opensearch
-
-test-isolated-quickstart:
-	bash scripts/test-isolated-quickstart.sh
+	go test ./... -v -count=1
 
 quickstart:
 	bash examples/quickstart/run.sh
@@ -56,6 +44,7 @@ check-format:
 	fi
 
 lint: check-format
+	python3 scripts/check-test-boundary.py
 	go vet ./...
 	go run honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION) -checks=all ./...
 
@@ -63,7 +52,7 @@ lint-workflows:
 	go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION) -shellcheck=''
 
 lint-docs:
-	$(LYCHEE) --offline --include-fragments --no-progress '*.md' 'configs/*.md' 'docs/**/*.md' 'examples/**/*.md' 'benchmarks/**/*.md' '.github/*.md'
+	$(LYCHEE) --offline --include-fragments --no-progress '*.md' 'configs/*.md' 'docs/**/*.md' 'examples/**/*.md' '.github/*.md'
 
 # Core-package floors are kept separately from generated code and examples.
 .PHONY: test-coverage

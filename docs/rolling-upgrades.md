@@ -110,10 +110,12 @@ an undersized drain window into a zero-interruption rollout.
 
 ## Reproduce the boundaries
 
+Run from the production-suite checkout with `SINK_SERVER_DIR=/path/to/sink`.
+
 ```sh
-go test -race ./internal/app ./internal/gateway \
+bash scripts/server-go.sh test -race ./internal/app ./internal/gateway \
   -run 'Test(HTTPReadinessRejectsClosedRoles|ReadinessProbeCannotRestoreClosedRole|ShutdownWithdrawsReadinessAndDrainsAcceptedRPC|MembershipWithdrawalRetainsInFlightRequestSnapshot)' -count=10
-go test -race -tags=integration ./internal/gateway \
+bash scripts/server-go.sh test -race -tags=integration ./internal/gateway \
   -run '^TestGateway(DiscoversDNSScaleChanges|DNSWithdrawalDrainBoundary)$' -count=3 -timeout=3m
 ```
 

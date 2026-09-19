@@ -27,26 +27,28 @@ in-process Kafka broker; they do not require external services. Go may download
 module dependencies on the first run. `make lint` checks formatting, vet, and
 staticcheck without changing source files. Use `make fmt` to apply formatting.
 
-Run external backend tests explicitly:
+The Sink checkout contains only component unit tests. Real transport and process
+assembly tests, backend integrations, fuzz targets, benchmarks and experiments
+belong to [sink-production-suite](https://github.com/batchstream/sink-production-suite).
+Controlled storage doubles, offline MongoDB wire fixtures and fake HTTP/Kafka
+backends used to test a single adapter remain unit tests. Tests which assemble
+multiple Sink components or run real gRPC/OTLP paths belong to the suite.
+
+Run qualification from that checkout:
 
 ```shell
-make test-integration
+SINK_SERVER_DIR=/path/to/sink make test-candidate
+SINK_SERVER_DIR=/path/to/sink make test-server-integration
+SINK_SERVER_DIR=/path/to/sink make test-isolated-quickstart
 ```
 
-`make test-integration` starts ephemeral MongoDB ReplicaSet, Elasticsearch, and
-OpenSearch containers, runs storage lifecycle and concurrent read-modify-write
-tests, and then stops the containers. `make test-search-integration` runs only
-the Elasticsearch and OpenSearch suites. The Kafka path uses franz-go's
-in-process broker in the normal test suite.
-
-Use `make test-isolated-quickstart` to run the existing sibling sink-go SDK
-against independent Gateway, Engine and Worker containers. Set `SINK_GO_DIR` if
-the SDK checkout is elsewhere. The script uses disposable ports and cleans up
-its containers and volumes. CI requires this scenario and the loopback DNS
-Gateway scaling test.
-
-Use `make quickstart` for the end-to-end public API scenario and
-`make quickstart-down` when finished.
+The suite owns the [test runner and classification](https://github.com/batchstream/sink-production-suite/blob/main/server-tests/README.md).
+Sink CI calls its pinned reusable workflow; the required reliability gate still
+requires compatibility, backend, conformance, quickstart and benchmark checks.
+`make lint` prevents benchmark/fuzz entries, integration tags and gRPC server
+fixtures from being added back to this repository. Product examples remain here;
+use `make quickstart` to try the documented example and `make quickstart-down`
+when finished.
 
 ### Repository checks
 
@@ -88,70 +90,12 @@ make proto
 Include changes under `gen/sink` in the PR. CI compares the public protocol with
 the Go client, using a matching client branch when available and `main` otherwise.
 
-## Synchronous capacity measurements
+## Performance qualification
 
-workload, resource limits, measurements, and commands for comparing revisions.
-`BenchmarkSynchronousMergeMicrobatch` isolates batching and adapter round trips
-without external services. The opt-in `BenchmarkSynchronousStorage` exercises
-the actual gRPC codec, dispatcher, Lua engine, and disposable MongoDB/OpenSearch
-backends, then verifies every writer's persisted counter.
-
-### Gateway routing allocations
-
-Compare record-affinity routing across replica counts with:
-
-```shell
-go test ./internal/gateway -run '^$' -bench '^BenchmarkAffinityRoute$' -benchtime=200ms -benchmem -count=5
-```
-
-On an Apple M2 with Go 1.27, reusing the existing stack buffer for the record
-identity reduced the benchmark's 3, 16, 64, and 256-replica cases from 48 B and
-one allocation per route to zero. The single-replica fast path was already
-allocation-free. SHA-256 inputs and owner selection remain unchanged; identities
-and endpoints exceeding the buffer still use an allocation without truncation.
-This isolates routing allocation, not end-to-end deployment throughput.
-
-### Search connection reuse
-
-Compare the default Go HTTP pool with the Store pool using synchronized bursts
-of 16 requests against a local HTTP/1.1 backend:
-
-```shell
-go test ./internal/storage/search -run '^$' -bench '^BenchmarkSearchConnectionReuse$' -benchtime=100x -benchmem -count=5
-```
-
-On an Apple M2, five 100-burst samples reduced median time from 570 to 241
-microseconds per burst and allocation from 309 to 129 KB per burst. After warmup,
-new connections fell from 14 per burst to zero. This isolates HTTP connection
-reuse; it does not measure database throughput or deployment capacity. Fixed
-iteration counts also keep the default-pool comparison from exhausting local
-ephemeral ports during longer runs.
-
-### Payload allocation comparisons
-
-Read benchmarks exercise the adapter against a local HTTP backend for search
-and the MongoDB driver's offline wire fixture. Compare revisions with:
-
-```shell
-go test ./internal/storage/search ./internal/storage/mongodb -run '^$' -bench '^(BenchmarkSearchReadDocument|BenchmarkMongoReadDocument)$' -benchtime=50x -benchmem -count=5
-go test ./internal/queue -run '^$' -bench '^BenchmarkMutationEnvelope$' -benchtime=100x -benchmem -count=5
-```
-
-On an Apple M2, transferring an already-owned document into the first read
-result reduced median allocated bytes as follows (five samples):
-
-| Adapter | Document size | Before (B/op) | After (B/op) | Reduction |
-| --- | --- | ---: | ---: | ---: |
-| Search | 64 KiB | 322,748 | 246,350 | 23.7% |
-| Search | 1 MiB | 4,406,891 | 3,346,838 | 24.1% |
-| MongoDB | 64 KiB | 386,795 | 306,979 | 20.6% |
-| MongoDB | 1 MiB | 5,909,091 | 4,576,522 | 22.6% |
-
-Repeated results still own separate mutable documents and revisions. The read
-measurements include the local harness and do not establish database throughput.
-Encoding queue messages directly into their final envelope reduced allocations
-from two to one and allocated bytes by 50% for 4 KiB, 64 KiB, and 1 MiB payloads.
-The queue wire format is unchanged.
+Server microbenchmarks, Lua runtime comparisons, the memory reserve experiment
+and the fixed-resource load runner are owned by the production suite. See its
+[benchmark measurements](https://github.com/batchstream/sink-production-suite/blob/main/docs/server-benchmarks.md)
+and [runner commands](https://github.com/batchstream/sink-production-suite/blob/main/server-tests/README.md).
 
 ## Repository layout
 
@@ -221,7 +165,7 @@ instead of attaching an untested binary.
 Default race tests include fake-broker outage recovery beyond the retry budget,
 DLQ publication failure, CREATE replay continuation, partition-prefix commits,
 rebalance cancellation, admission/cancellation, and read/Lua output budgets.
-CI also fuzzes mutation envelopes for 20 seconds on each change.
+The suite fuzzes mutation envelopes and BSON inputs for 30 seconds each on every change.
 
 The public [production suite](https://github.com/liran/sink-production-suite)
 owns release and sustained qualification. Sink's release workflow pins both the
@@ -242,7 +186,7 @@ SINK_SERVER_DIR=/path/to/sink make test-production
 SINK_SERVER_DIR=/path/to/sink make test-reliability
 ```
 
-The first command includes a three-minute fault workload; the second uses two
+The first command includes a six-minute fault workload; the second uses two
 hours. The business counter implements application idempotence and reconciles
 stored results. Passing the short gate does not establish a completed two-hour
 run. Real multi-node failover, disk pressure and backup restoration remain
@@ -250,9 +194,14 @@ deployment qualification; see [the reliability runbook](reliability.md).
 
 ## Coverage regression gate
 
-`make test-coverage` runs ordinary tests with the race detector and writes
+`make test-coverage` runs unit tests with the race detector and writes
 coverage, JSON test events and a package summary to `.reports/coverage/`.
 CI enforces the package floors in `.github/coverage-minimums.json`; generated
 protobuf files do not count. Keep floors stable or raise them when adding tests.
 The report is statement coverage, not branch or end-to-end scenario coverage.
-Real backend tests remain separate from this infrastructure-free gate.
+The unit-only baseline excludes the migrated transport and assembly scenarios.
+The suite retains the previous combined package floors in its
+`.github/candidate-coverage-minimums.json` and enforces them over unit plus
+suite-owned component tests. Lower unit-only numbers are a change of measurement
+scope; the combined gate must not be reduced to accommodate this migration.
+Real backend profiles remain separate and are retained by the suite.

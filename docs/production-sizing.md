@@ -4,7 +4,7 @@ Size and scale each role separately. Engine and Worker serve one Store per proce
 Gateway forwards requests across Stores and does not create database connections.
 The old multi-Store process measurements are not capacity guarantees for this topology.
 
-Use the [fixed-resource qualification runner](../benchmarks/qualification/README.md)
+Use the [fixed-resource qualification runner](https://github.com/batchstream/sink-production-suite/blob/main/benchmarks/qualification/README.md)
 to compare workload profiles with explicit container CPU and memory limits. Pair
 capacity measurements with the [rollout drain budget](rolling-upgrades.md).
 
@@ -15,7 +15,7 @@ runtime/container limit for non-managed memory, with 10% of managed capacity
 reserved for completion. Override `memory.max_bytes` and `memory.burst_percent`
 only with workload measurements. No request execution concurrency cap is added.
 Batch queues, Gateway fanout/connections, backend pools, Kafka buffers and Lua
-limits remain separately bounded. See the [reserve experiment](../benchmarks/memory-admission/README.md)
+limits remain separately bounded. See the [reserve experiment](https://github.com/batchstream/sink-production-suite/blob/main/benchmarks/memory-admission/README.md)
 and [memory/KEDA signals](observability.md#memory-capacity-and-keda).
 
 A 2 CPU / 4 GiB allocation alone does not determine safe RPC concurrency. A small
@@ -72,7 +72,8 @@ using capacity measurements, including MongoDB allocator settings.
 5. Set replica limits and scaling thresholds against the workload's SLO and the
    database's measured headroom; then verify overload recovery and a sustained run.
 
-Use `cmd/sink-perf` against the public Gateway endpoint for workload measurements.
+Use the production suite's `make build-perf` and `.reports/bin/sink-perf`
+against the public Gateway endpoint for workload measurements.
 The [local validation record](design/store-isolated-validation.md) reports executed
 checks and their limits. The [configuration reference](configuration.md),
 [metrics](observability.md), and [single-Store Engine deployment template](../examples/kubernetes/engine-deployment.yaml)

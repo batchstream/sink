@@ -14,7 +14,8 @@ func TestLuaPatternSearchClassifiesExecutionLimits(t *testing.T) {
 	for _, deadline := range []bool{false, true} {
 		for _, name := range []string{"find", "match", "gmatch", "gsub"} {
 			t.Run(fmt.Sprintf("%s/deadline=%t", name, deadline), func(t *testing.T) {
-				opts := merge.LuaOptions{MaxInstructions: 100}
+				// Isolate instruction exhaustion from scheduler delays on busy race-test runners.
+				opts := merge.LuaOptions{MaxInstructions: 100, Timeout: 10 * time.Second}
 				want := merge.ErrExecutionExhausted
 				if deadline {
 					opts.Timeout = 5 * time.Millisecond

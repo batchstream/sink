@@ -53,6 +53,10 @@ func TestRegressionMicrobatchMergeBudgetIsolation(t *testing.T) {
 	backend := memory.New()
 	server := completionServer(t, backend)
 	server.server.maxReadBytes = 256
+
+	server.server.maxSnapshotBytes = 256
+
+	server.server.maxOutputBytes = 256
 	makeCall := func(key string) *batchCall[*sink.WriteRequest, *sink.WriteResponse] {
 		op := completionMerge(key, 1)
 		op.GetMerge().LuaProgram.Source = []byte(`return function(current, incoming) return incoming end`)
@@ -84,6 +88,10 @@ func TestRegressionMicrobatchReadBudgetIsolation(t *testing.T) {
 	backend := memory.New()
 	server := completionServer(t, backend)
 	server.server.maxReadBytes = 256
+
+	server.server.maxSnapshotBytes = 256
+
+	server.server.maxOutputBytes = 256
 	var calls []*batchCall[*sink.ReadRequest, *sink.ReadResponse]
 	for _, key := range []string{"a", "b"} {
 		address, err := protocol.ParseAddress(completionAddress(key))
@@ -119,6 +127,10 @@ func TestMicrobatchReadKeepsOversizedCallerIsolatedForSharedKey(t *testing.T) {
 	backend := memory.New()
 	server := completionServer(t, backend)
 	server.server.maxReadBytes = 256
+
+	server.server.maxSnapshotBytes = 256
+
+	server.server.maxOutputBytes = 256
 	var operations []*sink.ReadOperation
 	for _, key := range []string{"a", "b"} {
 		address, err := protocol.ParseAddress(completionAddress(key))
@@ -156,6 +168,10 @@ func TestMicrobatchMergeBudgetFailureDoesNotLeakIntoNextCaller(t *testing.T) {
 			backend := memory.New()
 			server := completionServer(t, backend)
 			server.server.maxReadBytes = 150
+
+			server.server.maxSnapshotBytes = 150
+
+			server.server.maxOutputBytes = 150
 			if present {
 				for _, key := range []string{"a", "b"} {
 					address, err := protocol.ParseAddress(completionAddress(key))
@@ -205,6 +221,10 @@ func TestMicrobatchBudgetsSplitWithinExecutionMemoryLimit(t *testing.T) {
 			backend := memory.New()
 			server := completionServer(t, backend)
 			server.server.maxReadBytes = 256
+
+			server.server.maxSnapshotBytes = 256
+
+			server.server.maxOutputBytes = 256
 			server.server.maxInFlightBytes = 1000 + failureResponseBytes(1)
 			switch method {
 			case "Write":
@@ -371,6 +391,10 @@ func TestMicrobatchConditionalWritesKeepEachCallersInputAndOutputBudget(t *testi
 			backend := memory.New()
 			server := completionServer(t, backend)
 			server.server.maxReadBytes = 256
+
+			server.server.maxSnapshotBytes = 256
+
+			server.server.maxOutputBytes = 256
 			var calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]
 			for _, key := range []string{"a", "b"} {
 				address, err := protocol.ParseAddress(completionAddress(key))
@@ -407,6 +431,10 @@ func TestCancelledRPCIsOmittedFromLaterMemoryLimitedSegment(t *testing.T) {
 	backend := &completionStorage{Storage: memory.New(), events: make(chan completionEvent, 8), blocked: "a", release: make(chan struct{})}
 	server := completionServer(t, backend)
 	server.server.maxReadBytes = 256
+
+	server.server.maxSnapshotBytes = 256
+
+	server.server.maxOutputBytes = 256
 	server.server.maxInFlightBytes = 1000 + failureResponseBytes(1)
 	cancelled, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -455,6 +483,10 @@ func TestHotRecordSharesPhysicalReservationAcrossRPCBudgets(t *testing.T) {
 	backend := &completionStorage{Storage: memory.New(), events: make(chan completionEvent, 8)}
 	server := completionServer(t, backend)
 	server.server.maxReadBytes = 256
+
+	server.server.maxSnapshotBytes = 256
+
+	server.server.maxOutputBytes = 256
 	server.server.maxInFlightBytes = 2048 + failureResponseBytes(4)
 	var calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]
 	for range 4 {

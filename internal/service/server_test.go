@@ -640,7 +640,8 @@ func newTestServer(t testing.TB, store storage.Storage, publisher queue.Publishe
 		Publisher:        publisher,
 		MaxMergeAttempts: testMergeAttempts,
 		// Small fixture documents allow many independent RPC budgets in one batch.
-		MaxReadBytes: 1 << 20,
+		MaxReadBytes:  1 << 20,
+		MaxOperations: 1000,
 	}
 	server, err := service.New(options)
 	if err != nil {

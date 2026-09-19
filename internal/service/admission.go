@@ -16,7 +16,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const defaultRequestTimeout = 30 * time.Second
+// A zero timeout preserves the caller's deadline without imposing a server limit.
+func executionContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout == 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, timeout)
+}
 
 // Publishing has its own bounded pool so storage latency and snapshot waiters
 // cannot consume the capacity needed to durably enqueue asynchronous work.
@@ -198,10 +204,10 @@ func (s *admissionPool) admitRequest(ctx context.Context, request admissionReque
 	if timeout == 0 {
 		timeout = s.requestTimeout
 	}
-	if request.direct {
+	if request.direct && timeout > 0 {
 		timeout -= time.Since(started)
 	}
-	execution, cancel := context.WithTimeout(ctx, timeout)
+	execution, cancel := executionContext(ctx, timeout)
 	release := func() {
 		cancel()
 		s.admissionMu.Lock()
@@ -435,7 +441,7 @@ func returningCallerCount(req *sink.WriteRequest, budgets *requestBudgets) int {
 // The application always supplies the process pool. The old admission fields
 // remain for explicit legacy-limit regression and benchmark fixtures.
 func (s *Server) admitMemory(ctx context.Context, request admissionRequest) (context.Context, context.CancelFunc, error) {
-	execution, cancel := context.WithTimeout(ctx, s.requestTimeout)
+	execution, cancel := executionContext(ctx, s.requestTimeout)
 	scope := capacity.FromContext(execution)
 	releaseScope := func() {}
 	if scope == nil {

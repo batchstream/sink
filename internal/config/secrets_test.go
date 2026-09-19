@@ -22,9 +22,9 @@ func TestCredentialFiles(t *testing.T) {
 			} else {
 				section = fmt.Sprintf("search:\n    endpoints: [http://search:9200]\n    username_file: %q\n    password_file: %q", path, path)
 			}
-			input := fmt.Sprintf("mode: engine\nstorage:\n  name: test\n  driver: %s\n  %s\n", driver, section)
+			input := fmt.Sprintf("name: test\nstorage:\n  driver: %s\n  %s\n", driver, section)
 			reader := strings.NewReader(input)
-			loaded, err := Decode(reader)
+			loaded, err := Decode(strings.NewReader("mode: engine"), reader)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -36,9 +36,9 @@ func TestCredentialFiles(t *testing.T) {
 				t.Fatal("basic authentication bytes changed")
 			}
 			if driver != "mongodb" {
-				input = fmt.Sprintf("mode: engine\nstorage:\n  name: test\n  driver: %s\n  search:\n    endpoints: [http://search:9200]\n    api_key_file: %q\n", driver, path)
+				input = fmt.Sprintf("name: test\nstorage:\n  driver: %s\n  search:\n    endpoints: [http://search:9200]\n    api_key_file: %q\n", driver, path)
 				reader = strings.NewReader(input)
-				loaded, err = Decode(reader)
+				loaded, err = Decode(strings.NewReader("mode: engine"), reader)
 				if err != nil || loaded.Storage.Search.APIKey != secret {
 					t.Fatal("API key file was not resolved correctly")
 				}
@@ -81,9 +81,9 @@ func TestCredentialFileValidation(t *testing.T) {
 			section, driver = "mongodb:\n", "mongodb"
 		}
 		// Even an explicitly empty literal must not silently lose to a file.
-		input := fmt.Sprintf("mode: engine\nstorage:\n  name: test\n  driver: %s\n  %s    %s: ''\n    %s_file: %q\n", driver, section, field, field, path)
+		input := fmt.Sprintf("name: test\nstorage:\n  driver: %s\n  %s    %s: ''\n    %s_file: %q\n", driver, section, field, field, path)
 		reader := strings.NewReader(input)
-		if _, err := Decode(reader); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		if _, err := Decode(strings.NewReader("mode: engine"), reader); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
 			t.Fatal("ambiguous credential sources accepted")
 		}
 	}

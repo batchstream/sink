@@ -5,15 +5,19 @@ import "time"
 // File types preserve omission so defaults can depend on other configured limits.
 // Runtime code receives only resolved values through Config.
 type configFile struct {
-	Logging         loggingFile    `yaml:"logging"`
-	Memory          memoryFile     `yaml:"memory"`
-	Storage         *storageFile   `yaml:"storage"`
-	Gateway         *gatewayFile   `yaml:"gateway"`
+	Logging loggingFile `yaml:"logging"`
+	Memory  memoryFile  `yaml:"memory"`
+
+	Gateway         *gatewayFile   `yaml:"forwarding"`
 	Mode            Mode           `yaml:"mode"`
-	GRPC            gRPCFile       `yaml:"grpc"`
+	GRPC            *gRPCFile      `yaml:"grpc"`
 	Health          healthFile     `yaml:"health"`
 	Prometheus      prometheusFile `yaml:"prometheus"`
-	Service         serviceFile    `yaml:"service"`
+	Request         *requestFile   `yaml:"request"`
+	Execution       *executionFile `yaml:"execution"`
+	Batching        *batchingFile  `yaml:"batching"`
+	Producer        *producerFile  `yaml:"producer"`
+	Consumer        *consumerFile  `yaml:"consumer"`
 	ShutdownTimeout *time.Duration `yaml:"shutdown_timeout"`
 }
 
@@ -32,42 +36,27 @@ type prometheusFile struct {
 	Address string `yaml:"address"`
 }
 
-type serviceFile struct {
-	Request   requestFile   `yaml:"request"`
-	Execution executionFile `yaml:"execution"`
-	Publish   publishFile   `yaml:"publish"`
-	Batching  batchingFile  `yaml:"batching"`
-	Merge     mergeFile     `yaml:"merge"`
-}
-
 type requestFile struct {
-	Timeout       *time.Duration `yaml:"timeout"`
-	MaxOperations *int           `yaml:"max_operations"`
-	MaxReadBytes  *byteSize      `yaml:"max_read_bytes"`
+	MaxOperations *int `yaml:"max_operations"`
 }
 
 type executionFile struct {
-	MaxRequests *int               `yaml:"max_requests"`
-	MaxBytes    *byteSize          `yaml:"max_bytes"`
-	Queue       admissionQueueFile `yaml:"queue"`
-	Scan        scanFile           `yaml:"scan"`
+	MaxSnapshotBytes *byteSize          `yaml:"max_snapshot_bytes"`
+	MaxOutputBytes   *byteSize          `yaml:"max_output_bytes"`
+	MongoDB          mongoExecutionFile `yaml:"mongodb"`
+	Merge            mergeFile          `yaml:"merge"`
 }
 
-type admissionQueueFile struct {
-	MaxRequests *int           `yaml:"max_requests"`
-	MaxBytes    *byteSize      `yaml:"max_bytes"`
-	MaxWait     *time.Duration `yaml:"max_wait"`
+type mongoExecutionFile struct {
+	MaxConcurrentWrites *int `yaml:"max_concurrent_writes"`
+	MaxConcurrentGroups *int `yaml:"max_concurrent_groups"`
 }
 
-type scanFile struct {
-	MaxRequests   *int           `yaml:"max_requests"`
-	MaxBytes      *byteSize      `yaml:"max_bytes"`
-	AdmissionWait *time.Duration `yaml:"admission_wait"`
-}
-
-type publishFile struct {
-	MaxRequests *int      `yaml:"max_requests"`
-	MaxBytes    *byteSize `yaml:"max_bytes"`
+// Store files contain shared identity and dependency policy, never role tuning.
+type storeFile struct {
+	Name    string      `yaml:"name"`
+	Storage storageFile `yaml:"storage"`
+	Kafka   kafkaFile   `yaml:"kafka"`
 }
 
 type batchingFile struct {
@@ -96,19 +85,15 @@ type luaFile struct {
 }
 
 type storageFile struct {
-	Name    string      `yaml:"name"`
 	Driver  Driver      `yaml:"driver"`
 	MongoDB mongoDBFile `yaml:"mongodb"`
 	Search  searchFile  `yaml:"search"`
-	Kafka   kafkaFile   `yaml:"kafka"`
 }
 
 type mongoDBFile struct {
-	URI                 *string `yaml:"uri"`
-	URIFile             *string `yaml:"uri_file"`
-	MetadataField       string  `yaml:"metadata_field"`
-	MaxConcurrentWrites *int    `yaml:"max_concurrent_writes"`
-	MaxConcurrentGroups *int    `yaml:"max_concurrent_groups"`
+	URI           *string `yaml:"uri"`
+	URIFile       *string `yaml:"uri_file"`
+	MetadataField string  `yaml:"metadata_field"`
 }
 
 type searchFile struct {
@@ -122,11 +107,10 @@ type searchFile struct {
 }
 
 type kafkaFile struct {
-	Enabled    bool           `yaml:"enabled"`
-	Brokers    []string       `yaml:"brokers"`
-	Topic      topicFile      `yaml:"topic"`
-	Producer   producerFile   `yaml:"producer"`
-	Consumer   consumerFile   `yaml:"consumer"`
+	Enabled bool      `yaml:"enabled"`
+	Brokers []string  `yaml:"brokers"`
+	Topic   topicFile `yaml:"topic"`
+
 	DeadLetter deadLetterFile `yaml:"dead_letter"`
 }
 
@@ -162,14 +146,12 @@ type deadLetterFile struct {
 }
 
 type gatewayFile struct {
-	MaxRequestsPerStore *int           `yaml:"max_requests_per_store"`
-	DNSRefreshInterval  *time.Duration `yaml:"dns_refresh_interval"`
-	Routes              []Route        `yaml:"routes"`
-	IdleTimeout         *time.Duration `yaml:"idle_timeout"`
-	MaxConnections      *int           `yaml:"max_connections"`
-	MaxRequests         *int           `yaml:"max_requests"`
-	MaxBytes            *byteSize      `yaml:"max_bytes"`
-	MaxFanout           *int           `yaml:"max_fanout"`
+	DNSRefreshInterval *time.Duration `yaml:"dns_refresh_interval"`
+	Routes             []Route        `yaml:"routes"`
+	IdleTimeout        *time.Duration `yaml:"idle_timeout"`
+	MaxConnections     *int           `yaml:"max_connections"`
+
+	MaxFanout *int `yaml:"max_fanout"`
 }
 
 type memoryFile struct {

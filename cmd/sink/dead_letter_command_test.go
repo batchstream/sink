@@ -70,22 +70,22 @@ func TestDeadLetterReplayPreservesPublisherRouting(t *testing.T) {
 				if driver == config.DriverMongoDB {
 					backend = "  mongodb:\n    uri: mongodb://127.0.0.1:1\n"
 				}
-				contents := fmt.Sprintf(`mode: engine
+				contents := fmt.Sprintf(`name: primary
 storage:
-  name: primary
   driver: %s
-%s  kafka:
-    enabled: true
-    brokers: [%q]
-    topic:
-      name: source
-      replication_factor: 1
-      min_insync_replicas: 1
-    dead_letter:
-      topic: source.dlq
+%skafka:
+  enabled: true
+  brokers: [%q]
+  topic:
+    name: source
+    replication_factor: 1
+    min_insync_replicas: 1
+  dead_letter:
+    topic: source.dlq
 `, driver, backend, cluster.ListenAddrs()[0])
-				configPath := writeConfig(t, contents)
-				args := []string{"replay", "--config", configPath, "--store", "primary", "--partition", strconv.Itoa(int(letter.Partition)), "--offset", strconv.FormatInt(letter.Offset, 10)}
+				sharedPath := writeConfig(t, contents)
+				configPath := writeConfig(t, "mode: engine\n")
+				args := []string{"replay", "--config", configPath, "--store-config", sharedPath, "--store", "primary", "--partition", strconv.Itoa(int(letter.Partition)), "--offset", strconv.FormatInt(letter.Offset, 10)}
 				var stdout, stderr bytes.Buffer
 				if err := runDeadLetterCommand(args, &stdout, &stderr); err != nil {
 					t.Fatalf("replay: %v stdout=%s stderr=%s", err, &stdout, &stderr)

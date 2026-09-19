@@ -48,22 +48,22 @@ func executeCommand(args []string, stdout io.Writer, stderr io.Writer) error {
 			return runConfigCommand(args[1:], stdout)
 		}
 	}
-	configPath, err := parseConfigPath(args)
+	paths, err := parseConfigPaths(args)
 	if err != nil {
 		return err
 	}
-	return run(configPath)
+	return run(paths)
 }
 
 func runConfigCommand(args []string, stdout io.Writer) error {
 	if len(args) == 0 || args[0] != "check" {
-		return errors.New("usage: sink config check --config FILE")
+		return errors.New("usage: sink config check --config FILE [--store-config FILE]")
 	}
-	configPath, err := parseConfigPath(args[1:])
+	paths, err := parseConfigPaths(args[1:])
 	if err != nil {
 		return err
 	}
-	loaded, err := config.Load(configPath)
+	loaded, err := config.Load(paths.Component, paths.Store)
 	if err != nil {
 		return err
 	}
@@ -76,27 +76,35 @@ func runConfigCommand(args []string, stdout io.Writer) error {
 	return err
 }
 
-func parseConfigPath(args []string) (string, error) {
+type configPaths struct {
+	Component string
+	Store     string
+}
+
+func parseConfigPaths(args []string) (configPaths, error) {
+	var paths configPaths
 	flags := flag.NewFlagSet("sink", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	configPath := flags.String("config", "", "path to the YAML configuration file")
+	flags.StringVar(&paths.Component, "config", "", "path to the component YAML configuration")
+	flags.StringVar(&paths.Store, "store-config", "", "path to the shared Store YAML (required for Engine/Worker)")
 	if err := flags.Parse(args); err != nil {
-		return "", fmt.Errorf("parse command arguments: %w", err)
+		return paths, fmt.Errorf("parse command arguments: %w", err)
 	}
 	if flags.NArg() != 0 {
-		return "", fmt.Errorf("unexpected command argument %q", flags.Arg(0))
+		return paths, fmt.Errorf("unexpected command argument %q", flags.Arg(0))
 	}
-	trimmed := strings.TrimSpace(*configPath)
-	if trimmed == "" {
-		return "", errors.New("--config is required")
+	paths.Component = strings.TrimSpace(paths.Component)
+	paths.Store = strings.TrimSpace(paths.Store)
+	if paths.Component == "" {
+		return paths, errors.New("--config is required")
 	}
-	return trimmed, nil
+	return paths, nil
 }
 
 type reportedError struct{ error }
 
-func run(configPath string) (runErr error) {
-	loaded, err := config.Load(configPath)
+func run(paths configPaths) (runErr error) {
+	loaded, err := config.Load(paths.Component, paths.Store)
 	if err != nil {
 		return err
 	}

@@ -35,6 +35,8 @@ type Options struct {
 	MaxPublishRequests   int
 	MaxPublishBytes      int
 	MaxReadBytes         int
+	MaxSnapshotBytes     int
+	MaxOutputBytes       int
 	MaxScanRequests      int
 	MaxScanBytes         int
 	ScanAdmissionWait    time.Duration
@@ -59,17 +61,24 @@ func New(opts Options) (*Server, error) {
 	if opts.RequestTimeout < 0 || opts.MaxInFlightRequests < 0 || opts.MaxInFlightBytes < 0 || opts.MaxReadBytes < 0 {
 		return nil, errors.New("create Sink server: resource limits cannot be negative")
 	}
-	if opts.RequestTimeout == 0 {
-		opts.RequestTimeout = defaultRequestTimeout
-	}
+
 	if opts.MaxInFlightRequests == 0 {
 		opts.MaxInFlightRequests = 128
 	}
 	if opts.MaxInFlightBytes == 0 {
 		opts.MaxInFlightBytes = 256 << 20
 	}
+	if opts.MaxSnapshotBytes < 0 || opts.MaxOutputBytes < 0 {
+		return nil, errors.New("execution budgets cannot be negative")
+	}
 	if opts.MaxReadBytes == 0 {
 		opts.MaxReadBytes = storage.DefaultMaxReadBytes
+	}
+	if opts.MaxSnapshotBytes == 0 {
+		opts.MaxSnapshotBytes = opts.MaxReadBytes
+	}
+	if opts.MaxOutputBytes == 0 {
+		opts.MaxOutputBytes = opts.MaxReadBytes
 	}
 	if opts.MaxAdmissionRequests < 0 || opts.MaxAdmissionBytes < 0 || opts.AdmissionWait < 0 {
 		return nil, errors.New("create Sink server: admission queue limits cannot be negative")
@@ -83,7 +92,9 @@ func New(opts Options) (*Server, error) {
 	if opts.AdmissionWait == 0 {
 		opts.AdmissionWait = 2 * time.Second
 	}
-	opts.AdmissionWait = min(opts.AdmissionWait, opts.RequestTimeout)
+	if opts.RequestTimeout > 0 {
+		opts.AdmissionWait = min(opts.AdmissionWait, opts.RequestTimeout)
+	}
 	if opts.MaxPublishRequests < 0 || opts.MaxPublishBytes < 0 {
 		return nil, errors.New("create Sink server: publish limits cannot be negative")
 	}
@@ -105,14 +116,16 @@ func New(opts Options) (*Server, error) {
 	if opts.ScanAdmissionWait == 0 {
 		opts.ScanAdmissionWait = 2 * time.Second
 	}
-	opts.ScanAdmissionWait = min(opts.ScanAdmissionWait, opts.RequestTimeout)
+	if opts.RequestTimeout > 0 {
+		opts.ScanAdmissionWait = min(opts.ScanAdmissionWait, opts.RequestTimeout)
+	}
 	if opts.MaxScanRequests > opts.MaxInFlightRequests || opts.MaxScanBytes > opts.MaxInFlightBytes {
 		return nil, errors.New("create Sink server: scan limits cannot exceed total limits")
 	}
 
 	maxOperations := opts.MaxOperations
 	if maxOperations == 0 {
-		maxOperations = defaultMaxOperations
+		maxOperations = int(^uint(0) >> 1)
 	}
 	maxMergeAttempts := opts.MaxMergeAttempts
 	if maxMergeAttempts == 0 {
@@ -149,6 +162,8 @@ func New(opts Options) (*Server, error) {
 		maxMergeAttempts: maxMergeAttempts,
 		metrics:          opts.Metrics,
 		maxReadBytes:     opts.MaxReadBytes,
+		maxSnapshotBytes: opts.MaxSnapshotBytes,
+		maxOutputBytes:   opts.MaxOutputBytes,
 		admissionPool:    executionAdmission,
 		publishAdmission: publishAdmission,
 	}

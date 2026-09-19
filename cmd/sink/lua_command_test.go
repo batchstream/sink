@@ -234,13 +234,9 @@ end`)
 
 func TestLuaTestCommandUsesConfiguredLimitsWithoutOpeningBackends(t *testing.T) {
 	fixture := newLuaCommandFixture(t, `return function(current, incoming) return incoming end`)
+	shared := fixture.write(t, "store.yaml", "name: primary\nstorage:\n  driver: mongodb\n  mongodb: {uri: mongodb://unreachable.invalid:27017}\n")
 	config := fixture.write(t, "sink.yaml", `mode: engine
-storage:
-  name: primary
-  driver: mongodb
-  mongodb:
-    uri: mongodb://unreachable.invalid:27017
-service:
+execution:
   merge:
     lua:
       max_source_bytes: 1
@@ -248,7 +244,7 @@ service:
 	incoming := fixture.write(t, "incoming.json", `{}`)
 	args := []string{
 		"--script", fixture.script,
-		"--config", config,
+		"--config", config, "--store-config", shared,
 		"--encoding", "json",
 		"--incoming", incoming,
 		"--observed-at", "2026-08-31T10:20:30Z",

@@ -29,7 +29,7 @@ func (b *lockedBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); retur
 
 func testConfig(t *testing.T) config.Logging {
 	t.Helper()
-	loaded, err := config.Decode(strings.NewReader("mode: engine\nstorage:\n  name: primary\n  driver: mongodb\n  mongodb:\n    uri: mongodb://localhost:27017\n"))
+	loaded, err := config.Decode(strings.NewReader("mode: engine\n"), strings.NewReader("name: primary\nstorage:\n  driver: mongodb\n  mongodb:\n    uri: mongodb://localhost:27017\n"))
 	if err != nil {
 		t.Fatal(err)
 	}

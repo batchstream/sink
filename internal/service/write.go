@@ -372,10 +372,10 @@ func (s *Server) executeWriteAttempt(
 	attempt := writeAttempt{
 		options:   opts,
 		results:   results,
-		snapshots: opts.budgets.fresh(forwarding.Snapshots, s.maxReadBytes),
+		snapshots: opts.budgets.fresh(forwarding.Snapshots, s.maxSnapshotBytes),
 		inputs:    opts.budgets.fresh(forwarding.Inputs, s.maxReadBytes),
-		outputs:   opts.budgets.fresh(forwarding.Outputs, s.maxReadBytes),
-		output:    storage.NewReadBudget(s.maxReadBytes),
+		outputs:   opts.budgets.fresh(forwarding.Outputs, s.maxOutputBytes),
+		output:    storage.NewReadBudget(s.maxOutputBytes),
 	}
 	next := make([]writeGroup, 0)
 	pending := groups
@@ -440,7 +440,7 @@ type writeChunkOutcome struct {
 }
 
 func (s *Server) readWriteSnapshots(ctx context.Context, groups []writeGroup, attempt *writeAttempt) (storage.ReadResponse, error) {
-	working := storage.NewReadBudget(s.maxReadBytes)
+	working := storage.NewReadBudget(s.maxSnapshotBytes)
 	readOperations := make([]storage.ReadOperation, 0, len(groups))
 	for _, group := range groups {
 		operation := group.operations[0]
@@ -456,7 +456,7 @@ func (s *Server) readWriteSnapshots(ctx context.Context, groups []writeGroup, at
 		readOperation := storage.ReadOperation{Address: operation.address, Budget: budget}
 		readOperations = append(readOperations, readOperation)
 	}
-	readRequest := storage.ReadRequest{Operations: readOperations, Budget: storage.NewReadBudget(s.maxReadBytes)}
+	readRequest := storage.ReadRequest{Operations: readOperations, Budget: storage.NewReadBudget(s.maxSnapshotBytes)}
 	started := time.Now()
 	readResponse, err := s.storage.Read(ctx, readRequest)
 	attempt.options.observation.phase("storage_read", started)
@@ -519,7 +519,7 @@ func (s *Server) applyWriteSnapshots(ctx context.Context, groups []writeGroup, s
 					continue
 				}
 			}
-			if opts.budgets.callerCount() > 1 && len(candidates) > 0 && candidateBytes > s.maxReadBytes-outputBytes {
+			if opts.budgets.callerCount() > 1 && len(candidates) > 0 && candidateBytes > s.maxOutputBytes-outputBytes {
 				attempt.pendingCandidateBytes = candidateBytes
 				conflicts, err := s.commitWriteCandidates(ctx, candidates, attempt)
 				attempt.pendingCandidateBytes = 0

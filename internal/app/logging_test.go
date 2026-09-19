@@ -19,7 +19,7 @@ import (
 )
 
 func TestRPCDiagnosticsCaptureApplicationFailuresWithoutPayload(t *testing.T) {
-	loaded, err := config.Decode(strings.NewReader("mode: engine\nstorage:\n  name: primary\n  driver: mongodb\n  mongodb:\n    uri: mongodb://localhost:27017\n"))
+	loaded, err := config.Decode(strings.NewReader("mode: engine\n"), strings.NewReader("name: primary\nstorage:\n  driver: mongodb\n  mongodb:\n    uri: mongodb://localhost:27017\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestRPCDiagnosticsCaptureApplicationFailuresWithoutPayload(t *testing.T) {
 }
 
 func TestStreamDiagnosticsPreserveOutcomeAndExcludeHealth(t *testing.T) {
-	loaded, err := config.Decode(strings.NewReader("mode: gateway\ngateway:\n  routes: [{store: primary, target: '127.0.0.1:8080', tls: {insecure: true}}]\nlogging:\n  level: debug\n"))
+	loaded, err := config.Decode(strings.NewReader("mode: gateway\nforwarding:\n  routes: [{store: primary, target: '127.0.0.1:8080', tls: {insecure: true}}]\nlogging:\n  level: debug\n"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -92,7 +92,7 @@ func nativeStatus(err error) error {
 }
 
 func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.ExecuteResponse, error) {
-	maximum := forwarding.FromContext(ctx).Limit(forwarding.Outputs, s.maxReadBytes)
+	maximum := forwarding.FromContext(ctx).Limit(forwarding.Returns, s.maxReadBytes)
 	if maximum <= 0 {
 		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
 	}
@@ -147,16 +147,15 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 }
 
 func (s *Server) Scan(ctx context.Context, req *sink.ScanRequest) (*sink.ScanResponse, error) {
-	maximum := forwarding.FromContext(ctx).Limit(forwarding.Outputs, s.maxReadBytes)
+	maximum := forwarding.FromContext(ctx).Limit(forwarding.Returns, s.maxReadBytes)
 	if maximum <= 0 {
 		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
 	}
 	if err := protocol.CheckStore(req, s.boundStore); err != nil {
 		return nil, err
 	}
-	// Admission and backend execution share one page deadline, even when the
-	// caller did not provide one. Admission has an additional, shorter bound.
-	ctx, cancel := context.WithTimeout(ctx, s.requestTimeout)
+	// Preserve the caller deadline across admission and backend execution.
+	ctx, cancel := executionContext(ctx, s.requestTimeout)
 	defer cancel()
 	maximum = min(maximum, 4<<20)
 	request, err := nativeRequest(req.GetCommand(), maximum)

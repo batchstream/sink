@@ -124,7 +124,7 @@ func (s *Server) read(ctx context.Context, req *sink.ReadRequest, budgets *reque
 
 	// Charge copies in each original RPC's order, including repeated keys.
 	// Check the aggregate output size before allocating any document copies.
-	outputBudgets := budgets.fresh(forwarding.Outputs, s.maxReadBytes)
+	outputBudgets := budgets.fresh(forwarding.Returns, s.maxReadBytes)
 	outputBytes := make([]int, budgets.callerCount())
 	for index, operationIndex := range operationIndexes {
 		owner := budgets.owner(operationIndex)

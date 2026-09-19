@@ -14,7 +14,7 @@ import (
 const maxCountResponseBytes = 256 << 10
 
 func (s *Server) Query(ctx context.Context, req *sink.QueryRequest) (*sink.QueryResponse, error) {
-	maximum := forwarding.FromContext(ctx).Limit(forwarding.Outputs, s.maxReadBytes)
+	maximum := forwarding.FromContext(ctx).Limit(forwarding.Returns, s.maxReadBytes)
 	if maximum <= 0 {
 		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
 	}
@@ -75,7 +75,7 @@ func (s *Server) Query(ctx context.Context, req *sink.QueryRequest) (*sink.Query
 }
 
 func (s *Server) Count(ctx context.Context, req *sink.CountRequest) (*sink.CountResponse, error) {
-	maximum := forwarding.FromContext(ctx).Limit(forwarding.Outputs, s.maxReadBytes)
+	maximum := forwarding.FromContext(ctx).Limit(forwarding.Returns, s.maxReadBytes)
 	if maximum <= 0 {
 		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
 	}

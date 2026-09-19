@@ -62,7 +62,7 @@ func (app *Application) configureWorker(server *service.Server, observed *sinkme
 		Brokers:           configured.Kafka.Brokers, Store: configured.Name,
 		Topic: configured.Kafka.Topic.Name, GroupID: configured.Kafka.Consumer.GroupID,
 		DeadLetterTopic: configured.Kafka.DeadLetter.Topic, Handler: processor,
-		MaxPollRecords:   min(configured.Kafka.Consumer.MaxPollRecords, loaded.Service.Request.MaxOperations),
+		MaxPollRecords:   configured.Kafka.Consumer.MaxPollRecords,
 		MaxRetryAttempts: configured.Kafka.Consumer.Retry.MaxAttempts,
 		RetryBackoff:     configured.Kafka.Consumer.Retry.Backoff,
 		MaxRetryBackoff:  configured.Kafka.Consumer.Retry.MaxBackoff, Metrics: observed,

@@ -33,6 +33,8 @@ type Server struct {
 	maxMergeAttempts int
 	metrics          *sinkmetrics.Metrics
 	maxReadBytes     int
+	maxSnapshotBytes int
+	maxOutputBytes   int
 	publishAdmission *admissionPool
 }
 

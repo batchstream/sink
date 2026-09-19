@@ -65,6 +65,10 @@ func TestSynchronousMergeStreamsLargeSnapshotsAndOutputs(t *testing.T) {
 			}
 			server := completionServer(t, backend)
 			server.server.maxReadBytes = 1024
+
+			server.server.maxSnapshotBytes = 1024
+
+			server.server.maxOutputBytes = 1024
 			var calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]
 			for index := range 8 {
 				key := fmt.Sprintf("record-%d", index)
@@ -117,6 +121,10 @@ func TestSynchronousChunksKeepCallerQuotaAndSharedRecordIsolation(t *testing.T) 
 	backend := memory.New()
 	server := completionServer(t, backend)
 	server.server.maxReadBytes = 400
+
+	server.server.maxSnapshotBytes = 400
+
+	server.server.maxOutputBytes = 400
 	for _, key := range []string{"a", "b"} {
 		address, err := protocol.ParseAddress(completionAddress(key))
 		if err != nil {

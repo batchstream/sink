@@ -124,13 +124,13 @@ func normalizeBatchingOptions(server *Server, opts BatchingOptions) (BatchingOpt
 		opts.MaxWait = defaultBatchMaxWait
 	}
 	if opts.MaxOperations == 0 {
-		opts.MaxOperations = server.maxOperations
+		opts.MaxOperations = defaultMaxOperations
 	}
 	if opts.MaxBytes == 0 {
 		opts.MaxBytes = defaultBatchMaxBytes
 	}
 	if opts.MaxQueuedOperations == 0 {
-		opts.MaxQueuedOperations = max(defaultBatchMaxQueuedOperations, server.maxOperations)
+		opts.MaxQueuedOperations = max(defaultBatchMaxQueuedOperations, opts.MaxOperations)
 	}
 	if opts.MaxQueuedBytes == 0 {
 		opts.MaxQueuedBytes = max(defaultBatchMaxQueuedBytes, opts.MaxBytes)
@@ -139,7 +139,7 @@ func normalizeBatchingOptions(server *Server, opts BatchingOptions) (BatchingOpt
 		var empty BatchingOptions
 		return empty, fmt.Errorf("create synchronous batching server: max operations %d exceeds server limit %d", opts.MaxOperations, server.maxOperations)
 	}
-	if opts.MaxQueuedOperations < server.maxOperations || opts.MaxQueuedOperations < opts.MaxOperations {
+	if opts.MaxQueuedOperations < opts.MaxOperations {
 		var empty BatchingOptions
 		return empty, errors.New("create synchronous batching server: queued operation limit must cover one server request and one batch")
 	}
@@ -163,7 +163,7 @@ func (s *BatchingServer) Read(ctx context.Context, req *sink.ReadRequest) (*sink
 	if err := protocol.CheckStore(req, s.server.boundStore); err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, s.server.requestTimeout)
+	ctx, cancel := executionContext(ctx, s.server.requestTimeout)
 	defer cancel()
 	if req == nil || len(req.GetOperations()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "read request must contain operations")
@@ -183,7 +183,7 @@ func (s *BatchingServer) Write(ctx context.Context, req *sink.WriteRequest) (*si
 	if err := protocol.CheckStore(req, s.server.boundStore); err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, s.server.requestTimeout)
+	ctx, cancel := executionContext(ctx, s.server.requestTimeout)
 	defer cancel()
 	if req == nil || len(req.GetOperations()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "write request must contain operations")
@@ -256,7 +256,7 @@ func (s *BatchingServer) Delete(ctx context.Context, req *sink.DeleteRequest) (*
 	if err := protocol.CheckStore(req, s.server.boundStore); err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, s.server.requestTimeout)
+	ctx, cancel := executionContext(ctx, s.server.requestTimeout)
 	defer cancel()
 	if req == nil || len(req.GetOperations()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "delete request must contain operations")

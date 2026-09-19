@@ -23,25 +23,16 @@ func (app *Application) newService(observed *sinkmetrics.Metrics) (*service.Serv
 		return nil, err
 	}
 	serverOptions := service.Options{
-		Memory:               app.memory,
-		RequestTimeout:       loaded.Service.Request.Timeout,
-		MaxInFlightRequests:  loaded.Service.Execution.MaxRequests,
-		MaxInFlightBytes:     loaded.Service.Execution.MaxBytes,
-		MaxAdmissionRequests: loaded.Service.Execution.Queue.MaxRequests,
-		MaxAdmissionBytes:    loaded.Service.Execution.Queue.MaxBytes,
-		AdmissionWait:        loaded.Service.Execution.Queue.MaxWait,
-		MaxPublishRequests:   loaded.Service.Publish.MaxRequests,
-		MaxPublishBytes:      loaded.Service.Publish.MaxBytes,
-		MaxScanRequests:      loaded.Service.Execution.Scan.MaxRequests,
-		MaxScanBytes:         loaded.Service.Execution.Scan.MaxBytes,
-		ScanAdmissionWait:    loaded.Service.Execution.Scan.AdmissionWait,
-		MaxReadBytes:         loaded.Service.Request.MaxReadBytes,
-		Storage:              app.storage,
-		Lua:                  luaEngine,
-		Publisher:            app.publisher,
-		MaxOperations:        loaded.Service.Request.MaxOperations,
-		MaxMergeAttempts:     loaded.Service.Merge.MaxAttempts,
-		Metrics:              observed,
+		Memory:           app.memory,
+		MaxReadBytes:     max(loaded.GRPC.MaxSendMessageBytes, loaded.Service.Execution.MaxOutputBytes),
+		MaxSnapshotBytes: loaded.Service.Execution.MaxSnapshotBytes,
+		MaxOutputBytes:   loaded.Service.Execution.MaxOutputBytes,
+		Storage:          app.storage,
+		Lua:              luaEngine,
+		Publisher:        app.publisher,
+		MaxOperations:    0,
+		MaxMergeAttempts: loaded.Service.Merge.MaxAttempts,
+		Metrics:          observed,
 	}
 	serverOptions.BoundStore = loaded.Storage.Name
 	return service.New(serverOptions)
@@ -66,7 +57,7 @@ func (app *Application) configureServer(sinkServer *service.Server, observed *si
 	if err := app.configureGRPC(app.batchingServer, observed); err != nil {
 		return err
 	}
-	opts := engine.Options{MaxRequestBytes: loaded.GRPC.MaxReceiveMessageBytes, Metrics: observed, Service: app.batchingServer, Store: loaded.Storage.Name, MaxReadBytes: loaded.Service.Request.MaxReadBytes}
+	opts := engine.Options{MaxRequestBytes: loaded.GRPC.MaxReceiveMessageBytes, Metrics: observed, Service: app.batchingServer, Store: loaded.Storage.Name, MaxReadBytes: loaded.GRPC.MaxSendMessageBytes}
 	forwardingServer, err := engine.New(opts)
 	if err != nil {
 		return err

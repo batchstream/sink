@@ -23,14 +23,15 @@ import (
 )
 
 type luaTestFlags struct {
-	script     string
-	config     string
-	cases      string
-	encoding   string
-	current    string
-	incoming   string
-	expected   string
-	observedAt string
+	script      string
+	config      string
+	storeConfig string
+	cases       string
+	encoding    string
+	current     string
+	incoming    string
+	expected    string
+	observedAt  string
 }
 
 type luaTestCaseFile struct {
@@ -84,7 +85,7 @@ func runLuaTestCommand(args []string, stdout io.Writer, stderr io.Writer) error 
 	}
 	luaOptions := merge.LuaOptions{}
 	if parsed.config != "" {
-		loaded, loadErr := config.Load(parsed.config)
+		loaded, loadErr := config.Load(parsed.config, parsed.storeConfig)
 		if loadErr != nil {
 			return fmt.Errorf("load Lua test limits from config: %w", loadErr)
 		}
@@ -117,7 +118,8 @@ func parseLuaTestFlags(args []string, stderr io.Writer) (luaTestFlags, error) {
 	flags := flag.NewFlagSet("sink lua test", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.StringVar(&parsed.script, "script", "", "path to the Lua merge script")
-	flags.StringVar(&parsed.config, "config", "", "optional Sink config whose service.merge.lua limits are applied")
+	flags.StringVar(&parsed.storeConfig, "store-config", "", "Store configuration used with --config")
+	flags.StringVar(&parsed.config, "config", "", "optional Sink config whose execution.merge.lua limits are applied")
 	flags.StringVar(&parsed.cases, "cases", "", "path to one YAML case or a directory of YAML cases")
 	flags.StringVar(&parsed.encoding, "encoding", "", "single-case document encoding: json or bson")
 	flags.StringVar(&parsed.current, "current", "", "optional single-case current JSON or Extended JSON document")
@@ -132,6 +134,10 @@ func parseLuaTestFlags(args []string, stderr io.Writer) (luaTestFlags, error) {
 	}
 	parsed.script = strings.TrimSpace(parsed.script)
 	parsed.config = strings.TrimSpace(parsed.config)
+	parsed.storeConfig = strings.TrimSpace(parsed.storeConfig)
+	if parsed.storeConfig != "" && parsed.config == "" {
+		return parsed, errors.New("--store-config requires --config")
+	}
 	parsed.cases = strings.TrimSpace(parsed.cases)
 	parsed.encoding = strings.TrimSpace(parsed.encoding)
 	parsed.current = strings.TrimSpace(parsed.current)

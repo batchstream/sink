@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"time"
 
 	forward "github.com/liran/sink/gen/forward"
 	sink "github.com/liran/sink/gen/sink"
@@ -18,18 +17,11 @@ import (
 // MemoryStats owns the RPC reference until gRPC finishes it. Batch producers
 // and encoded transport buffers keep independent references past cancellation.
 type MemoryStats struct {
-	Pool    *capacity.Pool
-	Timeout time.Duration
+	Pool *capacity.Pool
 }
-
-type memoryCancelKey struct{}
 
 func (h *MemoryStats) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
 	if strings.HasPrefix(info.FullMethodName, "/sink.") {
-		if h.Timeout > 0 {
-			timed, cancel := context.WithTimeout(ctx, h.Timeout)
-			ctx = context.WithValue(timed, memoryCancelKey{}, cancel)
-		}
 		return capacity.WithScope(ctx, h.Pool.NewScope())
 	}
 	return ctx
@@ -38,9 +30,7 @@ func (h *MemoryStats) TagRPC(ctx context.Context, info *stats.RPCTagInfo) contex
 func (*MemoryStats) HandleRPC(ctx context.Context, event stats.RPCStats) {
 	if _, ok := event.(*stats.End); ok {
 		capacity.FromContext(ctx).Release()
-		if cancel, ok := ctx.Value(memoryCancelKey{}).(context.CancelFunc); ok {
-			cancel()
-		}
+
 	}
 }
 func (*MemoryStats) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context { return ctx }

@@ -8,11 +8,11 @@ is always active; every single-store `Read` uses this path. `Write` and
 mutations. Read, write, and delete have independent queues within each store.
 A slow batch therefore does not block another method or another store.
 
-`service.batching` configures batch and queue limits; batching cannot be disabled.
-Remove the former `service.batching.enabled` field from existing configurations.
+`batching` configures batch and queue limits; batching cannot be disabled.
+Remove the former `batching.enabled` field from existing configurations.
 The strict configuration parser rejects it as an unknown field for either value.
 
-The first queued request starts `service.batching.max_wait`.
+The first queued request starts `batching.max_wait`.
 Collection stops when that timer expires or adding another request would cross
 the operation or encoded-byte target. A single valid RPC larger than a batch
 target still runs alone. Automatic mutation batches combine only RPCs sharing

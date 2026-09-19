@@ -8,19 +8,19 @@ import (
 
 func TestParseConfigPath(t *testing.T) {
 	args := []string{"--config", "/etc/sink/config.yaml"}
-	path, err := parseConfigPath(args)
+	path, err := parseConfigPaths(args)
 	if err != nil {
-		t.Fatalf("parseConfigPath() error = %v", err)
+		t.Fatalf("parseConfigPaths() error = %v", err)
 	}
-	if path != "/etc/sink/config.yaml" {
-		t.Fatalf("parseConfigPath() = %q", path)
+	if path.Component != "/etc/sink/config.yaml" {
+		t.Fatalf("parseConfigPaths() = %q", path)
 	}
 }
 
 func TestParseConfigPathRequiresFlag(t *testing.T) {
-	_, err := parseConfigPath(nil)
+	_, err := parseConfigPaths(nil)
 	if err == nil || err.Error() != "--config is required" {
-		t.Fatalf("parseConfigPath() error = %v", err)
+		t.Fatalf("parseConfigPaths() error = %v", err)
 	}
 }
 

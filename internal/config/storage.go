@@ -1,18 +1,12 @@
 package config
 
 import (
-	"github.com/liran/sink-go/uri"
-
 	"fmt"
 	"strings"
 )
 
 func resolveStorage(prefix string, file storageFile) (Storage, error) {
 	var loaded Storage
-	loaded.Name = strings.TrimSpace(file.Name)
-	if !uri.ValidStore(loaded.Name) {
-		return loaded, fmt.Errorf("%s.name must be a canonical lowercase Store name", prefix)
-	}
 	v := validator{}
 	loaded.Driver = Driver(strings.TrimSpace(string(file.Driver)))
 	switch loaded.Driver {
@@ -27,8 +21,6 @@ func resolveStorage(prefix string, file storageFile) (Storage, error) {
 			return loaded, fmt.Errorf("%s.mongodb.uri is required when driver is mongodb", prefix)
 		}
 		mongo.MetadataField = valueOrDefault(file.MongoDB.MetadataField, "__sink")
-		mongo.MaxConcurrentWrites = v.integer(prefix+".mongodb.max_concurrent_writes", file.MongoDB.MaxConcurrentWrites, 64)
-		mongo.MaxConcurrentGroups = v.integer(prefix+".mongodb.max_concurrent_groups", file.MongoDB.MaxConcurrentGroups, 16)
 	case DriverElasticsearch, DriverOpenSearch:
 		search := &loaded.Search
 		search.Endpoints = nonEmptyValues(file.Search.Endpoints)
@@ -57,6 +49,5 @@ func resolveStorage(prefix string, file storageFile) (Storage, error) {
 	default:
 		return loaded, fmt.Errorf("%s.driver must be mongodb, elasticsearch, or opensearch", prefix)
 	}
-	loaded.Kafka = resolveKafka(prefix+".kafka", file.Kafka, &v)
 	return loaded, v.err
 }

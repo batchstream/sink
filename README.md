@@ -154,21 +154,24 @@ Choose the annotated configuration for the component you are deploying:
 | Engine | [configs/engine.yaml](configs/engine.yaml) | One Store's synchronous execution and optional asynchronous publication. |
 | Worker | [configs/worker.yaml](configs/worker.yaml) | One Store's Kafka consumption and mutation execution. |
 
-For an Engine, copy its example, edit the backend connection, and mount the file:
+For an Engine, copy the role and shared Store examples, edit the Store connection,
+and mount both files. Clients connect through Gateway.
 
 ```shell
 cp configs/engine.yaml config.yaml
-# Edit config.yaml for the target backend.
+cp configs/stores/primary.yaml store.yaml
+# Edit store.yaml for the target backend.
 docker run --rm -p 8080:8080 \
   --mount type=bind,source="$(pwd)/config.yaml",target=/etc/sink/config.yaml,readonly \
-  ghcr.io/batchstream/sink:latest --config /etc/sink/config.yaml
+  --mount type=bind,source="$(pwd)/store.yaml",target=/etc/sink/store.yaml,readonly \
+  ghcr.io/batchstream/sink:latest --config /etc/sink/config.yaml --store-config /etc/sink/store.yaml
 ```
 
 HTTP health endpoints are always available at `health.address` (default `:8081`).
 Prometheus uses a separate `prometheus.address` (default `:9090`) and requires
 `prometheus.enabled: true`. Publish the corresponding ports when needed.
 
-Gateway includes its Store routes under `gateway.routes`. Restart after changing
+Gateway includes its Store routes under `forwarding.routes`. Restart after changing
 configuration; routes are loaded only at startup. Worker needs its own configuration and no
 public gRPC port. The [quickstart](examples/quickstart/README.md) runs all three roles.
 

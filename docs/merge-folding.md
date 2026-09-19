@@ -93,7 +93,7 @@ explicit Reads. Releases containing this change must describe these semantics.
 
 A definite revision conflict restarts the whole snapshot-based chain, including
 previous conditional/Lua failures. Lua observation times remain fixed. The
-existing service.merge.max_attempts limit also bounds folded conditional Put
+existing execution.merge.max_attempts limit also bounds folded conditional Put
 chains. Exhaustion returns a retryable CONFLICT for every operation in that
 unresolved chain. An ambiguous transport failure, lost acknowledgement, or
 cancellation is not replayed internally. Existing business idempotence
@@ -103,7 +103,7 @@ batch transactions.
 Reads share one backend observation per address but produce independent payload
 and revision copies. Every returned document, including repetitions, consumes
 the response budget in original input order. Deduplication therefore does not
-allow repeated keys to bypass max_read_bytes. The backend's unique-document
+allow repeated keys to bypass the public response allowance. The backend's unique-document
 read also remains bounded. Missing/error results are returned to all matching
 operations.
 

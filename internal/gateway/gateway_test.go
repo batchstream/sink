@@ -9,7 +9,7 @@ import (
 )
 
 func TestRoutesRejectDuplicateStoreNames(t *testing.T) {
-	loaded, err := config.Decode(strings.NewReader("mode: gateway\ngateway:\n  routes:\n    - store: a\n      target: 127.0.0.1:1\n      tls: {insecure: true}\n    - store: a\n      target: 127.0.0.1:2\n      tls: {insecure: true}\n"))
+	loaded, err := config.Decode(strings.NewReader("mode: gateway\nforwarding:\n  routes:\n    - store: a\n      target: 127.0.0.1:1\n      tls: {insecure: true}\n    - store: a\n      target: 127.0.0.1:2\n      tls: {insecure: true}\n"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

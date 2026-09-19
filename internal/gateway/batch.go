@@ -8,7 +8,6 @@ import (
 
 	forward "github.com/liran/sink/gen/forward"
 	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/forwarding"
 	"github.com/liran/sink/internal/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -81,7 +80,10 @@ func (s *Server) records(ctx context.Context, req *forward.ForwardRequest) (*for
 		}
 		groups[position].indices = append(groups[position].indices, index)
 	}
-	remaining := forwarding.FullBudget(s.request.MaxReadBytes)
+	remaining, err := s.responseBudget(len(addresses))
+	if err != nil {
+		return nil, err
+	}
 	run := func(group storeGroup, grant *forward.Budget) *forward.Budget {
 		sub := splitRequest(req, group.indices)
 		sub.Grant = grant
@@ -112,7 +114,7 @@ func (s *Server) records(ctx context.Context, req *forward.ForwardRequest) (*for
 		for range min(s.config.MaxFanout, len(groups)) {
 			work.Go(func() {
 				for group := range jobs {
-					run(group, forwarding.FullBudget(s.request.MaxReadBytes))
+					run(group, remaining)
 				}
 			})
 		}

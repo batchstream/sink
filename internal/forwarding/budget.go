@@ -9,7 +9,7 @@ import (
 	"github.com/liran/sink/internal/storage"
 )
 
-const Version = 4
+const Version = 5
 
 // EnvelopeBytes is reserved in the private transport in addition to the public message cap.
 const EnvelopeBytes = 4096
@@ -38,7 +38,10 @@ func NewTracker(grant *forward.Budget, maximum int) *Tracker {
 	t := &Tracker{}
 	raw := [...]uint64{grant.GetSnapshots(), grant.GetInputs(), grant.GetOutputs(), grant.GetReturns()}
 	for i, size := range raw {
-		t.limits[i] = int(min(size, uint64(maximum)))
+		t.limits[i] = int(min(size, uint64(int(^uint(0)>>1))))
+		if Kind(i) == Returns {
+			t.limits[i] = min(t.limits[i], maximum)
+		}
 	}
 	return t
 }

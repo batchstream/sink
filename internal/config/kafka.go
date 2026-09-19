@@ -17,8 +17,8 @@ func resolveKafka(prefix string, file kafkaFile, v *validator) Kafka {
 	topic.ReplicationFactor = v.bounded(prefix+".topic.replication_factor", file.Topic.ReplicationFactor, 2, 1<<15-1)
 	topic.Retention = v.duration(prefix+".topic.retention", file.Topic.Retention, 72*time.Hour)
 	topic.MinInSyncReplicas = v.bounded(prefix+".topic.min_insync_replicas", file.Topic.MinInSyncReplicas, min(2, topic.ReplicationFactor), topic.ReplicationFactor)
-	loaded.Producer.MaxBufferedBytes = v.bytes(prefix+".producer.max_buffered_bytes", file.Producer.MaxBufferedBytes, 64<<20, 1<<30)
-	topic.MaxRecordBytes = v.bytes(prefix+".topic.max_record_bytes", file.Topic.MaxRecordBytes, 900<<10, min(64<<20, loaded.Producer.MaxBufferedBytes))
+
+	topic.MaxRecordBytes = v.bytes(prefix+".topic.max_record_bytes", file.Topic.MaxRecordBytes, 900<<10, 64<<20)
 	loaded.DeadLetter.Topic = strings.TrimSpace(file.DeadLetter.Topic)
 	if topic.Name != "" && loaded.DeadLetter.Topic == "" {
 		loaded.DeadLetter.Topic = topic.Name + ".dlq"
@@ -30,23 +30,39 @@ func resolveKafka(prefix string, file kafkaFile, v *validator) Kafka {
 	if loaded.DeadLetter.Retention < time.Millisecond {
 		v.reject(fmt.Errorf("%s.dead_letter.retention must be at least 1ms", prefix))
 	}
-	consumer := &loaded.Consumer
-	consumer.GroupID = strings.TrimSpace(file.Consumer.GroupID)
-	consumer.MaxPollRecords = v.integer(prefix+".consumer.max_poll_records", file.Consumer.MaxPollRecords, 500)
-	consumer.ProcessingTimeout = v.duration(prefix+".consumer.processing_timeout", file.Consumer.ProcessingTimeout, 20*time.Second)
-	if consumer.ProcessingTimeout > 20*time.Second {
-		v.reject(fmt.Errorf("%s.consumer.processing_timeout must not exceed 20s", prefix))
+	return loaded
+}
+
+func resolveProducer(file *producerFile, v *validator) Producer {
+	if file == nil {
+		file = &producerFile{}
 	}
-	consumer.Retry.MaxAttempts = v.integer(prefix+".consumer.retry.max_attempts", file.Consumer.Retry.MaxAttempts, 10)
-	consumer.Retry.Backoff = v.duration(prefix+".consumer.retry.backoff", file.Consumer.Retry.Backoff, 100*time.Millisecond)
-	consumer.Retry.MaxBackoff = v.duration(prefix+".consumer.retry.max_backoff", file.Consumer.Retry.MaxBackoff, 10*time.Second)
+	loaded := Producer{MaxBufferedBytes: v.bytes("producer.max_buffered_bytes", file.MaxBufferedBytes, 64<<20, 1<<30)}
+	return loaded
+}
+
+func resolveConsumer(file *consumerFile, v *validator) Consumer {
+	if file == nil {
+		file = &consumerFile{}
+	}
+	var loaded Consumer
+	consumer := &loaded
+	consumer.GroupID = strings.TrimSpace(file.GroupID)
+	consumer.MaxPollRecords = v.integer("consumer.max_poll_records", file.MaxPollRecords, 500)
+	consumer.ProcessingTimeout = v.duration("consumer.processing_timeout", file.ProcessingTimeout, 20*time.Second)
+	if consumer.ProcessingTimeout > 20*time.Second {
+		v.reject(errors.New("consumer.processing_timeout must not exceed 20s"))
+	}
+	consumer.Retry.MaxAttempts = v.integer("consumer.retry.max_attempts", file.Retry.MaxAttempts, 10)
+	consumer.Retry.Backoff = v.duration("consumer.retry.backoff", file.Retry.Backoff, 100*time.Millisecond)
+	consumer.Retry.MaxBackoff = v.duration("consumer.retry.max_backoff", file.Retry.MaxBackoff, 10*time.Second)
 	if consumer.Retry.MaxBackoff < consumer.Retry.Backoff {
-		v.reject(fmt.Errorf("%s.consumer.retry.max_backoff must be at least %s.consumer.retry.backoff", prefix, prefix))
+		v.reject(errors.New("consumer.retry.max_backoff must be at least consumer.retry.backoff"))
 	}
 	// Worker retries double their delay before capping it. Reject durations
 	// whose doubling would overflow into an immediate retry.
 	if consumer.Retry.MaxBackoff > time.Duration(1<<63-1)/2 {
-		v.reject(fmt.Errorf("%s.consumer.retry.max_backoff is too large to double safely", prefix))
+		v.reject(errors.New("consumer.retry.max_backoff is too large to double safely"))
 	}
 	return loaded
 }
@@ -55,18 +71,18 @@ func validateKafkaResources(loaded Config) error {
 	kafka := loaded.Storage.Kafka
 	if !kafka.Enabled {
 		if loaded.Mode == ModeWorker {
-			return errors.New("worker requires storage.kafka.enabled")
+			return errors.New("worker requires kafka.enabled")
 		}
 		return nil
 	}
 	if len(kafka.Brokers) == 0 || kafka.Topic.Name == "" {
-		return errors.New("storage.kafka.brokers and storage.kafka.topic.name are required")
+		return errors.New("kafka.brokers and kafka.topic.name are required")
 	}
 	if loaded.Mode == ModeWorker && kafka.Consumer.GroupID == "" {
-		return errors.New("storage.kafka.consumer.group_id is required in worker mode")
+		return errors.New("consumer.group_id is required in worker mode")
 	}
 	if kafka.DeadLetter.Topic == kafka.Topic.Name {
-		return errors.New("storage.kafka.dead_letter.topic must differ from topic.name")
+		return errors.New("kafka.dead_letter.topic must differ from topic.name")
 	}
 	return nil
 }

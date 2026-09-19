@@ -17,46 +17,40 @@ flowchart LR
     WorkerA --> DatabaseA
 ```
 
-Gateway exposes the existing seven public RPCs. Engine exposes the same RPCs for
-its one Store, plus a private versioned forwarding RPC. Worker has no application
+Gateway exposes the existing seven public RPCs. Engine exposes private versioned forwarding and health RPCs for its one Store. Worker has no application
 gRPC listener and calls the shared execution core directly. Asynchronous acceptance
 still means that Engine's Kafka producer received durable acknowledgement; Gateway
 never connects to Kafka or a database.
 
 ## Configuration
 
-An Engine uses `mode: engine` and one `storage` mapping with `name`, `driver`,
-and the existing driver/Kafka settings. Worker uses the same mapping with
-`mode: worker`. The globally unique Store name is the only configured identity;
-all Engine and Worker replicas of that Store use the same name.
+Engine uses `mode: engine`; Worker uses `mode: worker`. Both receive the same
+Store file through `--store-config`, holding `name`, `storage` and shared `kafka`
+policy. Component tuning remains in their own `--config` files.
 A Store must have its own database target. Distinct URI aliases do not establish
 that two targets are different. Deployment inventory must enforce this globally.
 Engine checks the expected Store name on every forwarded call.
 It rejects an entire mismatched batch before storage or publishing.
 
-Gateway uses `mode: gateway`, `grpc`, `health`, `prometheus`, `service.request`, and `gateway`:
+Gateway uses `mode: gateway`, `grpc`, `health`, `prometheus`, `request`, and `forwarding`:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `gateway.routes` | required | Inline Store routes; every entry is active; restart after changes |
-| `gateway.dns_refresh_interval` | `30s` | Refresh DNS even while existing connections are healthy |
-| `gateway.idle_timeout` | `5m` | Close channels that have no active calls and remain idle |
-| `gateway.max_connections` | `256` | Maximum cached gRPC channels, created lazily; a channel can have multiple backend connections |
-| `gateway.max_requests` | `128` | Maximum admitted public requests |
-| `gateway.max_requests_per_store` | `min(32, max_requests)` | Maximum active forwarded calls to one Store |
-| `gateway.max_bytes` | `256MiB` | Logical input/envelope/response reservations for admitted requests |
-| `gateway.max_fanout` | `8` | Maximum parallel Store calls per public batch |
+| `forwarding.routes` | required | Inline Store routes; every entry is active; restart after changes |
+| `forwarding.dns_refresh_interval` | `30s` | Refresh DNS even while existing connections are healthy |
+| `forwarding.idle_timeout` | `5m` | Close channels that have no active calls and remain idle |
+| `forwarding.max_connections` | `256` | Maximum cached gRPC channels, created lazily; a channel can have multiple backend connections |
+| `forwarding.max_fanout` | `8` | Maximum parallel Store calls per public batch |
 
 These are process limits, not RSS guarantees or recommended resource requests.
-Gateway reserves known input/result overhead; reads, returned documents and native
-replies additionally reserve their configured maximum response allowance. Plain
-puts, deletes and async acceptance do not reserve a full document response quota.
-Size limits do not include all Go, gRPC, TLS or OS allocation overhead.
+Gateway charges actual input/result allocations to `memory`; growing responses
+share a bounded completion reserve. The gRPC send ceiling determines response
+capacity. Clients control request deadlines; shutdown has its own bounded drain.
 
 Routes belong to the same Gateway configuration:
 
 ```yaml
-gateway:
+forwarding:
   routes:
     - store: primary
       target: dns:///primary-engine.example:443
@@ -72,7 +66,7 @@ inside the trusted service network. Store name checking does not provide
 client authentication or authorization.
 
 All configured routes are active. There is no route state flag or hot reload.
-Add, remove, or update entries in `gateway.routes`, then restart Gateway. During
+Add, remove, or update entries in `forwarding.routes`, then restart Gateway. During
 a rolling restart, each instance uses the configuration loaded at its own startup.
 Graceful shutdown drains accepted calls within the configured deadline; never
 replay a write automatically just because its connection closes.

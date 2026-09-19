@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,14 +33,20 @@ type Server struct {
 	nativeSequence atomic.Uint64
 }
 type Options struct {
-	Memory          *capacity.Pool
-	Gateway         config.Gateway
-	Request         config.Request
-	MaxMessageBytes int
+	Memory           *capacity.Pool
+	Gateway          config.Gateway
+	Request          config.Request
+	MaxMessageBytes  int
+	MaxResponseBytes int
 }
 
 func New(opts Options) (*Server, error) {
-	if opts.Gateway.MaxRequests <= 0 || opts.Gateway.MaxRequestsPerStore <= 0 || opts.Gateway.MaxBytes <= 0 || opts.Gateway.MaxFanout <= 0 || opts.Gateway.MaxConnections <= 0 || opts.Gateway.IdleTimeout <= 0 || opts.Gateway.DNSRefreshInterval <= 0 || opts.Request.Timeout <= 0 || opts.Request.MaxOperations <= 0 || opts.Request.MaxReadBytes <= 0 || opts.MaxMessageBytes <= 0 {
+	if opts.MaxResponseBytes == 0 {
+		opts.MaxResponseBytes = opts.MaxMessageBytes
+	}
+	opts.Request.MaxReadBytes = opts.MaxResponseBytes
+
+	if opts.Gateway.MaxRequests <= 0 || opts.Gateway.MaxRequestsPerStore <= 0 || opts.Gateway.MaxBytes <= 0 || opts.Gateway.MaxFanout <= 0 || opts.Gateway.MaxConnections <= 0 || opts.Gateway.IdleTimeout <= 0 || opts.Gateway.DNSRefreshInterval <= 0 || opts.Request.MaxOperations <= 0 || opts.MaxMessageBytes <= 0 || opts.MaxResponseBytes <= 0 {
 		return nil, errors.New("gateway limits must be positive")
 	}
 	initial, err := newSnapshot(opts.Gateway.Routes)
@@ -96,7 +103,7 @@ func (s *Server) begin(ctx context.Context, req *forward.ForwardRequest) (contex
 	s.metrics.inFlight.Inc()
 	s.metrics.bytes.Add(float64(charge))
 	s.mu.Unlock()
-	ctx, cancel := context.WithTimeout(ctx, s.request.Timeout)
+	ctx, cancel := context.WithCancel(ctx)
 	release := func() {
 		cancel()
 		s.mu.Lock()
@@ -163,9 +170,6 @@ func validUsage(grant, used *forward.Budget) bool {
 	return used.GetSnapshots() <= grant.GetSnapshots() && used.GetInputs() <= grant.GetInputs() && used.GetOutputs() <= grant.GetOutputs() && used.GetReturns() <= grant.GetReturns()
 }
 func consume(remaining, used *forward.Budget) {
-	remaining.Snapshots -= used.GetSnapshots()
-	remaining.Inputs -= used.GetInputs()
-	remaining.Outputs -= used.GetOutputs()
 	remaining.Returns -= used.GetReturns()
 }
 func routeFor(view *snapshot, store string) (Route, error) {
@@ -203,7 +207,7 @@ func localRejection(route Route, code codes.Code, message string) *forward.Forwa
 }
 
 func (s *Server) beginMemory(ctx context.Context, req *forward.ForwardRequest) (context.Context, func(), error) {
-	ctx, cancel := context.WithTimeout(ctx, s.request.Timeout)
+	ctx, cancel := context.WithCancel(ctx)
 	scope := capacity.FromContext(ctx)
 	release := func() {}
 	if scope == nil {
@@ -219,4 +223,23 @@ func (s *Server) beginMemory(ctx context.Context, req *forward.ForwardRequest) (
 	s.metrics.inFlight.Inc()
 	done := func() { cancel(); release(); s.metrics.inFlight.Dec() }
 	return ctx, done, nil
+}
+
+// responseBudget derives public payload capacity from the transport ceiling.
+// Result envelopes, revision tokens and bounded failures are reserved before
+// forwarding; Store-local snapshots and candidates have independent limits.
+func (s *Server) responseBudget(operations int) (*forward.Budget, error) {
+	overhead := 0
+	if operations > 0 {
+		if operations > s.request.MaxReadBytes/1280 {
+			return nil, status.Error(codes.ResourceExhausted, "result envelopes exceed gRPC send limit")
+		}
+		overhead = operations * 1280
+	}
+	bytes := s.request.MaxReadBytes - overhead
+	if bytes <= 0 {
+		return nil, status.Error(codes.ResourceExhausted, "response budget is exhausted")
+	}
+	budget := &forward.Budget{Snapshots: math.MaxInt64, Inputs: math.MaxInt64, Outputs: math.MaxInt64, Returns: uint64(bytes)}
+	return budget, nil
 }

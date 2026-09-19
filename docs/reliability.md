@@ -166,7 +166,7 @@ document payloads are not printed. Select a concrete range of 1–100 consecutiv
 records, at most 64 MiB. Missing/expired offsets fail the command.
 
 ```sh
-sink dlq inspect --config /etc/sink/config.yaml --store primary \
+sink dlq inspect --config /etc/sink/worker.yaml --store-config /etc/sink/store.yaml --store primary \
   --partition 0 --offset 12 --count 3 > dlq-inspection.jsonl
 ```
 
@@ -176,7 +176,7 @@ envelope/store before republishing, but publishing the selection is not atomic.
 It does not remove DLQ records or advance the worker's group offsets:
 
 ```sh
-sink dlq replay --config /etc/sink/config.yaml --store primary \
+sink dlq replay --config /etc/sink/worker.yaml --store-config /etc/sink/store.yaml --store primary \
   --partition 0 --offset 12 --count 3 > dlq-replay.jsonl
 ```
 
@@ -232,7 +232,7 @@ remain per original RPC. Final failed writes release their returned-document
 reservation; successful CAS retries retain only the final document's charge.
 Read/Write/Delete also reserve up to 1 KiB of failure text plus a result envelope
 per operation before execution or publishing. Failure messages are valid UTF-8,
-limited to 1 KiB each, and further shortened according to `service.request.max_read_bytes`
+limited to 1 KiB each, and further shortened according to the gRPC response ceiling
 per original RPC, retaining at least one byte to satisfy the client contract.
 Codes, retryability, and operation indexes remain intact.
 This error allowance is separate from the returned-document quota.

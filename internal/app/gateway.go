@@ -10,7 +10,7 @@ func newGateway(opts Options) (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	gatewayOpts := gateway.Options{Memory: memory, Gateway: loaded.Gateway, Request: loaded.Service.Request, MaxMessageBytes: max(loaded.GRPC.MaxSendMessageBytes, loaded.GRPC.MaxReceiveMessageBytes)}
+	gatewayOpts := gateway.Options{Memory: memory, Gateway: loaded.Gateway, Request: loaded.Service.Request, MaxResponseBytes: loaded.GRPC.MaxSendMessageBytes, MaxMessageBytes: max(loaded.GRPC.MaxSendMessageBytes, loaded.GRPC.MaxReceiveMessageBytes)}
 	server, err := gateway.New(gatewayOpts)
 	if err != nil {
 		return nil, err

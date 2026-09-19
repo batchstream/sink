@@ -101,9 +101,7 @@ func newRequestBatcher[Request any, Response any](opts requestBatcherOptions[Req
 	if opts.Unlimited {
 		batcher.maxConcurrent = 0
 	}
-	if batcher.executionTimeout == 0 {
-		batcher.executionTimeout = defaultRequestTimeout
-	}
+
 	batcher.waitGroup.Add(1)
 	go batcher.run()
 	return batcher
@@ -433,23 +431,36 @@ func batchExecutionContext[Request any, Response any](
 	calls []*batchCall[Request, Response],
 	timeout time.Duration,
 ) (context.Context, context.CancelFunc) {
-	// Keep shared work alive while at least one caller still needs it, but
-	// never extend execution beyond the server's own time budget.
-	limit := time.Now().Add(timeout)
+	// Shared work survives until every caller cancels. A caller without a
+	// deadline must not inherit another caller's deadline or a synthetic limit.
 	var latest time.Time
+	unbounded := false
 	for _, call := range calls {
 		deadline, ok := call.ctx.Deadline()
 		if !ok {
-			deadline = limit
+			unbounded = true
 		}
 		if deadline.After(latest) {
 			latest = deadline
 		}
 	}
-	if latest.IsZero() || latest.After(limit) {
-		latest = limit
+	if unbounded {
+		latest = time.Time{}
 	}
-	ctx, cancel := context.WithDeadline(parent, latest)
+	if timeout > 0 {
+		limit := time.Now().Add(timeout)
+		if latest.IsZero() || latest.After(limit) {
+			latest = limit
+		}
+	}
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if latest.IsZero() {
+		ctx, cancel = context.WithCancel(parent)
+	} else {
+		ctx, cancel = context.WithDeadline(parent, latest)
+	}
+
 	var mu sync.Mutex
 	remaining := len(calls)
 	stops := make([]func() bool, 0, len(calls))

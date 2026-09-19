@@ -71,10 +71,13 @@ type Request struct {
 }
 
 type Execution struct {
-	MaxRequests int
-	MaxBytes    int
-	Queue       AdmissionQueue
-	Scan        Scan
+	MaxSnapshotBytes int
+	MaxOutputBytes   int
+	MongoDB          MongoDB
+	MaxRequests      int
+	MaxBytes         int
+	Queue            AdmissionQueue
+	Scan             Scan
 }
 
 type AdmissionQueue struct {

@@ -1,116 +1,61 @@
 package config
 
 import (
-	"fmt"
-	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
-const minimalStorage = `mode: engine
-storage:
-  name: primary
-  driver: mongodb
-  mongodb:
-    uri: mongodb://127.0.0.1:1
-`
-
-func TestDecodeDerivesLimitsFromTheirOwners(t *testing.T) {
-	input := minimalStorage + `grpc:
-  max_send_message_bytes: 2097152
-  max_receive_message_bytes: 268435456
-service:
-  request:
-    timeout: 1s
-    max_operations: 15000
-  execution:
-    max_requests: 8
-    max_bytes: 67108864
-  publish:
-    max_requests: 7
-`
-	loaded, err := Decode(strings.NewReader(input))
-	if err != nil {
-		t.Fatal(err)
-	}
-	service := loaded.Service
-	if service.Request.MaxReadBytes != 1<<20 || service.Execution.Scan.MaxRequests != 4 ||
-		service.Execution.Scan.MaxBytes != 32<<20 ||
-		service.Execution.Scan.AdmissionWait != time.Second {
-		t.Fatalf("dependent request and execution defaults: %+v", service)
-	}
-	if service.Batching.MaxOperations != 15000 || service.Batching.Queue.MaxOperations != 15000 || service.Batching.Queue.MaxBytes != 256<<20 {
-		t.Fatalf("dependent batching defaults: %+v", service.Batching)
-	}
-	if service.Publish.MaxRequests != 7 || service.Publish.MaxBytes != 256<<20 {
-		t.Fatalf("execution limits leaked into publication: %+v", service.Publish)
-	}
-	if service.Execution.Queue.MaxWait != time.Second || service.Execution.Queue.MaxRequests != 1024 || service.Execution.Queue.MaxBytes != 32<<20 {
-		t.Fatalf("invalid direct admission defaults: %+v", service.Execution.Queue)
-	}
-}
-
-func TestDecodeRejectsInvalidResourceLimitsWithoutReturningPartialConfig(t *testing.T) {
-	cases := []struct {
-		section string
-		field   string
-		values  []string
-	}{
-		{section: "request", field: "timeout", values: []string{"0s", "-1ms", "301s", "9223372036854775808ns", "30"}},
-		{section: "request", field: "max_read_bytes", values: []string{"0", "-1", "33554433"}},
-		{section: "execution", field: "max_requests", values: []string{"0", "-1", "10001"}},
-		{section: "execution", field: "max_bytes", values: []string{"0", "-1", "18253611008"}},
-		{section: "execution:\n    queue", field: "max_requests", values: []string{"0", "10001"}},
-		{section: "execution:\n    queue", field: "max_bytes", values: []string{"0", "17GiB"}},
-		{section: "execution:\n    queue", field: "max_wait", values: []string{"0s", "-1s", "30.001s"}},
-		{section: "execution:\n    scan", field: "max_requests", values: []string{"0", "129"}},
-		{section: "execution:\n    scan", field: "max_bytes", values: []string{"0", "268435457"}},
-		{section: "execution:\n    scan", field: "admission_wait", values: []string{"0s", "-1s", "30.001s"}},
-		{section: "publish", field: "max_requests", values: []string{"0", "-1", "10001"}},
-		{section: "publish", field: "max_bytes", values: []string{"0", "-1", "18253611008"}},
-	}
-	for _, test := range cases {
-		for _, value := range test.values {
-			t.Run(test.section+"/"+test.field+"/"+value, func(t *testing.T) {
-				indent := "    "
-				if strings.Contains(test.section, "\n") {
-					indent += "  "
-				}
-				input := fmt.Sprintf("%sservice:\n  %s:\n%s%s: %s\n", minimalStorage, test.section, indent, test.field, value)
-				loaded, err := Decode(strings.NewReader(input))
-				if err == nil || !reflect.ValueOf(loaded).IsZero() {
-					t.Fatalf("invalid configuration escaped validation: config=%+v error=%v", loaded, err)
-				}
-			})
-		}
-	}
-}
-
-func TestDecodeRejectsRemovedConfigurationPaths(t *testing.T) {
-	for _, field := range []string{"max_in_flight_requests: 10", "max_publish_bytes: 1024", "max_operations: 10", "lua: {}", "store_execution_bytes: {}"} {
-		_, err := Decode(strings.NewReader(minimalStorage + "service:\n  " + field + "\n"))
-		if err == nil || !strings.Contains(err.Error(), "field ") {
-			t.Fatalf("old service field was silently accepted: %s, %v", field, err)
-		}
-	}
-	_, err := Decode(strings.NewReader(minimalStorage + "shutdown_timeout_seconds: 15\n"))
-	if err == nil || !strings.Contains(err.Error(), "shutdown_timeout_seconds") {
-		t.Fatalf("old duration field was silently accepted: %v", err)
-	}
-}
-
-func TestDecodeRejectsKafkaDurationTruncationAndOverflow(t *testing.T) {
-	for _, fragment := range []string{
-		"topic:\n      retention: 1ns",
-		"dead_letter:\n      retention: 1ns",
-		"consumer:\n      processing_timeout: 21s",
-		"consumer:\n      retry:\n        max_backoff: 4611686018427387904ns",
-		"consumer:\n      retry:\n        backoff: 2s\n        max_backoff: 1s",
+func TestExecutionBudgetsAreIndependentOfTransport(t *testing.T) {
+	for _, input := range []string{
+		"mode: engine\ngrpc: {max_send_message_bytes: 1MiB}\nexecution: {max_snapshot_bytes: 64MiB, max_output_bytes: 128MiB}\n",
+		"mode: worker\nconsumer: {group_id: workers}\nexecution: {max_snapshot_bytes: 64MiB, max_output_bytes: 128MiB}\n",
 	} {
-		_, err := Decode(strings.NewReader(minimalStorage + "  kafka:\n    " + fragment + "\n"))
-		if err == nil || !strings.Contains(err.Error(), "storage.kafka.") {
-			t.Fatalf("invalid Kafka duration accepted: %s, %v", fragment, err)
+		loaded, err := Decode(strings.NewReader(input), strings.NewReader(kafkaStore))
+		if err != nil || loaded.Service.Execution.MaxSnapshotBytes != 64<<20 || loaded.Service.Execution.MaxOutputBytes != 128<<20 {
+			t.Fatalf("execution depends on gRPC: %v", err)
+		}
+	}
+}
+
+func TestRejectInvalidRoleLimits(t *testing.T) {
+	for _, fields := range []string{
+		"execution: {max_snapshot_bytes: 0}", "execution: {max_output_bytes: -1}", "execution: {mongodb: {max_concurrent_groups: 0}}",
+		"execution: {merge: {max_attempts: 0}}", "execution: {merge: {lua: {timeout: 0s}}}", "execution: {merge: {lua: {max_source_bytes: 0}}}",
+		"batching: {max_wait: 0s}", "batching: {max_operations: 0}", "batching: {max_operations: 20, queue: {max_operations: 19}}",
+		"batching: {queue: {max_bytes: 1MiB}}", "producer: {max_buffered_bytes: 2GiB}", "producer: {max_buffered_bytes: 1KiB}",
+	} {
+		if _, err := Decode(strings.NewReader("mode: engine\n"+fields), strings.NewReader(kafkaStore)); err == nil {
+			t.Fatalf("invalid limits accepted: %s", fields)
+		}
+	}
+	for _, fields := range []string{
+		"processing_timeout: 21s", "max_poll_records: 0", "processing_timeout: 0s", "processing_timeout: 20",
+		"retry: {max_backoff: 4611686018427387904ns}", "retry: {backoff: 2s, max_backoff: 1s}", "retry: {max_attempts: 0}",
+	} {
+		input := "mode: worker\nconsumer:\n  group_id: workers\n  " + fields
+		if _, err := Decode(strings.NewReader(input), strings.NewReader(kafkaStore)); err == nil {
+			t.Fatalf("invalid consumer accepted: %s", fields)
+		}
+	}
+}
+
+func TestKafkaSharedPolicyValidation(t *testing.T) {
+	for _, kafka := range []string{
+		"enabled: true", "enabled: true\n  brokers: [localhost:1]", "topic: {retention: 1ns}", "dead_letter: {retention: 1ns}",
+		"topic: {partitions: 0}", "topic: {replication_factor: 1, min_insync_replicas: 2}", "topic: {max_record_bytes: 65MiB}",
+		"enabled: true\n  brokers: [localhost:1]\n  topic: {name: a}\n  dead_letter: {topic: a}",
+		"consumer: {}", "producer: {}",
+	} {
+		if _, err := Decode(strings.NewReader("mode: engine"), strings.NewReader(minimalStorage+"kafka:\n  "+kafka)); err == nil {
+			t.Fatalf("invalid Kafka policy accepted: %s", kafka)
+		}
+	}
+	for _, test := range []struct{ component, store string }{
+		{"mode: worker\nconsumer: {group_id: workers}", minimalStorage},
+		{"mode: worker", kafkaStore}, {"mode: engine\nproducer: {}", minimalStorage},
+	} {
+		if _, err := Decode(strings.NewReader(test.component), strings.NewReader(test.store)); err == nil {
+			t.Fatal("invalid role/Kafka combination accepted")
 		}
 	}
 }

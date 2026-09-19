@@ -247,3 +247,12 @@ hours. The business counter implements application idempotence and reconciles
 stored results. Passing the short gate does not establish a completed two-hour
 run. Real multi-node failover, disk pressure and backup restoration remain
 deployment qualification; see [the reliability runbook](reliability.md).
+
+## Coverage regression gate
+
+`make test-coverage` runs ordinary tests with the race detector and writes
+coverage, JSON test events and a package summary to `.reports/coverage/`.
+CI enforces the package floors in `.github/coverage-minimums.json`; generated
+protobuf files do not count. Keep floors stable or raise them when adding tests.
+The report is statement coverage, not branch or end-to-end scenario coverage.
+Real backend tests remain separate from this infrastructure-free gate.

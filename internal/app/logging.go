@@ -8,6 +8,7 @@ import (
 
 	forward "github.com/liran/sink/gen/forward"
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -19,25 +20,28 @@ func logUnary(ctx context.Context, req any, info *grpc.UnaryServerInfo, next grp
 	method := diagnosticMethod(info.FullMethod)
 	if method != "" {
 		code := status.Code(err)
-		if forwarded, ok := response.(*forward.ForwardResponse); ok {
+		observed := response
+		// Inspect the underlying message while returning the original wrapper;
+		// the codec still owns its reservation through response serialization.
+		if managed, ok := observed.(*protocol.ManagedMessage); ok {
+			observed = managed.Message
+		}
+		if forwarded, ok := observed.(*forward.ForwardResponse); ok {
 			if code == codes.OK {
 				code = codes.Code(forwarded.GetCode())
 			}
 			switch body := forwarded.GetResponse().(type) {
 			case *forward.ForwardResponse_Read:
-				response = body.Read
+				observed = body.Read
 			case *forward.ForwardResponse_Write:
-				response = body.Write
+				observed = body.Write
 			case *forward.ForwardResponse_Delete:
-				response = body.Delete
+				observed = body.Delete
 			case *forward.ForwardResponse_Execute:
-				response = body.Execute
+				observed = body.Execute
 			}
-			// Inspecting the envelope must never change the returned response.
-			logRPC(method, code, response, time.Since(started))
-			return forwarded, err
 		}
-		logRPC(method, code, response, time.Since(started))
+		logRPC(method, code, observed, time.Since(started))
 	}
 	return response, err
 }

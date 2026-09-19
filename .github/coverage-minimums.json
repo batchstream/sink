@@ -1,0 +1,17 @@
+{
+  "github.com/liran/sink/internal/app": 87,
+  "github.com/liran/sink/internal/capacity": 88,
+  "github.com/liran/sink/internal/config": 94,
+  "github.com/liran/sink/internal/engine": 83,
+  "github.com/liran/sink/internal/gateway": 84,
+  "github.com/liran/sink/internal/logging": 88,
+  "github.com/liran/sink/internal/merge": 91,
+  "github.com/liran/sink/internal/protocol": 82,
+  "github.com/liran/sink/internal/queue": 84,
+  "github.com/liran/sink/internal/queue/kafka": 81,
+  "github.com/liran/sink/internal/service": 91,
+  "github.com/liran/sink/internal/storage": 84,
+  "github.com/liran/sink/internal/storage/mongodb": 49,
+  "github.com/liran/sink/internal/storage/search": 88,
+  "github.com/liran/sink/internal/worker": 86
+}

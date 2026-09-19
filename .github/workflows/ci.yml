@@ -71,7 +71,7 @@ jobs:
         with:
           repository: liran/sink-production-suite
           path: qualification
-          ref: 0189a857563e04c0ffff8acbd6cf2047280cbb68
+          ref: b02419b105d5cd2faecb4f808d509b857f26527e
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -138,13 +138,39 @@ jobs:
         run: make check-format
 
       - name: Run race tests
-        run: go test -race ./... -count=1
+        run: make test-coverage
+
+      - name: Preserve unit coverage and test events
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unit-coverage
+          path: .reports/coverage/
+          include-hidden-files: true
+          retention-days: 14
 
       - name: Verify Gateway DNS scale-out and scale-in
         run: go test -race -tags=integration ./internal/gateway -run '^TestGateway(DiscoversDNSScaleChanges|DNSWithdrawalDrainBoundary)$' -count=1 -timeout=2m
 
       - name: Fuzz mutation envelopes
-        run: go test ./internal/queue -run='^$' -fuzz=FuzzMutationEnvelope -fuzztime=20s -parallel=2
+        run: |
+          mkdir -p .reports/fuzz
+          go test ./internal/queue -run='^$' -fuzz='^FuzzMutationEnvelope$' -fuzztime=30s -parallel=2 2>&1 | tee .reports/fuzz/envelope.log
+          go test ./internal/storage -run='^$' -fuzz='^FuzzValidateBSONDocument$' -fuzztime=30s -parallel=2 2>&1 | tee .reports/fuzz/bson.log
+          grep -q 'new interesting:' .reports/fuzz/envelope.log
+          grep -q 'new interesting:' .reports/fuzz/bson.log
+
+      - name: Preserve fuzz evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: input-fuzzing
+          path: |
+            .reports/fuzz/
+            internal/queue/testdata/fuzz/
+            internal/storage/testdata/fuzz/
+          include-hidden-files: true
+          retention-days: 14
 
       - name: Run lint
         run: make lint

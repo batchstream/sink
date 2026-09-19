@@ -190,3 +190,22 @@ func BenchmarkDisabledDebug(b *testing.B) {
 		logger.DebugContext(context.Background(), "batch", "operations", 100)
 	}
 }
+
+func TestSuppressedFailureBodiesAreNotEvaluated(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.FailureBody = true
+	output := &lockedBuffer{}
+	runtime := newTestRuntime(t, cfg, output)
+	calls := 0
+	body := countedBody{calls: &calls}
+	for range 100 {
+		runtime.Logger.Error("failed", "component", "kafka", "event", "kafka_quarantined", "failure_body", body)
+	}
+	if calls != 10 {
+		t.Fatalf("suppressed bodies still consumed formatting work: %d evaluations", calls)
+	}
+	runtime.Close()
+	if !strings.Contains(output.String(), `"suppressed":"90"`) {
+		t.Fatal("lost suppression count")
+	}
+}

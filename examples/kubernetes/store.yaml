@@ -1,0 +1,6 @@
+# Shared Engine/Worker Store configuration; example endpoint only.
+name: mongo
+storage:
+  driver: mongodb
+  mongodb:
+    uri: mongodb://mongo-0.example.invalid:27017,mongo-1.example.invalid:27017,mongo-2.example.invalid:27017/?replicaSet=rs0

@@ -105,7 +105,7 @@ The address maps as follows:
 
 | Request field | Meaning in this example |
 | --- | --- |
-| URI Store `primary` | Select the Gateway route for `primary`; its Engine is bound to `storage.name = primary` |
+| URI Store `primary` | Select the Gateway route for `primary`; its Engine is bound to Store file `name: primary` |
 | URI segment `catalog` | MongoDB database `catalog` |
 | URI segment `products` | MongoDB collection `products` |
 | `key = product-42` | MongoDB `_id`, using the string `product-42` |
@@ -263,7 +263,7 @@ another writer has not changed the version since it was read. MongoDB uses
 Sink's internal revision field; search backends use `_seq_no` and
 `_primary_term`. On a definite revision conflict, Sink currently allows
 **3 attempts by default, including the initial attempt**, controlled by
-`service.merge.max_attempts`. Exhaustion produces a retryable `CONFLICT`.
+`execution.merge.max_attempts`. Exhaustion produces a retryable `CONFLICT`.
 A network timeout or lost acknowledgement is not a definite revision
 conflict and does not establish that the previous attempt had no effect.
 

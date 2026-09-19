@@ -79,7 +79,7 @@ original RPC's budgets; adding replicas does not multiply the return budget.
 Eligible independent groups run with bounded fanout. Native requests select an
 endpoint in round-robin order because they have no record key.
 
-Connections are opened lazily per endpoint and reused. `gateway.max_connections`
+Connections are opened lazily per endpoint and reused. `forwarding.max_connections`
 bounds active/idle endpoint channels and cached discovery entries; the DNS view
 for a Store cannot exceed that endpoint bound. Idle entries expire or are evicted
 under pressure. Active entries are not evicted. TLS verification uses the original

@@ -28,10 +28,11 @@ Stop the example with:
 docker compose --env-file /dev/null -f examples/quickstart/compose.yaml down
 ```
 
-Store routes are configured in `gateway.yaml` under `gateway.routes`. All listed
+Store routes are configured in `gateway.yaml` under `forwarding.routes`. Engine and Worker mount the same `store.yaml` and load it
+with `--store-config`. All listed
 routes are active. Restart Gateway after changing its configuration.
 
 For another Store, add its own database target, Engine, Worker and route. Replicas
-of one Store share that Store's `storage.name`; different Stores must not share a
+of one Store share that Store file's `name`; different Stores must not share a
 database target. The example's plaintext route is for the local Compose network.
 See [configuration, migration and scaling](../../docs/store-isolation.md).

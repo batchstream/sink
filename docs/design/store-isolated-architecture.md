@@ -81,7 +81,7 @@ DNS aliases, node addresses, or different credentials for the same database must
 A database target may contain multiple replica nodes. Existing namespace/dataset semantics remain unchanged and are not reinterpreted as Stores during this redesign.
 
 Use the globally unique Store name as the sole configured identity. Engine and Worker
-bind it through `storage.name`; Gateway routes and public requests carry the same
+bind it through Store file `name`; Gateway routes and public requests carry the same
 value as `store`. Replicas of one Store share that name, while different Stores
 must have different names. No additional database identifier is required.
 

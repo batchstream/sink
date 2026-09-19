@@ -1,0 +1,28 @@
+# Shared Store identity and dependency policy. Pass with --store-config.
+# This file is reused by Engine and Worker; restart both after policy changes.
+name: primary
+storage:
+  driver: mongodb # mongodb, elasticsearch, or opensearch.
+  mongodb:
+    uri: mongodb://mongo:27017/?replicaSet=rs0 # Example endpoint; required unless uri_file is set.
+    # uri_file: /etc/sink-secrets/mongodb-uri # Omit uri when using its file alternative.
+    metadata_field: __sink # Must match across roles and replicas.
+  # For elasticsearch/opensearch, replace mongodb with search:
+  # search:
+  #   endpoints: [http://opensearch:9200]
+  #   username_file: /etc/sink-secrets/search-username
+  #   password_file: /etc/sink-secrets/search-password
+  #   api_key_file: /etc/sink-secrets/search-api-key # Alternative to basic auth.
+kafka:
+  enabled: true # Disable for synchronous-only Stores; Worker requires true.
+  brokers: [kafka:19092]
+  topic:
+    name: sink-mutations
+    partitions: 4
+    replication_factor: 1
+    min_insync_replicas: 1
+    retention: 72h
+    max_record_bytes: 900KiB
+  dead_letter:
+    topic: sink-mutations.dlq # Defaults to <topic.name>.dlq.
+    retention: 720h

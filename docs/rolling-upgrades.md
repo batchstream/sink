@@ -1,5 +1,9 @@
 # Rolling upgrades and replica changes
 
+The role-config redesign changes the private forwarding version. Migrate from
+0.18 and older through a separate matching Gateway/Engine cluster. The compatible
+rolling procedure below does not apply across that boundary.
+
 Treat discovery withdrawal and RPC draining as separate intervals. Sink keeps
 established channels when DNS refreshes, and Gateway retains one Engine address
 snapshot for each Store throughout an accepted public batch. Stopping an Engine
@@ -37,7 +41,7 @@ The first inequality is an operational sizing model, not a hard bound during
 DNS outages. Include CoreDNS, NodeLocal DNSCache, forwarders and sidecars actually
 used on the path. A successful refresh may return an old cached answer; a failed
 lookup retains the last usable membership and follows resolver backoff. Lowering
-`gateway.dns_refresh_interval` does not invalidate upstream caches or guarantee a
+`forwarding.dns_refresh_interval` does not invalidate upstream caches or guarantee a
 maximum failed-lookup duration.
 
 For example, 5s publication + 30s cache + 30s refresh + 5s lookup + 30s request

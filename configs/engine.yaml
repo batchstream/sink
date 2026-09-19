@@ -1,115 +1,47 @@
-# Engine: synchronous RPC execution and optional Kafka publication for one Store.
-# Values are defaults unless marked as examples or derived defaults.
-# Capacities are per process, not cluster-wide or hard RSS limits.
+# Engine runtime configuration. Unknown and wrong-role fields are rejected.
 # Byte sizes accept KiB/MiB/GiB or integer bytes; durations accept ms/s/m/h.
-# Positive limits cannot be disabled with 0. Unknown fields are rejected.
-# Validate offline: sink config check --config configs/engine.yaml
-# See ../docs/configuration.md for constraints and supported storage drivers.
-mode: engine # Required process role.
+# Validate: sink config check --config configs/engine.yaml --store-config configs/stores/primary.yaml
+mode: engine
 
-# One shared process pool; max_bytes is normally detected automatically.
-memory:
-  # max_bytes: 256MiB # Optional explicit capacity, including completion reserve.
-  burst_percent: 10 # Completion reserve; 1..99; new requests use ordinary capacity.
-  wait_timeout: 2s # Response growth wait, bounded by the original request deadline.
-
-# Public RPC and gRPC health listener.
 grpc:
-  address: ":8080" # TCP listen address.
-  max_receive_message_bytes: 64MiB # Maximum encoded inbound gRPC message.
-  max_send_message_bytes: 64MiB # Maximum encoded outbound gRPC message.
-
-# Dedicated health listener; always available independently of Prometheus.
-health:
-  address: ":8081" # Listen address for /livez and /readyz; default :8081.
-
-# Separate optional Prometheus listener.
-prometheus:
-  enabled: false # Start /metrics on its own port; does not affect health; default false.
-  address: ":9090" # Metrics-only listen address, used only when enabled; default :9090.
-
-# Bind this process to one Store. Its replicas must use the same Store name.
-storage:
-  name: primary # Required globally unique Store name; shared by all its replicas.
-  driver: mongodb # Required: mongodb, elasticsearch, or opensearch.
-
-  # Credential-file alternatives below are optional; remove the matching inline key,
-  # even if empty, before enabling its _file variant. Paths must be absolute.
-  # Files contain 1 byte..1MiB of UTF-8 without NUL; spaces/newlines are used exactly.
-  # Files are read at startup and by config check; restart after credential rotation.
-
-  # MongoDB driver settings. Replace with the search block for a search driver.
-  mongodb:
-    uri: mongodb://mongodb:27017 # Example; complete connection URI; required unless uri_file is set.
-    # uri_file: /etc/sink-secrets/mongodb-uri # Example mounted URI file; omit uri when enabled.
-    metadata_field: __sink # Internal revision field; hidden from clients; default __sink.
-    # metadata_field cannot be _id or contain a dot, dollar sign, or NUL.
-    max_concurrent_writes: 64 # Concurrent conditional writes per process; >0; default 64.
-    max_concurrent_groups: 16 # Concurrent collection groups shared by all calls; >0; default 16.
-
-  # Search driver alternative: remove mongodb, set driver to elasticsearch or opensearch,
-  # and uncomment the search block. Leave nested file alternatives commented unless used.
-  # Basic auth requires both username and password; cannot be combined with an API key.
-  # search: # Backend endpoints and authentication for this Store only.
-  #   endpoints: [http://opensearch:9200] # Example HTTP(S) URLs; at least one required; no default.
-  #   username: "" # Optional basic-auth user; default empty; pair with password/password_file.
-  #   # username_file: /etc/sink-secrets/search-username # Example user file; omit username.
-  #   password: "" # Optional basic-auth password; default empty; pair with username/username_file.
-  #   # password_file: /etc/sink-secrets/search-password # Example password file; omit password.
-  #   api_key: "" # Optional API key; default empty; cannot be combined with basic auth.
-  #   # api_key_file: /etc/sink-secrets/search-api-key # Example API-key file; omit api_key.
-
-  # Optional asynchronous publication; enable it when deploying a Worker.
-  kafka:
-    enabled: false # Set true to accept asynchronous mutations; default false.
-    brokers: [kafka:9092] # Example bootstrap addresses; required when enabled.
-    # Source topic policy. Matching Engine/Worker replicas must use the same policy.
-    topic:
-      name: primary-mutations # Example; required when Kafka is enabled.
-      partitions: 4 # Exact source/DLQ partition count; changes need a drained migration.
-      replication_factor: 2 # Replicas per partition; requires enough Kafka brokers.
-      retention: 72h # Source topic retention; must be at least 1ms.
-      min_insync_replicas: 2 # Default min(2, replication_factor); cannot exceed it.
-      max_record_bytes: 900KiB # Encoded mutation plus key; <= producer buffer, <=64MiB.
-    # Buffer capacity for asynchronous mutation publication.
-    producer:
-      max_buffered_bytes: 64MiB # Additional to service budgets; maximum 1GiB.
-    # Engine reconciles DLQ policy; Worker delivers permanent failures there.
-    dead_letter:
-      topic: primary-mutations.dlq # Default <topic.name>.dlq; must differ from source.
-      retention: 720h # Independent DLQ retention (30 days); at least 1ms.
-
-# Request handling, synchronous execution, asynchronous publishing, and Lua.
-service:
-  # Per-original-request limits, including requests split/coalesced by Gateway/Engine.
-  request:
-    timeout: 30s # Overall unary/page deadline including waits; <=300s; caller may shorten.
-    max_read_bytes: 32MiB # Read/returned-write/native document budget; <=half gRPC send limit.
-    max_operations: 1000 # Maximum operations in one Read, Write, or Delete request.
-
-  # Cross-request batching; inputs also acquire the shared memory pool.
-  batching:
-    max_wait: 2ms # Collection delay starting with the first request in a batch.
-    max_operations: 1000 # Default request.max_operations; cannot exceed that limit.
-    max_bytes: 16MiB # Encoded batch target; a larger valid single RPC can run alone.
-    # Separate bounded queue for each batched method: Read, Write, and Delete.
-    queue:
-      max_operations: 10000 # Default max(10000, request.max_operations); >= batch target.
-      max_bytes: 128MiB # Default max(128MiB, grpc receive limit); >= receive/batch limits.
-
-  # Conditional mutation conflict handling and Lua limits, shared by Engine/Worker.
+  address: ":8080"
+  max_receive_message_bytes: 64MiB
+  max_send_message_bytes: 64MiB
+memory:
+  # max_bytes: 256MiB # Omit to auto-detect managed capacity; not an RSS cap.
+  burst_percent: 10 # Completion reserve, 1..99.
+  wait_timeout: 2s # Memory-growth contention bound; never an overall RPC deadline.
+batching:
+  max_wait: 2ms # Collection delay, not an execution timeout.
+  max_operations: 1000
+  max_bytes: 16MiB
+  queue:
+    max_operations: 10000
+    max_bytes: 128MiB
+producer:
+  max_buffered_bytes: 64MiB
+execution:
+  max_snapshot_bytes: 32MiB # Conditional-write snapshots, accumulated per execution owner.
+  max_output_bytes: 32MiB # Candidate documents, accumulated separately from snapshots.
+  mongodb: # Only valid with the mongodb driver; tune independently in each role.
+    max_concurrent_writes: 64
+    max_concurrent_groups: 16
   merge:
-    max_attempts: 3 # Revision-conflict attempts for Merge and folded conditional Put.
+    max_attempts: 3 # Revision-conflict attempts.
     lua:
-      timeout: 100ms # Maximum wall-clock time per Lua execution.
-      max_source_bytes: 64KiB # Maximum Lua program source bytes.
-      max_result_bytes: 16MiB # Current/input/result document bound, including expansion.
-      max_cached_programs: 256 # Compiled programs retained in this process's LRU cache.
-      max_instructions: 1000000 # Maximum VM instruction checkpoints per execution.
+      timeout: 100ms # Per-script execution protection, not an RPC deadline.
+      max_source_bytes: 64KiB
+      max_result_bytes: 16MiB # Per-document current/input/result bound.
+      max_cached_programs: 256
+      max_instructions: 1000000
 
-shutdown_timeout: 15s # Grace period for RPC shutdown and database disconnect.
+health:
+  address: ":8081"
+prometheus:
+  enabled: false
+  address: ":9090"
+shutdown_timeout: 15s
 
-# Internal diagnostics; restart the process after changes. See ../docs/logging.md.
 logging:
   level: warn # Minimum severity for all components: debug, info, warn, error; default warn.
   console: # Standard error output; no log files.

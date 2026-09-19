@@ -76,7 +76,7 @@ Sink metrics:
 | `sink_kafka_worker_delivery_seconds` | histogram | `store` | Oldest fetched-record age at source commit, including quarantined outcomes. |
 | `sink_kafka_worker_quarantined_total` | counter | `store` | Acknowledged DLQ publications, including replayed quarantine attempts. |
 
-Engine and Worker Store labels use the single `storage.name` captured at startup.
+Engine and Worker Store labels use the single Store file `name` captured at startup.
 Unknown or malformed request identities use bounded fallback labels instead of
 creating arbitrary time series. Gateway forwarding metrics use the configured
 route Store names; the Gateway splits cross-Store RPCs before Engine execution.

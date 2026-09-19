@@ -2,7 +2,7 @@
 
 The application uses one process-local capacity pool for Gateway, Engine or
 Worker. Logical per-RPC document limits remain independent of allocation
-ownership: increasing `service.request.max_read_bytes` no longer prepays that
+ownership: increasing `grpc.max_send_message_bytes` no longer prepays that
 maximum for every ordinary request.
 
 ## Capacity and admission
@@ -98,8 +98,7 @@ error, not zero load. Keep synchronous replica floors above zero and monitor
 process RSS separately. See [observability](../observability.md#memory-capacity-and-keda).
 
 The CLI always enables this policy. Older `gateway.max_bytes`, Gateway request
-count fields, `service.execution` and `service.publish` admission fields are
-accepted and validated for configuration compatibility but no longer gate
-requests. Application assembly always supplies the shared pool.
+count fields, `service.execution` and `service.publish` admission fields were previously
+accepted for compatibility; the role-config schema now rejects them. Application assembly always supplies the shared pool.
 Batch queue limits, request/response size limits, deadlines and backend resource
 limits remain active. Migrate autoscaling away from the old reservation gauges.

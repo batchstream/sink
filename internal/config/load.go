@@ -71,6 +71,7 @@ func resolve(file configFile) (Config, error) {
 		return loaded, errors.New("mode is required and must be gateway, engine, or worker")
 	}
 	v := validator{}
+	loaded.Logging = resolveLogging(file.Logging, &v)
 	if file.Memory.MaxBytes != nil {
 		loaded.Memory.MaxBytes = v.bytes("memory.max_bytes", file.Memory.MaxBytes, 256<<20, math.MaxInt)
 		if loaded.Memory.MaxBytes < 1024 {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/liran/sink/internal/config"
@@ -22,10 +23,11 @@ type healthPinger interface {
 }
 
 type configuredHealthCheck struct {
-	service string
-	pinger  healthPinger
-	mu      sync.Mutex
-	active  *healthAttempt
+	lastState atomic.Int32
+	service   string
+	pinger    healthPinger
+	mu        sync.Mutex
+	active    *healthAttempt
 }
 
 type configuredHealthResult struct {

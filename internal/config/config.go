@@ -21,6 +21,7 @@ const (
 
 // Config contains resolved runtime values. Construct it with Load or Decode.
 type Config struct {
+	Logging         Logging
 	Memory          Memory
 	Gateway         Gateway
 	Mode            Mode

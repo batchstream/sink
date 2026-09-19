@@ -31,12 +31,18 @@ never replace record attributes.
 | `environment`, `cluster`, `namespace`, `pod`, `node` | Optional deployment identity; allowlisted configuration or Downward API values |
 | `method`, `phase`, `reason`, `status`, `error_code`, `error_type` | Bounded diagnostic classifications; no raw request/driver error messages |
 | `duration_ms`, `queue_ms`, `operations`, `failed`, `bytes`, `attempt` | Numeric diagnostic values encoded as strings for the current consumer |
-| `topic`, `partition`, `offset` | Kafka location; offset is a search field, never a metric label |
+| `topic`, `partition`, `offset`, `source_topic`, `source_partition`, `source_offset` | DLQ and original Kafka locations; offsets are search fields, never metric labels |
+| `dropped`, `suppressed` | Cumulative SDK queue loss and rate-limit suppression counts |
 
 High-cardinality values (instance, Pod, offset) are for filtering and investigation,
-not metric labels or dashboard aggregation dimensions. Do not log record keys,
-document bodies, Lua source, native commands, credentials, connection URLs, or
-full configuration. Bound message and attribute sizes and count. Drop unapproved
+not metric labels or dashboard aggregation dimensions. Document bodies are omitted
+by default. For severe final failures, `logging.failure_body: true` permits a
+bounded diagnostic document **in body only**, never in labels. The first supported
+event is `kafka_quarantined`, after acknowledged DLQ publication. JSON is readable;
+BSON uses base64 with an encoding marker. Truncation is explicit. No payload is
+decoded/formatted when this feature is disabled or the event is rate limited.
+Do not log record keys, Lua source, native commands, credentials, connection URLs,
+or full configuration. Bound message and attribute sizes and count. Drop unapproved
 attributes at the common handler so future call sites cannot grow the ES schema.
 
 ## Logging behavior
@@ -49,7 +55,8 @@ attributes at the common handler so future call sites cannot grow the ES schema.
   dependency state changes, retries and dead letters. Debug adds successful RPC,
   batch dispatch, write-phase and Kafka publish/consume summaries. Info records
   lifecycle and recovery. Do not emit a success log per document.
-- Repeated warn/error events are rate limited by a bounded event/component key;
+- Component-specific thresholds may override the default warn level. Repeated
+  warn/error events are rate limited by a bounded event/component/level key;
   suppressed counts are reported. Debug is opt-in and should be enabled briefly.
 - Business goroutines never wait for OTLP network I/O. Use the official slog
   bridge and log SDK batching with finite queue/batch/export time limits. Console
@@ -72,3 +79,6 @@ survival through the ingestion projection, no trace/span data, label allowlistin
 size bounds, rate limiting, actual local gRPC and HTTP OTLP receivers, Collector
 failure/queue pressure, bounded shutdown, and request/batch diagnostic events.
 Default tests must not contact EKS, Kafka, Elasticsearch or a live Collector.
+
+See [the runtime logging reference](../logging.md) for defaults, configuration,
+deployment identity, loss behavior and troubleshooting.

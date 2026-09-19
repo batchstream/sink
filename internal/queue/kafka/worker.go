@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/liran/sink/internal/logging"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
 	"github.com/liran/sink/internal/queue"
 	"github.com/liran/sink/internal/storage"
@@ -219,7 +220,7 @@ func (w *Worker) Run(ctx context.Context) error {
 			// called while rebalance callbacks are blocked, after commits finish.
 			w.rewind(retained)
 			w.metrics.ObserveWorkerRecovery(w.store)
-			slog.Warn("Kafka batch retained for retry", "store", w.store, "error", err)
+			slog.Warn("Kafka batch retained for retry", "component", "kafka", "event", "kafka_batch_retained", "store", w.store, "error_type", logging.ErrorType(err))
 		}
 		w.client.AllowRebalance()
 		if err != nil {
@@ -279,6 +280,7 @@ func (w *Worker) rewind(records []*kgo.Record) {
 }
 
 func (w *Worker) handleFetches(ctx context.Context, fetches kgo.Fetches) ([]*kgo.Record, error) {
+	started := time.Now()
 	if fetches.IsClientClosed() {
 		return nil, errors.New("consume Kafka mutations: client is closed")
 	}
@@ -286,9 +288,10 @@ func (w *Worker) handleFetches(ctx context.Context, fetches kgo.Fetches) ([]*kgo
 	for _, fetchError := range fetchErrors {
 		slog.Warn(
 			"Kafka fetch failed; consumer will continue polling",
+			"component", "kafka", "event", "kafka_fetch_failed", "store", w.store,
 			"topic", fetchError.Topic,
 			"partition", fetchError.Partition,
-			"error", fetchError.Err,
+			"error_type", logging.ErrorType(fetchError.Err),
 		)
 	}
 	records := fetches.Records()
@@ -303,6 +306,10 @@ func (w *Worker) handleFetches(ctx context.Context, fetches kgo.Fetches) ([]*kgo
 		}
 	}
 	w.metrics.SetWorkerPending(w.store, oldest, len(records))
+	defer func() {
+		slog.Debug("Kafka consumption round completed", "component", "kafka", "event", "kafka_consumed", "store", w.store,
+			"operations", len(records), "duration_ms", time.Since(started).Milliseconds())
+	}()
 	mutations := make([]queue.Mutation, 0, len(records))
 	mutationIndexes := make([]int, 0, len(records))
 	finalErrors := make([]error, len(records))
@@ -423,6 +430,7 @@ func (w *Worker) handleWithRetry(ctx context.Context, mutations []queue.Mutation
 		batch = batch[:next]
 		pending = pending[:next]
 		w.metrics.ObserveKafkaRetry(w.store, next)
+		slog.Warn("Kafka mutations scheduled for retry", "component", "kafka", "event", "kafka_retry", "store", w.store, "operations", next, "attempt", attempt)
 		delay := jitteredBackoff(backoff)
 		timer := time.NewTimer(delay)
 		select {
@@ -452,6 +460,7 @@ func jitteredBackoff(backoff time.Duration) time.Duration {
 
 func (w *Worker) publishDeadLetters(ctx context.Context, records []*kgo.Record, results []error) error {
 	deadLetters := make([]*kgo.Record, 0)
+	failures := make(map[*kgo.Record]error)
 	for index, result := range results {
 		if result == nil {
 			continue
@@ -473,6 +482,7 @@ func (w *Worker) publishDeadLetters(ctx context.Context, records []*kgo.Record, 
 			},
 		}
 		deadLetters = append(deadLetters, record)
+		failures[record] = result
 	}
 	if len(deadLetters) == 0 {
 		return nil
@@ -485,7 +495,24 @@ func (w *Worker) publishDeadLetters(ctx context.Context, records []*kgo.Record, 
 			continue
 		}
 		w.metrics.ObserveQuarantined(w.store)
-		slog.Error("Kafka mutation quarantined", "store", w.store, "dead_letter_topic", w.deadLetterTopic, "partition", result.Record.Partition, "offset", result.Record.Offset)
+		body := quarantinedDocument{envelope: result.Record.Value}
+		failure := failures[result.Record]
+		code, _ := storage.ErrorDetails(failure)
+		var sourceTopic, sourcePartition, sourceOffset string
+		for _, header := range result.Record.Headers {
+			switch header.Key {
+			case "sink-source-topic":
+				sourceTopic = string(header.Value)
+			case "sink-source-partition":
+				sourcePartition = string(header.Value)
+			case "sink-source-offset":
+				sourceOffset = string(header.Value)
+			}
+		}
+		slog.Error("Kafka mutation quarantined", "component", "kafka", "event", "kafka_quarantined", "store", w.store,
+			"topic", w.deadLetterTopic, "partition", result.Record.Partition, "offset", result.Record.Offset, "failure_body", body,
+			"source_topic", sourceTopic, "source_partition", sourcePartition, "source_offset", sourceOffset,
+			"error_code", code.String(), "error_type", logging.ErrorType(failure))
 	}
 	joined := errors.Join(produceErrors...)
 	if joined == nil {
@@ -522,7 +549,7 @@ func (w *Worker) Close() {
 	ctx, cancel := context.WithTimeout(context.Background(), w.shutdownTimeout)
 	defer cancel()
 	if err := w.client.LeaveGroupContext(ctx); err != nil {
-		slog.Warn("Kafka worker leave group did not complete before shutdown", "store", w.store, "error", err)
+		slog.Warn("Kafka worker leave group did not complete before shutdown", "component", "kafka", "event", "kafka_shutdown_incomplete", "store", w.store, "error_type", logging.ErrorType(err))
 		// Also cancel internal metadata, coordinator and fetch-session work.
 		// Close waits for those goroutines even after LeaveGroup times out.
 		w.cancelClient()

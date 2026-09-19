@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -133,6 +134,13 @@ func (p *Publisher) Publish(ctx context.Context, req queue.PublishRequest) (queu
 		accepted++
 	}
 	p.metrics.ObserveKafkaPublish(p.store, time.Since(started), accepted, len(response.Results)-accepted)
+	level := slog.LevelDebug
+	if accepted != len(response.Results) {
+		level = slog.LevelWarn
+	}
+	slog.Log(ctx, level, "Kafka publication completed", "component", "kafka", "event", "kafka_published",
+		"store", p.store, "topic", p.topic, "operations", len(response.Results), "failed", len(response.Results)-accepted,
+		"duration_ms", time.Since(started).Milliseconds())
 	return response, nil
 }
 

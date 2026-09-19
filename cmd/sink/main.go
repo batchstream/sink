@@ -15,6 +15,7 @@ import (
 	"github.com/liran/sink/internal/app"
 	"github.com/liran/sink/internal/config"
 	"github.com/liran/sink/internal/gateway"
+	"github.com/liran/sink/internal/logging"
 )
 
 var version = "dev"
@@ -22,7 +23,10 @@ var version = "dev"
 func main() {
 	err := executeCommand(os.Args[1:], os.Stdout, os.Stderr)
 	if err != nil {
-		slog.Error("sink stopped", "error", err)
+		var reported *reportedError
+		if !errors.As(err, &reported) {
+			slog.Error("sink stopped", "error", err)
+		}
 		os.Exit(1)
 	}
 }
@@ -89,13 +93,32 @@ func parseConfigPath(args []string) (string, error) {
 	return trimmed, nil
 }
 
-func run(configPath string) error {
+type reportedError struct{ error }
+
+func run(configPath string) (runErr error) {
 	loaded, err := config.Load(configPath)
 	if err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	logOptions := logging.Options{Config: loaded.Logging, Role: string(loaded.Mode), Store: loaded.Storage.Name, Version: version}
+	logs, err := logging.New(ctx, logOptions)
+	if err != nil {
+		return err
+	}
+	previous := slog.Default()
+	logs.Install()
+	defer func() {
+		if runErr != nil {
+			slog.Error("Sink stopped after an unrecoverable error", "component", "runtime", "event", "process_failed", "error_type", logging.ErrorType(runErr))
+			runErr = &reportedError{error: runErr}
+		} else {
+			slog.Info("Sink stopped", "component", "runtime", "event", "process_stopped")
+		}
+		logs.Close()
+		slog.SetDefault(previous)
+	}()
 
 	options := app.Options{Config: loaded, Version: version}
 	running, err := app.New(ctx, options)
@@ -103,6 +126,6 @@ func run(configPath string) error {
 		return err
 	}
 	defer running.Close()
-	slog.Info("starting sink", "version", version, "mode", loaded.Mode)
+	slog.Info("Starting Sink", "component", "runtime", "event", "process_started")
 	return running.Run(ctx)
 }

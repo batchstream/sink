@@ -1,6 +1,12 @@
 package app
 
-import "context"
+import (
+	"context"
+	"log/slog"
+	"strings"
+
+	"github.com/liran/sink/internal/logging"
+)
 
 type healthAttempt struct {
 	done chan struct{}
@@ -25,6 +31,25 @@ func (h *configuredHealthCheck) check(ctx context.Context) error {
 			probeContext, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
 			defer cancel()
 			attempt.err = h.pinger.Ping(probeContext)
+			state := int32(1)
+			if attempt.err != nil {
+				state = 2
+			}
+			previous := h.lastState.Swap(state)
+			if previous != state {
+				dependency := "storage"
+				if strings.HasPrefix(h.service, "sink.kafka.") {
+					dependency = "kafka"
+				}
+				if strings.HasPrefix(h.service, "sink.worker.") {
+					dependency = "worker"
+				}
+				if state == 2 {
+					slog.Warn("Dependency unavailable", "component", "health", "event", "dependency_unavailable", "reason", dependency, "error_type", logging.ErrorType(attempt.err))
+				} else if previous == 2 {
+					slog.Info("Dependency recovered", "component", "health", "event", "dependency_recovered", "reason", dependency)
+				}
+			}
 			h.mu.Lock()
 			h.active = nil
 			close(attempt.done)

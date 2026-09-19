@@ -1,5 +1,8 @@
 # Metrics and health
 
+For default warn-level diagnostic logs and optional OTLP export, see the
+[logging reference](logging.md). Logs do not depend on Prometheus being enabled.
+
 Gateway has its own forwarding metrics and process readiness. Engine keeps the
 existing execution metrics; Worker keeps its Kafka metrics. See the
 [role-specific scaling and health contract](store-isolation.md#readiness-metrics-and-scaling).

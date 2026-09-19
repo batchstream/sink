@@ -280,8 +280,7 @@ func reconcileReplicationFactors(
 		}
 		slog.Info(
 			"reassigning Kafka topic replicas",
-			"partitions", assignmentCount,
-			"target_replication_factor", opts.ReplicationFactor,
+			"component", "kafka", "event", "kafka_reassigning", "operations", assignmentCount,
 		)
 
 		responses, alterErr := admin.AlterPartitionAssignments(ctx, assignments)

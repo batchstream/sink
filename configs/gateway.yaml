@@ -48,3 +48,10 @@ gateway: # Stateless routing, bounded forwarding, and lazy downstream connection
   max_fanout: 8 # Concurrent Store groups per RPC; <=128; budget-sensitive groups serialize.
 
 shutdown_timeout: 15s # Grace period for draining public RPCs and closing connections.
+
+# Default internal diagnostics; configure logging.otlp to export to a Collector.
+logging:
+  level: warn
+  console:
+    enabled: true
+    format: json

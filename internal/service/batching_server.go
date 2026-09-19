@@ -19,6 +19,7 @@ import (
 
 const (
 	defaultBatchMaxWait             = 2 * time.Millisecond
+	defaultBatchMaxOperations       = 32
 	defaultBatchMaxBytes            = 16 << 20
 	defaultBatchMaxQueuedOperations = 10_000
 	defaultBatchMaxQueuedBytes      = 128 << 20
@@ -124,7 +125,7 @@ func normalizeBatchingOptions(server *Server, opts BatchingOptions) (BatchingOpt
 		opts.MaxWait = defaultBatchMaxWait
 	}
 	if opts.MaxOperations == 0 {
-		opts.MaxOperations = defaultMaxOperations
+		opts.MaxOperations = defaultBatchMaxOperations
 	}
 	if opts.MaxBytes == 0 {
 		opts.MaxBytes = defaultBatchMaxBytes
@@ -141,7 +142,7 @@ func normalizeBatchingOptions(server *Server, opts BatchingOptions) (BatchingOpt
 	}
 	if opts.MaxQueuedOperations < opts.MaxOperations {
 		var empty BatchingOptions
-		return empty, errors.New("create synchronous batching server: queued operation limit must cover one server request and one batch")
+		return empty, errors.New("create synchronous batching server: queued operation limit must cover one batch")
 	}
 	if opts.MaxQueuedBytes < opts.MaxBytes {
 		var empty BatchingOptions

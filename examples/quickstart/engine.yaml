@@ -9,7 +9,7 @@ memory:
   wait_timeout: 2s # Memory-growth contention bound; never an overall RPC deadline.
 batching:
   max_wait: 2ms # Collection delay, not an execution timeout.
-  max_operations: 1000
+  max_operations: 32 # Measured small-document starting point; not the public RPC limit.
   max_bytes: 16MiB
   queue:
     max_operations: 10000

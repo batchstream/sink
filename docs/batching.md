@@ -60,7 +60,8 @@ new single-store request that would cross its queue's limit fails with gRPC
 `RESOURCE_EXHAUSTED` and is not applied. Requests canceled before dispatch are
 omitted. Once a batch is dispatched, other live callers in that batch continue
 even if one caller cancels. Once all callers cancel, execution is cancelled too.
-Execution is capped by the server request timeout even without caller deadlines.
+Execution follows the callers' deadlines and cancellation; there is no default
+whole-request timeout.
 Dispatched micro-batches acquire known working allocations from the shared
 `memory` pool. Response growth has priority over new arrivals and may borrow its
 completion reserve. Request entry fails if ordinary capacity is unavailable;
@@ -82,3 +83,28 @@ scheduling, and serialization overhead and are therefore more efficient when
 the caller already has several records available.
 
 See the [configuration reference](configuration.md) for all settings.
+
+## Default selection
+
+`batching.max_operations` defaults to **32**, with a **2 ms** collection wait.
+These are a starting point for small documents and modest concurrency, based on
+the [historical Kubernetes measurements](https://github.com/batchstream/sink/blob/ec7264f25690088aac767a027d61b17753d08d99/docs/production-sizing.md#observed-small-document-ceilings)
+and their [raw results](https://github.com/batchstream/sink/blob/ec7264f25690088aac767a027d61b17753d08d99/benchmarks/kubernetes/results/eks-arm64.csv).
+At 128 clients, the 32-operation target improved both throughput and P99 over
+128 for MongoDB and OpenSearch. At 512 clients, 128 performed better. These
+measurements used the earlier shared-server architecture and fixed CPU/memory
+budgets; they do not establish a universal optimum for the current Engine.
+
+The batch target is independent of Gateway's **1,000-operation** public RPC
+limit and each method's **10,000-operation** waiting queue. A valid explicit
+RPC with more than 32 operations executes alone; it is not rejected or split
+into different public requests by this default change.
+
+`memory.burst_percent` remains **10**, the smallest tested completion reserve
+that finished every admitted request in the
+[allocator saturation experiment](https://github.com/batchstream/sink-production-suite/blob/main/benchmarks/memory-admission/README.md).
+The remaining queue, byte, backend-concurrency and Kafka-consumer defaults are
+capacity or protection settings without a comparable general tuning result.
+Historical workload-specific response caps and GC settings are not carried over
+as universal defaults. Tune these separately against actual document sizes,
+resource limits and latency targets.

@@ -150,7 +150,7 @@ use the lowercase spelling shown below. Storage names are also case-sensitive.
 | `request.max_operations` | positive integer | No | `1000` | Integer greater than `0` | Maximum operation count accepted in one Read, Write, or Delete batch request. |
 | `execution.merge.max_attempts` | positive integer | No | `3` | Integer greater than `0` | Maximum revision-conflict attempts for Merge and folded conditional Put chains. |
 | `batching.max_wait` | duration string | No | `2ms` | Positive Go duration within the bounds below | Maximum collection delay measured from the first request in a batch. |
-| `batching.max_operations` | positive integer | No | `1000` | Positive integer | Operation target for one automatically formed batch. |
+| `batching.max_operations` | positive integer | No | `32` | Positive integer | Operation target for one automatically formed batch; a larger valid RPC still executes alone. See [default selection](batching.md#default-selection). |
 | `batching.max_bytes` | byte size | No | `16MiB` | Size greater than `0B` | Encoded-byte target for one automatically formed batch; one larger valid RPC still runs alone. |
 | `batching.queue.max_operations` | positive integer | No | max(`10000`, `batching.max_operations`) | Integer at least `batching.max_operations` | Maximum operations waiting in each method queue. |
 | `batching.queue.max_bytes` | byte size | No | max(`128MiB`, `grpc.max_receive_message_bytes`) | Size at least `grpc.max_receive_message_bytes` and `batching.max_bytes` | Maximum encoded request bytes waiting in each method queue. |

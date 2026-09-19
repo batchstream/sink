@@ -42,7 +42,7 @@ func resolveService(file configFile, grpc GRPC, v *validator) Service {
 func resolveBatching(file batchingFile, grpc GRPC, v *validator) Batching {
 	var loaded Batching
 	loaded.MaxWait = v.duration("batching.max_wait", file.MaxWait, 2*time.Millisecond)
-	loaded.MaxOperations = v.integer("batching.max_operations", file.MaxOperations, 1000)
+	loaded.MaxOperations = v.integer("batching.max_operations", file.MaxOperations, 32)
 	loaded.MaxBytes = v.bytes("batching.max_bytes", file.MaxBytes, 16<<20, math.MaxInt)
 	loaded.Queue.MaxOperations = v.integer("batching.queue.max_operations", file.Queue.MaxOperations, max(10_000, loaded.MaxOperations))
 	loaded.Queue.MaxBytes = v.bytes("batching.queue.max_bytes", file.Queue.MaxBytes, max(128<<20, grpc.MaxReceiveMessageBytes), math.MaxInt)

@@ -12,10 +12,7 @@ import (
 	"github.com/liran/sink/internal/storage"
 )
 
-const (
-	defaultMaxOperations    = 1000
-	defaultMaxMergeAttempts = 3
-)
+const defaultMaxMergeAttempts = 3
 
 type Options struct {
 	Memory               *capacity.Pool

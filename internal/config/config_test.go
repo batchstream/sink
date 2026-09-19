@@ -54,7 +54,7 @@ func TestComponentDefaults(t *testing.T) {
 	if engine.Service.Request.Timeout != 0 || engine.Service.Request.MaxOperations != 0 || engine.Service.Request.MaxReadBytes != 0 {
 		t.Fatal("Engine acquired public request limits")
 	}
-	if engine.Service.Batching.MaxOperations != 1000 || engine.Service.Batching.MaxWait != 2*time.Millisecond || engine.Service.Batching.Queue.MaxBytes != 128<<20 {
+	if engine.Service.Batching.MaxOperations != 32 || engine.Service.Batching.MaxWait != 2*time.Millisecond || engine.Service.Batching.Queue.MaxBytes != 128<<20 {
 		t.Fatal("batch defaults changed")
 	}
 	if engine.Service.Execution.MaxSnapshotBytes != 32<<20 || engine.Service.Execution.MaxOutputBytes != 32<<20 || engine.Service.Merge.Lua.MaxResultBytes != 16<<20 {

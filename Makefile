@@ -55,10 +55,20 @@ lint-docs:
 	$(LYCHEE) --offline --include-fragments --no-progress '*.md' 'configs/*.md' 'docs/**/*.md' 'examples/**/*.md' '.github/*.md'
 
 # Core-package floors are kept separately from generated code and examples.
-.PHONY: test-coverage
+.PHONY: test-coverage benchmark-unit fuzz-unit
 COVERAGE_DIR ?= .reports/coverage
 test-coverage:
 	@mkdir -p $(COVERAGE_DIR)
 	go test -mod=readonly -race -covermode=atomic -coverpkg=./... -coverprofile=$(COVERAGE_DIR)/unit.out -count=1 -timeout=10m -json ./... > $(COVERAGE_DIR)/unit.jsonl
 	python3 -m unittest discover -s scripts -p 'test_coverage.py'
 	python3 scripts/check-coverage.py --profile $(COVERAGE_DIR)/unit.out --minimums .github/coverage-minimums.json --report $(COVERAGE_DIR)/summary.md
+
+BENCH ?= .
+BENCHTIME ?= 1s
+FUZZ_TIME ?= 30s
+
+benchmark-unit:
+	go test -mod=readonly ./internal/... -run '^$$' -bench '$(BENCH)' -benchtime=$(BENCHTIME) -benchmem -count=1 -timeout=10m
+
+fuzz-unit:
+	FUZZ_TIME=$(FUZZ_TIME) bash scripts/test-fuzz.sh

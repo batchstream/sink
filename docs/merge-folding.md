@@ -181,7 +181,7 @@ kept the same backend operation count but measured extra lookup/admission work:
 The benefit therefore depends on repetition, document size, backend latency,
 and contention. Do not describe folding as a speedup for every workload.
 
-Reproduce with `GOMAXPROCS=4 bash scripts/server-go.sh test ./internal/service -run '^$'
+Reproduce with `GOMAXPROCS=4 go test ./internal/service -run '^$'
 -bench '^BenchmarkRecordFolding$' -benchtime=30x -count=1`, running the same
 benchmark and test helpers against the baseline and candidate code. For the CPU
 comparison select `BenchmarkRecordFolding/(replace|read|delete)/(hot|unique)/io=0s`
@@ -209,7 +209,7 @@ from one run. Hot allocations dropped from 40,697 to 39,373 per batch and retain
 allocation volume from about 5.34 MB to 5.24 MB. Lua execution still dominates
 the memory-only workload. Quantiles from 100 samples are sensitive to scheduling.
 
-Reproduce with `GOMAXPROCS=4 bash scripts/server-go.sh test ./internal/service -run '^$'
+Reproduce with `GOMAXPROCS=4 go test ./internal/service -run '^$'
 -bench '^BenchmarkMergeFolding$' -benchtime=100x -count=1`, copying the same
 benchmark and test helpers into a detached baseline worktree. Race tests separately
 cover concurrent servers, whole-run conflict retries, cancellation, failed commits,
@@ -241,5 +241,3 @@ rollout must observe attempt exhaustion, CPU/GC, and tail latency under the actu
 replica count and unchanged retry budget. The synchronous store batcher serializes
 its own dispatched batches; this direct-core test deliberately exercises contention
 that can also occur between replicas. No global ordering or fencing is introduced.
-
-Benchmark sources and runners now live in [sink-production-suite](https://github.com/batchstream/sink-production-suite/blob/main/server-tests/README.md). Run the reproduction commands from that checkout with `SINK_SERVER_DIR` set to the candidate.

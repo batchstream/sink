@@ -43,8 +43,9 @@ workflow/link checks, protobuf generation, race tests, and qualification.
 
 - Keep the change focused and explain the observed problem and resulting behavior.
 - Add a regression test when fixing behavior; use disposable backends for
-  integration tests in the production-suite repository. Keep only component
-  unit tests in Sink; the suite owns all benchmarks, fuzzing and transport tests.
+  integration tests in the production-suite repository. Keep component unit
+  tests, input fuzzers and unit microbenchmarks in Sink; the suite owns transport
+  and backend integrations, cross-component benchmarks and load tests.
 - Update affected documentation and examples when configuration or APIs change.
 - Keep generated protobuf files consistent with the protocol. Coordinate
   public contract changes with the Go client and public suite.

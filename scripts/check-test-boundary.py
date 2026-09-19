@@ -7,7 +7,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 forbidden = re.compile(
-    r"^func (?:Benchmark|Fuzz)\w*\(|^//go:build.*(?:integration|memoryexperiment)|"
+    r"^//go:build.*(?:integration|memoryexperiment)|"
     r"\b(?:grpc\.NewServer|bufconn\.Listen|net\.Listen(?:Packet)?)\(",
     re.MULTILINE,
 )
@@ -23,4 +23,4 @@ for source in (root / "scripts").glob("test-*integration.sh"):
     failures.append(str(source.relative_to(root)))
 if failures:
     raise SystemExit("Move non-unit qualification to sink-production-suite: " + ", ".join(failures))
-print("Sink test boundary: unit tests only")
+print("Sink test boundary: component unit tests, input fuzzers, and microbenchmarks")

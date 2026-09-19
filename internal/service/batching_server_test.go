@@ -50,6 +50,43 @@ type deleteBatchResult struct {
 	err      error
 }
 
+type latencyStorage struct {
+	backend     storage.Storage
+	delay       time.Duration
+	concurrency chan struct{}
+}
+
+func (s *latencyStorage) Ping(ctx context.Context) error {
+	return s.backend.Ping(ctx)
+}
+
+func (s *latencyStorage) Read(ctx context.Context, req storage.ReadRequest) (storage.ReadResponse, error) {
+	select {
+	case s.concurrency <- struct{}{}:
+		defer func() { <-s.concurrency }()
+	case <-ctx.Done():
+		var response storage.ReadResponse
+		return response, ctx.Err()
+	}
+	timer := time.NewTimer(s.delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return s.backend.Read(ctx, req)
+	case <-ctx.Done():
+		var response storage.ReadResponse
+		return response, ctx.Err()
+	}
+}
+
+func (s *latencyStorage) Write(ctx context.Context, req storage.WriteRequest) (storage.WriteResponse, error) {
+	return s.backend.Write(ctx, req)
+}
+
+func (s *latencyStorage) Delete(ctx context.Context, req storage.DeleteRequest) (storage.DeleteResponse, error) {
+	return s.backend.Delete(ctx, req)
+}
+
 func (s *countingStorage) Ping(ctx context.Context) error {
 	return s.backend.Ping(ctx)
 }
@@ -584,6 +621,64 @@ func TestBatchingServerPreservesConcurrentMergeUpdates(t *testing.T) {
 	}
 }
 
+func BenchmarkSingleOperationReads(b *testing.B) {
+	b.Run("direct", func(b *testing.B) {
+		backend := &latencyStorage{
+			backend:     memory.New(),
+			delay:       500 * time.Microsecond,
+			concurrency: make(chan struct{}, 8),
+		}
+		observed := &countingStorage{backend: backend}
+		server := newTestServer(b, observed, nil)
+		request := readRequest("benchmark")
+		b.SetParallelism(16)
+		b.ResetTimer()
+		b.RunParallel(func(parallel *testing.PB) {
+			for parallel.Next() {
+				if _, err := server.Read(context.Background(), request); err != nil {
+					b.Errorf("Read() error = %v", err)
+				}
+			}
+		})
+		b.StopTimer()
+		b.ReportMetric(float64(observed.readCalls.Load())/float64(b.N), "storage_calls/op")
+	})
+
+	b.Run("server_batched", func(b *testing.B) {
+		backend := &latencyStorage{
+			backend:     memory.New(),
+			delay:       500 * time.Microsecond,
+			concurrency: make(chan struct{}, 8),
+		}
+		observed := &countingStorage{backend: backend}
+		core := newTestServer(b, observed, nil)
+		options := service.BatchingOptions{
+			MaxWait:             100 * time.Microsecond,
+			MaxOperations:       1000,
+			MaxBytes:            16 << 20,
+			MaxQueuedOperations: 10_000,
+			MaxQueuedBytes:      128 << 20,
+		}
+		server, err := service.NewBatchingServer(core, options)
+		if err != nil {
+			b.Fatalf("NewBatchingServer() error = %v", err)
+		}
+		defer server.Close()
+		request := readRequest("benchmark")
+		b.SetParallelism(16)
+		b.ResetTimer()
+		b.RunParallel(func(parallel *testing.PB) {
+			for parallel.Next() {
+				if _, err := server.Read(context.Background(), request); err != nil {
+					b.Errorf("Read() error = %v", err)
+				}
+			}
+		})
+		b.StopTimer()
+		b.ReportMetric(float64(observed.readCalls.Load())/float64(b.N), "storage_calls/op")
+	})
+}
+
 func errUnexpectedStatus(value any) error {
 	err := fmt.Errorf("unexpected operation status %v", value)
 	return err
@@ -643,6 +738,10 @@ func assertNoBatchErrors(t *testing.T, errors <-chan error) {
 			t.Fatalf("batched RPC error = %v", err)
 		}
 	}
+}
+
+func (s *latencyStorage) BatchKey(address storage.Address) (string, error) {
+	return testuri.BatchKey(address)
 }
 
 func (s *countingStorage) BatchKey(address storage.Address) (string, error) {

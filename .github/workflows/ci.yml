@@ -17,7 +17,7 @@ jobs:
   reliability-gate:
     name: Sink reliability gate
     if: always()
-    needs: [repository, test, image, release-assets, qualification]
+    needs: [repository, test, unit-benchmarks, image, release-assets, qualification]
     runs-on: ubuntu-latest
     steps:
       - name: Require every qualification job to pass
@@ -82,6 +82,31 @@ jobs:
       - name: Run lint and enforce unit-test ownership
         run: make lint
 
+  unit-benchmarks:
+    name: Unit fuzzing and microbenchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Fuzz malformed envelope and BSON inputs
+        run: make fuzz-unit
+      - name: Exercise component microbenchmarks
+        run: make benchmark-unit BENCHTIME=1x
+      - name: Preserve unit fuzz evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unit-fuzz-evidence
+          path: .reports/fuzz/
+          include-hidden-files: true
+          retention-days: 14
+
   image:
     name: Build container image
     runs-on: ubuntu-latest
@@ -122,8 +147,8 @@ jobs:
 
   qualification:
     name: External test suite
-    uses: batchstream/sink-production-suite/.github/workflows/server-qualification.yml@4ce25596bddbcf743d45421af00845a64aef8a80
+    uses: batchstream/sink-production-suite/.github/workflows/server-qualification.yml@f22863d37c81d4a8976b2229f68d245110b5ab51
     with:
-      suite_ref: 4ce25596bddbcf743d45421af00845a64aef8a80
+      suite_ref: f22863d37c81d4a8976b2229f68d245110b5ab51
       sink_ref: ${{ github.event.pull_request.head.sha || github.sha }}
       sdk_ref: ${{ github.head_ref || 'main' }}

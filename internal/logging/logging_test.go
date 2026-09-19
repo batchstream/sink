@@ -2,6 +2,7 @@ package logging
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -23,7 +24,6 @@ func (b *lockedBuffer) Write(p []byte) (int, error) {
 	defer b.mu.Unlock()
 	return b.data.Write(p)
 }
-
 func (b *lockedBuffer) String() string { b.mu.Lock(); defer b.mu.Unlock(); return b.data.String() }
 
 func testConfig(t *testing.T) config.Logging {
@@ -179,6 +179,15 @@ func TestHandlerBoundsAndDiscardsNestedFields(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "secret") || strings.Contains(output.String(), "private") {
 		t.Fatal("unapproved field escaped")
+	}
+}
+
+func BenchmarkDisabledDebug(b *testing.B) {
+	h := &handler{level: slog.LevelWarn, minimum: slog.LevelWarn}
+	logger := slog.New(h)
+	b.ReportAllocs()
+	for b.Loop() {
+		logger.DebugContext(context.Background(), "batch", "operations", 100)
 	}
 }
 

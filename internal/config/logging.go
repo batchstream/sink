@@ -11,7 +11,6 @@ import (
 )
 
 type Logging struct {
-	Components   map[string]string
 	FailureBody  bool
 	MaxBodyBytes int
 	Level        string
@@ -38,7 +37,6 @@ type LogOTLP struct {
 }
 
 type loggingFile struct {
-	Components   map[string]string `yaml:"components"`
 	FailureBody  bool              `yaml:"failure_body"`
 	MaxBodyBytes *byteSize         `yaml:"max_body_bytes"`
 	Level        string            `yaml:"level"`
@@ -70,19 +68,6 @@ type logTLSFile struct {
 
 func resolveLogging(file loggingFile, v *validator) Logging {
 	result := Logging{Level: valueOrDefault(file.Level, "warn"), Labels: file.Labels}
-	result.Components = file.Components
-	for component, level := range file.Components {
-		switch component {
-		case "runtime", "rpc", "batcher", "execution", "kafka", "storage", "health", "logging":
-		default:
-			v.reject(errors.New("logging.components contains an unsupported component"))
-		}
-		switch level {
-		case "debug", "info", "warn", "error":
-		default:
-			v.reject(errors.New("logging.components levels must be debug, info, warn, or error"))
-		}
-	}
 	result.FailureBody = file.FailureBody
 	result.MaxBodyBytes = v.bytes("logging.max_body_bytes", file.MaxBodyBytes, 16<<10, 64<<10)
 	if result.MaxBodyBytes < 1024 {
@@ -94,7 +79,7 @@ func resolveLogging(file loggingFile, v *validator) Logging {
 		v.reject(errors.New("logging.level must be debug, info, warn, or error"))
 	}
 	result.Console.Enabled = file.Console.Enabled == nil || *file.Console.Enabled
-	result.Console.Format = valueOrDefault(file.Console.Format, "json")
+	result.Console.Format = valueOrDefault(file.Console.Format, "text")
 	if result.Console.Format != "json" && result.Console.Format != "text" {
 		v.reject(errors.New("logging.console.format must be json or text"))
 	}

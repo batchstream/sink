@@ -47,7 +47,7 @@ attributes at the common handler so future call sites cannot grow the ES schema.
 
 ## Logging behavior
 
-- stderr is enabled by default; JSON is the deployment default, text is optional.
+- stderr is enabled by default in text format; JSON is optional.
 - OTLP is opt-in and supports gRPC and HTTP/protobuf with explicit endpoint and
   TLS selection. Configuration is loaded once; malformed settings fail config
   validation, but an unreachable Collector does not prevent startup/readiness.
@@ -55,7 +55,7 @@ attributes at the common handler so future call sites cannot grow the ES schema.
   dependency state changes, retries and dead letters. Debug adds successful RPC,
   batch dispatch, write-phase and Kafka publish/consume summaries. Info records
   lifecycle and recovery. Do not emit a success log per document.
-- Component-specific thresholds may override the default warn level. Repeated
+- `logging.level` applies to all components and defaults to warn. Repeated
   warn/error events are rate limited by a bounded event/component/level key;
   suppressed counts are reported. Debug is opt-in and should be enabled briefly.
 - Business goroutines never wait for OTLP network I/O. Use the official slog

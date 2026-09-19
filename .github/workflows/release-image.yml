@@ -20,9 +20,9 @@ env:
 jobs:
   qualify:
     name: Public production qualification
-    uses: batchstream/sink-production-suite/.github/workflows/release-qualification.yml@f22863d37c81d4a8976b2229f68d245110b5ab51
+    uses: batchstream/sink-production-suite/.github/workflows/release-qualification.yml@e084c611c2ce6efb2e2175cbcfc931dd497c9811
     with:
-      suite_ref: f22863d37c81d4a8976b2229f68d245110b5ab51
+      suite_ref: e084c611c2ce6efb2e2175cbcfc931dd497c9811
       sink_ref: ${{ github.event.release.tag_name }}
 
   binaries:

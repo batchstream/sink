@@ -17,8 +17,6 @@ import (
 const maxValueBytes = 256
 
 type handler struct {
-	components   map[string]slog.Level
-	minimum      slog.Level
 	failureBody  bool
 	maxBodyBytes int
 	level        slog.Level
@@ -29,7 +27,7 @@ type handler struct {
 	limiter      *eventLimiter
 }
 
-func (h *handler) Enabled(_ context.Context, level slog.Level) bool { return level >= h.minimum }
+func (h *handler) Enabled(_ context.Context, level slog.Level) bool { return level >= h.level }
 
 func (h *handler) Handle(_ context.Context, record slog.Record) error {
 	if !h.Enabled(context.Background(), record.Level) {
@@ -58,13 +56,6 @@ func (h *handler) Handle(_ context.Context, record slog.Record) error {
 	}
 	if fields["event"] == "" {
 		fields["event"] = "diagnostic"
-	}
-	threshold := h.level
-	if override, ok := h.components[fields["component"]]; ok {
-		threshold = override
-	}
-	if record.Level < threshold {
-		return nil
 	}
 	if record.Level >= slog.LevelWarn {
 		allowed, suppressed := h.limiter.allow(fields["component"]+":"+fields["event"]+":"+fields["level"], record.Time)

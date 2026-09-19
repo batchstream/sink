@@ -27,19 +27,31 @@ storage:
   name: primary # Required globally unique Store name; shared by all its replicas.
   driver: mongodb # Required: mongodb, elasticsearch, or opensearch.
 
+  # Credential-file alternatives below are optional; remove the matching inline key,
+  # even if empty, before enabling its _file variant. Paths must be absolute.
+  # Files contain 1 byte..1MiB of UTF-8 without NUL; spaces/newlines are used exactly.
+  # Files are read at startup and by config check; restart after credential rotation.
+
   # MongoDB driver settings. Replace with the search block for a search driver.
   mongodb:
-    uri: mongodb://mongodb:27017 # Example; required MongoDB connection URI.
-    metadata_field: __sink # Internal revision field; hidden from returned documents.
-    max_concurrent_writes: 64 # Concurrent conditional MongoDB writes per process.
-    max_concurrent_groups: 16 # Concurrent collection groups shared by all calls.
+    uri: mongodb://mongodb:27017 # Example; complete connection URI; required unless uri_file is set.
+    # uri_file: /etc/sink-secrets/mongodb-uri # Example mounted URI file; omit uri when enabled.
+    metadata_field: __sink # Internal revision field; hidden from clients; default __sink.
+    # metadata_field cannot be _id or contain a dot, dollar sign, or NUL.
+    max_concurrent_writes: 64 # Concurrent conditional writes per process; >0; default 64.
+    max_concurrent_groups: 16 # Concurrent collection groups shared by all calls; >0; default 16.
 
-  # Search driver alternative: set driver to elasticsearch or opensearch above.
+  # Search driver alternative: remove mongodb, set driver to elasticsearch or opensearch,
+  # and uncomment the search block. Leave nested file alternatives commented unless used.
+  # Basic auth requires both username and password; cannot be combined with an API key.
   # search: # Backend endpoints and authentication for this Store only.
-  #   endpoints: [http://opensearch:9200] # Example; at least one endpoint required.
-  #   username: "" # Basic-auth user; configure together with password.
-  #   password: "" # Basic-auth password; use deployment-managed secret values.
-  #   api_key: "" # API key alternative; cannot be combined with basic auth.
+  #   endpoints: [http://opensearch:9200] # Example HTTP(S) URLs; at least one required; no default.
+  #   username: "" # Optional basic-auth user; default empty; pair with password/password_file.
+  #   # username_file: /etc/sink-secrets/search-username # Example user file; omit username.
+  #   password: "" # Optional basic-auth password; default empty; pair with username/username_file.
+  #   # password_file: /etc/sink-secrets/search-password # Example password file; omit password.
+  #   api_key: "" # Optional API key; default empty; cannot be combined with basic auth.
+  #   # api_key_file: /etc/sink-secrets/search-api-key # Example API-key file; omit api_key.
 
   # Kafka consumption is required; match the Engine Store, backend, and topic policy.
   kafka:

@@ -14,7 +14,7 @@ func TestLoggingDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := loaded.Logging
-	if cfg.Level != "warn" || !cfg.Console.Enabled || cfg.Console.Format != "json" || cfg.OTLP.Enabled || !cfg.OTLP.TLS || cfg.FailureBody {
+	if cfg.Level != "warn" || !cfg.Console.Enabled || cfg.Console.Format != "text" || cfg.OTLP.Enabled || !cfg.OTLP.TLS || cfg.FailureBody {
 		t.Fatalf("unexpected logging defaults: %+v", cfg)
 	}
 	if cfg.OTLP.QueueSize != 1024 || cfg.OTLP.BatchSize != 128 || cfg.OTLP.ExportTimeout != 3*time.Second || cfg.MaxBodyBytes != 16<<10 {
@@ -31,7 +31,7 @@ func TestLoggingRejectsInvalidSettings(t *testing.T) {
 		"otlp: {flush_interval: 0s}", "otlp: {export_timeout: 31s}", "otlp: {shutdown_timeout: 31s}",
 		"labels: {arbitrary_field: value}", "labels: {service_name: spoof}",
 		"labels: {environment: '" + strings.Repeat("x", 257) + "'}",
-		"components: {unknown: debug}", "components: {kafka: trace}", "max_body_bytes: 128KiB", "max_body_bytes: 1",
+		"components: {kafka: debug}", "components: {}", "max_body_bytes: 128KiB", "max_body_bytes: 1",
 	}
 	for _, fragment := range cases {
 		t.Run(fragment, func(t *testing.T) {
@@ -46,10 +46,9 @@ func TestLoggingRejectsInvalidSettings(t *testing.T) {
 func TestLoggingExplicitOptions(t *testing.T) {
 	yaml := loggingBase + `logging:
   level: error
-  components: {kafka: debug}
   failure_body: true
   max_body_bytes: 32KiB
-  console: {enabled: false, format: text}
+  console: {enabled: false, format: json}
   labels: {environment: production, cluster: eks}
   otlp:
     enabled: true
@@ -66,7 +65,7 @@ func TestLoggingExplicitOptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Logging.Console.Enabled || loaded.Logging.OTLP.TLS || !loaded.Logging.FailureBody || loaded.Logging.Components["kafka"] != "debug" || loaded.Logging.MaxBodyBytes != 32<<10 {
+	if loaded.Logging.Level != "error" || loaded.Logging.Console.Enabled || loaded.Logging.Console.Format != "json" || loaded.Logging.OTLP.TLS || !loaded.Logging.FailureBody || loaded.Logging.MaxBodyBytes != 32<<10 {
 		t.Fatalf("lost explicit settings: %+v", loaded.Logging)
 	}
 }

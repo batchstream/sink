@@ -23,6 +23,7 @@ func TestRPCDiagnosticsCaptureApplicationFailuresWithoutPayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	loaded.Logging.Console.Format = "json"
 	var output bytes.Buffer
 	opts := logging.Options{Config: loaded.Logging, Role: "engine", Store: "primary", Version: "test", Stderr: &output}
 	runtime, err := logging.New(t.Context(), opts)
@@ -91,6 +92,7 @@ func TestStreamDiagnosticsPreserveOutcomeAndExcludeHealth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	loaded.Logging.Console.Format = "json"
 	var output bytes.Buffer
 	opts := logging.Options{Config: loaded.Logging, Role: "engine", Store: "primary", Version: "test", Stderr: &output}
 	runtime, err := logging.New(t.Context(), opts)

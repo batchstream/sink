@@ -46,11 +46,23 @@ func newTestRuntime(t *testing.T, cfg config.Logging, output io.Writer) *Runtime
 	return runtime
 }
 
-func TestConsoleDefaultsLabelsAndComponentLevel(t *testing.T) {
+func TestConsoleDefaultsToText(t *testing.T) {
+	cfg := testConfig(t)
+	output := &lockedBuffer{}
+	runtime := newTestRuntime(t, cfg, output)
+	runtime.Logger.Info("hidden")
+	runtime.Logger.Warn("visible", "component", "rpc")
+	line := output.String()
+	if !strings.Contains(line, "msg=visible") || !strings.Contains(line, "level=warn") || !strings.Contains(line, "component=rpc") || strings.Contains(line, "hidden") || json.Valid([]byte(line)) {
+		t.Fatalf("unexpected default console output: %s", line)
+	}
+}
+
+func TestConsoleJSONLabelsAndLevel(t *testing.T) {
 	t.Setenv("POD_UID", "pod-uid")
 	t.Setenv("POD_NAME", "engine-0")
 	cfg := testConfig(t)
-	cfg.Components = map[string]string{"kafka": "debug"}
+	cfg.Console.Format = "json"
 	output := &lockedBuffer{}
 	runtime := newTestRuntime(t, cfg, output)
 	runtime.Logger.Info("hidden")
@@ -58,7 +70,7 @@ func TestConsoleDefaultsLabelsAndComponentLevel(t *testing.T) {
 	runtime.Logger.Debug("kafka detail", "component", "kafka")
 	runtime.Logger.Debug("hidden batch", "component", "batcher")
 	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
-	if len(lines) != 2 {
+	if len(lines) != 1 {
 		t.Fatalf("filtering: %s", output.String())
 	}
 	var record map[string]any
@@ -75,6 +87,31 @@ func TestConsoleDefaultsLabelsAndComponentLevel(t *testing.T) {
 	}
 }
 
+func TestGlobalLevelAppliesToAllComponents(t *testing.T) {
+	for _, level := range []string{"debug", "info", "warn", "error"} {
+		t.Run(level, func(t *testing.T) {
+			cfg := testConfig(t)
+			cfg.Level = level
+			output := &lockedBuffer{}
+			runtime := newTestRuntime(t, cfg, output)
+			var threshold slog.Level
+			if err := threshold.UnmarshalText([]byte(level)); err != nil {
+				t.Fatal(err)
+			}
+			for _, component := range []string{"runtime", "rpc", "batcher", "execution", "kafka", "storage", "health", "logging"} {
+				logger := runtime.Logger.With("component", component)
+				for _, severity := range []slog.Level{slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError} {
+					message := component + "-" + severity.String()
+					logger.Log(t.Context(), severity, message)
+					if strings.Contains(output.String(), message) != (severity >= threshold) {
+						t.Fatalf("incorrect filtering for %s at global level %s", message, level)
+					}
+				}
+			}
+		})
+	}
+}
+
 type countedBody struct{ calls *int }
 
 func (b countedBody) LogValue() slog.Value {
@@ -86,6 +123,7 @@ func (b countedBody) LogValue() slog.Value {
 func TestFailureBodyRequiresOptInErrorAndRemainsBounded(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		cfg := testConfig(t)
+		cfg.Console.Format = "json"
 		cfg.FailureBody = enabled
 		cfg.MaxBodyBytes = 1024
 		output := &lockedBuffer{}
@@ -144,6 +182,7 @@ func TestRateLimitBoundsStateAndReportsSuppression(t *testing.T) {
 func TestShutdownReportsSuppressedErrorsRegardlessOfLevel(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.Level = "error"
+	cfg.Console.Format = "json"
 	output := &lockedBuffer{}
 	runtime := newTestRuntime(t, cfg, output)
 	for range 25 {
@@ -165,6 +204,7 @@ func TestShutdownReportsSuppressedErrorsRegardlessOfLevel(t *testing.T) {
 
 func TestHandlerBoundsAndDiscardsNestedFields(t *testing.T) {
 	cfg := testConfig(t)
+	cfg.Console.Format = "json"
 	output := &lockedBuffer{}
 	runtime := newTestRuntime(t, cfg, output)
 	runtime.Logger.With("reason", strings.Repeat("x", 10000)).Warn(strings.Repeat("y", 10000), "password", "secret")
@@ -183,7 +223,7 @@ func TestHandlerBoundsAndDiscardsNestedFields(t *testing.T) {
 }
 
 func BenchmarkDisabledDebug(b *testing.B) {
-	h := &handler{level: slog.LevelWarn, minimum: slog.LevelWarn}
+	h := &handler{level: slog.LevelWarn}
 	logger := slog.New(h)
 	b.ReportAllocs()
 	for b.Loop() {
@@ -193,6 +233,7 @@ func BenchmarkDisabledDebug(b *testing.B) {
 
 func TestSuppressedFailureBodiesAreNotEvaluated(t *testing.T) {
 	cfg := testConfig(t)
+	cfg.Console.Format = "json"
 	cfg.FailureBody = true
 	output := &lockedBuffer{}
 	runtime := newTestRuntime(t, cfg, output)

@@ -1,7 +1,7 @@
 # Internal diagnostic logs
 
 Gateway, Engine and Worker use structured `slog` logs to diagnose failures, slow
-work and retries. Logging defaults to **warn**, with JSON on stderr. There is no
+work and retries. Logging defaults to **warn**, with text on stderr. There is no
 file output. Optional OTLP logs go directly to an existing Collector; Sink does
 not deploy a Collector or configure its downstream Kafka/Elasticsearch pipeline.
 No traces, spans or request tracing are configured or included in these logs.
@@ -18,7 +18,7 @@ logging:
   level: warn
   console:
     enabled: true
-    format: json
+    format: text
   labels:
     environment: production
     cluster: example-eks
@@ -45,9 +45,8 @@ the process after changing logging configuration.
 | Setting | Required / default | Values and meaning |
 | --- | --- | --- |
 | `logging.level` | Optional; `warn` | `debug`, `info`, `warn`, `error` |
-| `logging.components` | Optional; empty | Per-component level overrides; `runtime`, `rpc`, `batcher`, `execution`, `kafka`, `storage`, `health`, `logging` |
 | `logging.console.enabled` | Optional; `true` | stderr output; at least console or OTLP must remain enabled |
-| `logging.console.format` | Optional; `json` | `json` or `text` |
+| `logging.console.format` | Optional; `text` | `text` or `json` |
 | `logging.labels` | Optional; empty | Only `environment`, `cluster`, `namespace`, `pod`, `node`; single-line strings up to 256 bytes |
 | `logging.failure_body` | Optional; `false` | Allow a bounded document in ERROR body for supported severe final failures |
 | `logging.max_body_bytes` | Optional; `16KiB` | Failure-body limit, 1KiB–64KiB, including message and truncation marker |
@@ -61,14 +60,9 @@ the process after changing logging configuration.
 | `logging.otlp.export_timeout` | Optional; `3s` | Positive duration, at most 30s, including bounded retries |
 | `logging.otlp.shutdown_timeout` | Optional; `5s` | Positive duration, at most 30s; additional grace after application resources close |
 
-For a focused investigation, keep the default and enable one component:
-
-```yaml
-logging:
-  level: warn
-  components:
-    kafka: debug
-```
+`logging.level` sets the minimum severity for all components. Set it to `debug`
+temporarily for more detailed diagnostics. Use `logging.console.format: json`
+when the stderr consumer requires JSON.
 
 ## Labels that survive ingestion
 

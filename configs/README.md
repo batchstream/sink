@@ -14,8 +14,8 @@ Every role serves `/livez` and `/readyz` on `health.address` (default `:8081`).
 Prometheus uses its own `prometheus.address` (default `:9090`) and is disabled
 unless `prometheus.enabled: true`. Disabling metrics never disables health checks.
 
-Logs default to warn-level JSON on stderr. See the [logging reference](../docs/logging.md)
-for direct OTLP export, component debug levels and optional severe-failure bodies.
+Logs default to warn-level text on stderr. See the [logging reference](../docs/logging.md)
+for JSON output, direct OTLP export, log levels and optional severe-failure bodies.
 
 Gateway routes live under `gateway.routes` and all configured routes are active.
 Configuration is loaded at startup; restart the component after changes.

@@ -41,16 +41,6 @@ func New(ctx context.Context, opts Options) (*Runtime, error) {
 	if err := level.UnmarshalText([]byte(opts.Config.Level)); err != nil {
 		return nil, err
 	}
-	minimum := level
-	components := make(map[string]slog.Level, len(opts.Config.Components))
-	for component, text := range opts.Config.Components {
-		var override slog.Level
-		if err := override.UnmarshalText([]byte(text)); err != nil {
-			return nil, err
-		}
-		components[component] = override
-		minimum = min(minimum, override)
-	}
 	output := opts.Stderr
 	if output == nil {
 		output = os.Stderr
@@ -63,9 +53,9 @@ func New(ctx context.Context, opts Options) (*Runtime, error) {
 		}
 		return attr
 	}}
-	var console slog.Handler = slog.NewJSONHandler(output, consoleOptions)
-	if opts.Config.Console.Format == "text" {
-		console = slog.NewTextHandler(output, consoleOptions)
+	var console slog.Handler = slog.NewTextHandler(output, consoleOptions)
+	if opts.Config.Console.Format == "json" {
+		console = slog.NewJSONHandler(output, consoleOptions)
 	}
 	identity := identityAttrs(opts)
 	diagnostics := &handler{level: slog.LevelDebug, outputs: []slog.Handler{console}, identity: identity, limiter: &eventLimiter{}}
@@ -89,7 +79,7 @@ func New(ctx context.Context, opts Options) (*Runtime, error) {
 			sdklog.WithAttributeCountLimit(40), sdklog.WithAttributeValueLengthLimit(maxValueBytes))
 		outputs = append(outputs, otelslog.NewHandler("sink", otelslog.WithLoggerProvider(runtime.provider)))
 	}
-	h := &handler{level: level, minimum: minimum, components: components, outputs: outputs, identity: identity, limiter: runtime.limiter, failureBody: opts.Config.FailureBody, maxBodyBytes: opts.Config.MaxBodyBytes}
+	h := &handler{level: level, outputs: outputs, identity: identity, limiter: runtime.limiter, failureBody: opts.Config.FailureBody, maxBodyBytes: opts.Config.MaxBodyBytes}
 	runtime.Logger = slog.New(h)
 	return runtime, nil
 }

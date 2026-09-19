@@ -54,4 +54,4 @@ logging:
   level: warn
   console:
     enabled: true
-    format: json
+    format: text

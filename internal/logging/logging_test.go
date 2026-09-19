@@ -3,6 +3,7 @@ package logging
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -155,6 +156,55 @@ func TestFailureBodyRequiresOptInErrorAndRemainsBounded(t *testing.T) {
 		if calls != want {
 			t.Fatalf("payload evaluated %d times, want %d", calls, want)
 		}
+	}
+}
+
+func TestBinaryFailureBodyRemainsDecodableAndBounded(t *testing.T) {
+	cases := []struct {
+		name      string
+		repeats   int
+		truncated bool
+	}{
+		{name: "complete", repeats: 1},
+		{name: "truncated", repeats: 1024, truncated: true},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := testConfig(t)
+			cfg.Console.Format = "json"
+			cfg.FailureBody = true
+			cfg.MaxBodyBytes = 1024
+			output := &lockedBuffer{}
+			runtime := newTestRuntime(t, cfg, output)
+			payload := bytes.Repeat([]byte{0, 0xff, 0x80, 0x7f}, test.repeats)
+			body := &FailureBody{Encoding: "bson", Payload: payload}
+			runtime.Logger.Error("failed", "failure_body", body)
+			var record map[string]string
+			if err := json.Unmarshal([]byte(output.String()), &record); err != nil {
+				t.Fatal(err)
+			}
+			message := record["msg"]
+			if len(message) > cfg.MaxBodyBytes {
+				t.Fatalf("body exceeds byte limit: %d", len(message))
+			}
+			metadata, encoded, ok := strings.Cut(message, "\ndocument=base64:")
+			if !ok || metadata != "failed\ndocument_encoding=bson" {
+				t.Fatalf("missing binary document metadata: %s", message)
+			}
+			if strings.HasSuffix(encoded, " [truncated]") != test.truncated {
+				t.Fatalf("incorrect truncation marker: %s", encoded)
+			}
+			decoded, err := base64.StdEncoding.DecodeString(strings.TrimSuffix(encoded, " [truncated]"))
+			if err != nil {
+				t.Fatalf("invalid base64 in failure body: %v", err)
+			}
+			if len(decoded) == 0 || !bytes.HasPrefix(payload, decoded) {
+				t.Fatal("binary payload was corrupted")
+			}
+			if (len(decoded) < len(payload)) != test.truncated {
+				t.Fatalf("unexpected binary payload length: got %d, original %d", len(decoded), len(payload))
+			}
+		})
 	}
 }
 

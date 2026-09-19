@@ -49,9 +49,36 @@ gateway: # Stateless routing, bounded forwarding, and lazy downstream connection
 
 shutdown_timeout: 15s # Grace period for draining public RPCs and closing connections.
 
-# Default internal diagnostics; configure logging.otlp to export to a Collector.
+# Internal diagnostics; restart the process after changes. See ../docs/logging.md.
 logging:
-  level: warn
-  console:
-    enabled: true
-    format: text
+  level: warn # Minimum severity for all components: debug, info, warn, error; default warn.
+  console: # Standard error output; no log files.
+    enabled: true # Default true; console or OTLP must remain enabled.
+    format: text # text or json; default text; does not change OTLP encoding.
+
+  # Optional deployment labels; only these keys are allowed, each <=256 UTF-8 bytes on one line.
+  # Nonempty values override the matching environment-derived identity.
+  labels:
+    environment: "" # Deployment environment, e.g. production; default empty.
+    cluster: "" # Deployment cluster name, e.g. example-eks; default empty.
+    namespace: "" # Kubernetes namespace; empty uses POD_NAMESPACE, not a database namespace.
+    pod: "" # Pod name; empty uses POD_NAME.
+    node: "" # Node name; empty uses NODE_NAME.
+
+  failure_body: false # Include document content in supported final ERROR logs; default false.
+  max_body_bytes: 16KiB # Failure-body limit including message/truncation marker; 1KiB..64KiB.
+
+  # Optional direct export to an existing OpenTelemetry Collector; disabled by default.
+  # Export is asynchronous; Collector outages do not block startup or affect readiness.
+  otlp:
+    enabled: false # Enable direct OTLP log export; requires endpoint; default false.
+    protocol: grpc # grpc or http/protobuf; default grpc; HTTP sends to /v1/logs.
+    endpoint: "" # Required when enabled: host:port, without scheme/path/auth; default empty.
+    # Example endpoint: otel-collector.observability.svc.cluster.local:4317 (HTTP usually 4318).
+    tls: # Transport security for the Collector connection.
+      enabled: true # Verify hostname/system CA trust; false selects plaintext; default true.
+    queue_size: 1024 # Pending log records; 1..8192; overflow discards older records.
+    batch_size: 128 # Records per export; 1..512 and <=queue_size; default 128.
+    flush_interval: 1s # Export interval; >0 and <=1m; default 1s.
+    export_timeout: 3s # Per-export deadline including retries; >0 and <=30s; default 3s.
+    shutdown_timeout: 5s # Extra log-flush grace after application cleanup; >0 and <=30s.

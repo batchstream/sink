@@ -107,20 +107,19 @@ type searchFile struct {
 }
 
 type kafkaFile struct {
-	Enabled bool      `yaml:"enabled"`
-	Brokers []string  `yaml:"brokers"`
-	Topic   topicFile `yaml:"topic"`
-
-	DeadLetter deadLetterFile `yaml:"dead_letter"`
+	Enabled           bool      `yaml:"enabled"`
+	Brokers           []string  `yaml:"brokers"`
+	Partitions        *int      `yaml:"partitions"`
+	ReplicationFactor *int      `yaml:"replication_factor"`
+	MinInSyncReplicas *int      `yaml:"min_insync_replicas"`
+	MaxRecordBytes    *byteSize `yaml:"max_record_bytes"`
+	Topic             topicFile `yaml:"topic"`
+	DeadLetter        topicFile `yaml:"dead_letter"`
 }
 
 type topicFile struct {
-	Name              string         `yaml:"name"`
-	Partitions        *int           `yaml:"partitions"`
-	ReplicationFactor *int           `yaml:"replication_factor"`
-	Retention         *time.Duration `yaml:"retention"`
-	MinInSyncReplicas *int           `yaml:"min_insync_replicas"`
-	MaxRecordBytes    *byteSize      `yaml:"max_record_bytes"`
+	Name      string         `yaml:"name"`
+	Retention *time.Duration `yaml:"retention"`
 }
 
 type producerFile struct {
@@ -138,11 +137,6 @@ type retryFile struct {
 	MaxAttempts *int           `yaml:"max_attempts"`
 	Backoff     *time.Duration `yaml:"backoff"`
 	MaxBackoff  *time.Duration `yaml:"max_backoff"`
-}
-
-type deadLetterFile struct {
-	Topic     string         `yaml:"topic"`
-	Retention *time.Duration `yaml:"retention"`
 }
 
 type gatewayFile struct {

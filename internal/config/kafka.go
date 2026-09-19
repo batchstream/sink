@@ -11,17 +11,16 @@ func resolveKafka(prefix string, file kafkaFile, v *validator) Kafka {
 	var loaded Kafka
 	loaded.Enabled = file.Enabled
 	loaded.Brokers = nonEmptyValues(file.Brokers)
+	loaded.Partitions = v.bounded(prefix+".partitions", file.Partitions, 4, 1<<31-1)
+	loaded.ReplicationFactor = v.bounded(prefix+".replication_factor", file.ReplicationFactor, 2, 1<<15-1)
+	loaded.MinInSyncReplicas = v.bounded(prefix+".min_insync_replicas", file.MinInSyncReplicas, 1, loaded.ReplicationFactor)
+	loaded.MaxRecordBytes = v.bytes(prefix+".max_record_bytes", file.MaxRecordBytes, 900<<10, 64<<20)
 	topic := &loaded.Topic
 	topic.Name = strings.TrimSpace(file.Topic.Name)
-	topic.Partitions = v.bounded(prefix+".topic.partitions", file.Topic.Partitions, 4, 1<<31-1)
-	topic.ReplicationFactor = v.bounded(prefix+".topic.replication_factor", file.Topic.ReplicationFactor, 2, 1<<15-1)
 	topic.Retention = v.duration(prefix+".topic.retention", file.Topic.Retention, 72*time.Hour)
-	topic.MinInSyncReplicas = v.bounded(prefix+".topic.min_insync_replicas", file.Topic.MinInSyncReplicas, min(2, topic.ReplicationFactor), topic.ReplicationFactor)
-
-	topic.MaxRecordBytes = v.bytes(prefix+".topic.max_record_bytes", file.Topic.MaxRecordBytes, 900<<10, 64<<20)
-	loaded.DeadLetter.Topic = strings.TrimSpace(file.DeadLetter.Topic)
-	if topic.Name != "" && loaded.DeadLetter.Topic == "" {
-		loaded.DeadLetter.Topic = topic.Name + ".dlq"
+	loaded.DeadLetter.Name = strings.TrimSpace(file.DeadLetter.Name)
+	if topic.Name != "" && loaded.DeadLetter.Name == "" {
+		loaded.DeadLetter.Name = topic.Name + ".dlq"
 	}
 	loaded.DeadLetter.Retention = v.duration(prefix+".dead_letter.retention", file.DeadLetter.Retention, 720*time.Hour)
 	if topic.Retention < time.Millisecond {
@@ -81,8 +80,8 @@ func validateKafkaResources(loaded Config) error {
 	if loaded.Mode == ModeWorker && kafka.Consumer.GroupID == "" {
 		return errors.New("consumer.group_id is required in worker mode")
 	}
-	if kafka.DeadLetter.Topic == kafka.Topic.Name {
-		return errors.New("kafka.dead_letter.topic must differ from topic.name")
+	if kafka.DeadLetter.Name == kafka.Topic.Name {
+		return errors.New("kafka.dead_letter.name must differ from kafka.topic.name")
 	}
 	return nil
 }

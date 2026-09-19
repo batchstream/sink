@@ -164,9 +164,9 @@ use the lowercase spelling shown below. Storage names are also case-sensitive.
 | `kafka.brokers` | list of strings | Conditionally | none | One or more Kafka bootstrap addresses | Required when Kafka is enabled. Each store may use a different Kafka cluster. |
 | `kafka.topic.name` | string | Conditionally | none | Any valid Kafka topic name | Required when Kafka is enabled. The server publishes only mutations whose `address.store` selects this store. |
 | `consumer.group_id` | string | Conditionally | empty | Any valid Kafka consumer group ID | Required in `worker` mode; optional and unused in `engine` mode. |
-| `kafka.dead_letter.topic` | string | No | `<kafka.topic.name>.dlq` | Non-empty Kafka topic different from the source topic | Destination for malformed, cross-store, and permanent failures. Temporary failures remain in the source Topic. |
-| `kafka.topic.partitions` | positive integer | No | `4` | Integer from `1` through `2147483647` | Required partition count for both Topics. Any mismatch gates this store; changes require an explicit drained migration. |
-| `kafka.topic.replication_factor` | positive integer | No | `2` | Integer from `1` through `32767`, not exceeding available brokers | Required replica count for every partition of both Topics. Sink submits and waits for partition reassignment when it differs. |
+| `kafka.dead_letter.name` | string | No | `<kafka.topic.name>.dlq` | Non-empty Kafka topic different from the source topic | Destination for malformed, cross-store, and permanent failures. Temporary failures remain in the source Topic. |
+| `kafka.partitions` | positive integer | No | `4` | Integer from `1` through `2147483647` | Required partition count for both Topics. Any mismatch gates this store; changes require an explicit drained migration. |
+| `kafka.replication_factor` | positive integer | No | `2` | Integer from `1` through `32767`, not exceeding available brokers | Required replica count for every partition of both Topics. Sink submits and waits for partition reassignment when it differs. |
 | `kafka.topic.retention` | duration string | No | `72h` (3 days) | Positive Go duration within the bounds below | Source Topic retention, at least `1ms`. DLQ retention is configured separately. |
 | `consumer.max_poll_records` | positive integer | No | `500` | Integer greater than `0` | Maximum number of this store's mutations handled in one consumer fetch batch. |
 | `consumer.retry.max_attempts` | positive integer | No | `10` | Integer greater than `0` | Maximum attempts per processing round. Temporary failures are retained and retried in later rounds. |
@@ -204,10 +204,15 @@ counts multiply capacity. Configure the same Kafka policy on servers and workers
 | `memory.burst_percent` | `10` | Completion reserve as a percentage of total capacity, from 1 to 99. New requests cannot enter through this reserve. |
 | `memory.wait_timeout` | `2s` | Maximum response/working-set growth wait. Caller deadlines take precedence. New requests fail immediately when ordinary capacity is unavailable. |
 | `kafka.dead_letter.retention` | `720h` | Independent DLQ retention, 30 days; at least `1ms` and bounded by Go duration range. |
-| `kafka.topic.min_insync_replicas` | min(`2`, replication factor) | Minimum ISR, at most replication factor. Publishers require all ISR acknowledgements. |
-| `kafka.topic.max_record_bytes` | `900KiB` | Encoded mutation envelope plus key, including expanded Lua source; at most 64 MiB; Engine producer buffer must cover it. Topic/producer batch limits include an extra 16 KiB for framing and DLQ headers. Broker/replica fetch limits must also support increases. |
+| `kafka.min_insync_replicas` | `1` | Minimum ISR for both Topics, at most replication factor. Publishers require all current ISR acknowledgements; the default permits writes with one in-sync replica during broker maintenance. |
+| `kafka.max_record_bytes` | `900KiB` | Encoded mutation envelope plus key, including expanded Lua source; at most 64 MiB; Engine producer buffer must cover it. Topic/producer batch limits include an extra 16 KiB for framing and DLQ headers. Broker/replica fetch limits must also support increases. |
 | `producer.max_buffered_bytes` | `64MiB` | Producer buffer capacity, at most 1 GiB. Full buffers return retryable resource exhaustion. |
 | `consumer.processing_timeout` | `20s` | Backend work per fetched batch, at most 20 seconds, followed by at most 5 seconds of offset/DLQ settlement. |
+
+`kafka.partitions`, `replication_factor`, `min_insync_replicas`, and
+`max_record_bytes` apply to both the source and dead-letter Topics. Sink explicitly
+reconciles this shared policy rather than relying on broker defaults. `kafka.topic`
+and `kafka.dead_letter` each contain only `name` and `retention`, which are independent.
 
 All request classes share the same process pool. Input, small completion
 envelopes and forwarding scratch space acquire ordinary capacity. Document

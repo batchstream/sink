@@ -167,8 +167,8 @@ func resolve(file configFile, shared storeFile) (Config, error) {
 	if file.Producer != nil && !configured.Kafka.Enabled {
 		v.reject(errors.New("producer requires Kafka enabled in Store config"))
 	}
-	if loaded.Mode == ModeEngine && configured.Kafka.Topic.MaxRecordBytes > configured.Kafka.Producer.MaxBufferedBytes {
-		v.reject(errors.New("producer.max_buffered_bytes must cover kafka.topic.max_record_bytes"))
+	if loaded.Mode == ModeEngine && configured.Kafka.MaxRecordBytes > configured.Kafka.Producer.MaxBufferedBytes {
+		v.reject(errors.New("producer.max_buffered_bytes must cover kafka.max_record_bytes"))
 	}
 	if file.Execution != nil && file.Execution.MongoDB != (mongoExecutionFile{}) && configured.Driver != DriverMongoDB {
 		v.reject(errors.New("execution.mongodb requires the mongodb driver"))

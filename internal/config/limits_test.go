@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestExecutionBudgetsAreIndependentOfTransport(t *testing.T) {
@@ -42,8 +43,10 @@ func TestRejectInvalidRoleLimits(t *testing.T) {
 func TestKafkaSharedPolicyValidation(t *testing.T) {
 	for _, kafka := range []string{
 		"enabled: true", "enabled: true\n  brokers: [localhost:1]", "topic: {retention: 1ns}", "dead_letter: {retention: 1ns}",
-		"topic: {partitions: 0}", "topic: {replication_factor: 1, min_insync_replicas: 2}", "topic: {max_record_bytes: 65MiB}",
-		"enabled: true\n  brokers: [localhost:1]\n  topic: {name: a}\n  dead_letter: {topic: a}",
+		"partitions: 0", "replication_factor: 1\n  min_insync_replicas: 2", "max_record_bytes: 65MiB", "min_insync_replicas: 0",
+		"enabled: true\n  brokers: [localhost:1]\n  topic: {name: a}\n  dead_letter: {name: a}",
+		"topic: {partitions: 4}", "topic: {replication_factor: 2}", "topic: {min_insync_replicas: 1}", "topic: {max_record_bytes: 900KiB}",
+		"dead_letter: {topic: a.dlq}", "dead_letter: {partitions: 4}",
 		"consumer: {}", "producer: {}",
 	} {
 		if _, err := Decode(strings.NewReader("mode: engine"), strings.NewReader(minimalStorage+"kafka:\n  "+kafka)); err == nil {
@@ -56,6 +59,32 @@ func TestKafkaSharedPolicyValidation(t *testing.T) {
 	} {
 		if _, err := Decode(strings.NewReader(test.component), strings.NewReader(test.store)); err == nil {
 			t.Fatal("invalid role/Kafka combination accepted")
+		}
+	}
+}
+
+func TestKafkaSharedPolicyLoading(t *testing.T) {
+	shared := minimalStorage + `kafka:
+  enabled: true
+  brokers: [localhost:9092]
+  partitions: 8
+  replication_factor: 3
+  min_insync_replicas: 2
+  max_record_bytes: 2MiB
+  topic: {name: mutations, retention: 48h}
+  dead_letter: {name: rejected, retention: 240h}
+`
+	for _, component := range []string{"mode: engine", "mode: worker\nconsumer: {group_id: workers}"} {
+		loaded, err := Decode(strings.NewReader(component), strings.NewReader(shared))
+		if err != nil {
+			t.Fatal(err)
+		}
+		kafka := loaded.Storage.Kafka
+		if kafka.Partitions != 8 || kafka.ReplicationFactor != 3 || kafka.MinInSyncReplicas != 2 || kafka.MaxRecordBytes != 2<<20 {
+			t.Fatalf("shared Kafka policy not loaded for %s: %+v", component, kafka)
+		}
+		if kafka.Topic.Name != "mutations" || kafka.Topic.Retention != 48*time.Hour || kafka.DeadLetter.Name != "rejected" || kafka.DeadLetter.Retention != 240*time.Hour {
+			t.Fatalf("independent Topic settings not loaded: %+v", kafka)
 		}
 	}
 }

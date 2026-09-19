@@ -145,21 +145,21 @@ type Search struct {
 }
 
 type Kafka struct {
-	Enabled    bool
-	Brokers    []string
-	Topic      Topic
-	Producer   Producer
-	Consumer   Consumer
-	DeadLetter DeadLetter
+	Enabled           bool
+	Brokers           []string
+	Partitions        int
+	ReplicationFactor int
+	MinInSyncReplicas int
+	MaxRecordBytes    int
+	Topic             Topic
+	DeadLetter        Topic
+	Producer          Producer
+	Consumer          Consumer
 }
 
 type Topic struct {
-	Name              string
-	Partitions        int
-	ReplicationFactor int
-	Retention         time.Duration
-	MinInSyncReplicas int
-	MaxRecordBytes    int
+	Name      string
+	Retention time.Duration
 }
 
 type Producer struct {
@@ -177,11 +177,6 @@ type Retry struct {
 	MaxAttempts int
 	Backoff     time.Duration
 	MaxBackoff  time.Duration
-}
-
-type DeadLetter struct {
-	Topic     string
-	Retention time.Duration
 }
 
 // Gateway owns only routing and bounded forwarding resources.

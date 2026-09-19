@@ -54,7 +54,7 @@ func runDeadLetterCommand(args []string, stdout io.Writer, stderr io.Writer) err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	selection := queuekafka.DeadLetterRange{Brokers: selected.Kafka.Brokers, Topic: selected.Kafka.DeadLetter.Topic,
+	selection := queuekafka.DeadLetterRange{Brokers: selected.Kafka.Brokers, Topic: selected.Kafka.DeadLetter.Name,
 		Partition: int32(*partition), Offset: *offset, Count: *count}
 	records, err := queuekafka.ReadDeadLetters(ctx, selection)
 	if err != nil {
@@ -67,7 +67,7 @@ func runDeadLetterCommand(args []string, stdout io.Writer, stderr io.Writer) err
 			return err
 		}
 		opts := queuekafka.PublisherOptions{Brokers: selected.Kafka.Brokers, Topic: selected.Kafka.Topic.Name,
-			MaxRecordBytes: selected.Kafka.Topic.MaxRecordBytes, MaxBufferedBytes: selected.Kafka.Producer.MaxBufferedBytes}
+			MaxRecordBytes: selected.Kafka.MaxRecordBytes, MaxBufferedBytes: selected.Kafka.Producer.MaxBufferedBytes}
 
 		publisher, err := queuekafka.NewPublisher(opts)
 		if err != nil {

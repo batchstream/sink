@@ -76,12 +76,12 @@ storage:
 %skafka:
   enabled: true
   brokers: [%q]
+  replication_factor: 1
+  min_insync_replicas: 1
   topic:
     name: source
-    replication_factor: 1
-    min_insync_replicas: 1
   dead_letter:
-    topic: source.dlq
+    name: source.dlq
 `, driver, backend, cluster.ListenAddrs()[0])
 				sharedPath := writeConfig(t, contents)
 				configPath := writeConfig(t, "mode: engine\n")

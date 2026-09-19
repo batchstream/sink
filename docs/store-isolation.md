@@ -107,7 +107,7 @@ forward Store groups concurrently within `max_fanout`. The extra network hop and
 serial budget-sensitive groups have a latency cost; benchmark your workload.
 
 Gateway never automatically replays Write, Delete or Execute. Complete responses
-from healthy Stores are retained when another Store fails. A lost mutation reply
+from healthy Stores are retained when another Store fails. A lost Engine mutation reply
 is represented as a failed operation with `retryable=false`, since the effect may
 already exist. A missing budget settlement consumes the entire grant; it cannot
 be reused by another Store. A proven local rejection before dispatch consumes

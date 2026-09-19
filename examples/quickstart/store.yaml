@@ -16,13 +16,14 @@ storage:
 kafka:
   enabled: true # Disable for synchronous-only Stores; Worker requires true.
   brokers: [kafka:19092]
+  # Shared by the source and dead-letter Topics.
+  partitions: 4
+  replication_factor: 1
+  min_insync_replicas: 1
+  max_record_bytes: 900KiB
   topic:
     name: sink-mutations
-    partitions: 4
-    replication_factor: 1
-    min_insync_replicas: 1
     retention: 72h
-    max_record_bytes: 900KiB
   dead_letter:
-    topic: sink-mutations.dlq # Defaults to <topic.name>.dlq.
+    name: sink-mutations.dlq # Defaults to <topic.name>.dlq.
     retention: 720h

@@ -83,7 +83,7 @@ func TestEnsureTopicsCreatesAndReconcilesTopicSettings(t *testing.T) {
 		if resourceErr != nil {
 			t.Fatalf("DescribeTopicConfigs(%q) error = %v", topic, resourceErr)
 		}
-		for key, expected := range map[string]string{"min.insync.replicas": "2", "unclean.leader.election.enable": "false", "cleanup.policy": "delete"} {
+		for key, expected := range map[string]string{"min.insync.replicas": "1", "unclean.leader.election.enable": "false", "cleanup.policy": "delete"} {
 			if actual := topicConfig(resource, key); actual != expected {
 				t.Fatalf("%s %s=%s, want %s", topic, key, actual, expected)
 			}

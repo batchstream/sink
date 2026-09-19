@@ -18,6 +18,11 @@ from an incompatible forwarding version; old and new Engines cannot share routes
    control request lifetime; gRPC message limits bound transport responses.
    Snapshot/output working sets use `execution.max_snapshot_bytes` and
    `execution.max_output_bytes`. Remove old count-based execution/publish admission.
+7. Move Kafka `topic.partitions`, `topic.replication_factor`,
+   `topic.min_insync_replicas`, and `topic.max_record_bytes` directly under `kafka`;
+   they apply to both Topics. Rename `dead_letter.topic` to `dead_letter.name`.
+   Each Topic retains its own name and retention. `min_insync_replicas` now defaults
+   to `1`; set it explicitly if a higher minimum ISR is required.
 
 ```sh
 sink config check --config configs/gateway.yaml

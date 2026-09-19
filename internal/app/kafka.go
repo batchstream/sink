@@ -17,14 +17,14 @@ func (app *Application) configureKafka(observed *sinkmetrics.Metrics) error {
 	}
 	topicOptions := queuekafka.TopicOptions{
 		Brokers:             configured.Kafka.Brokers,
-		Topics:              []string{configured.Kafka.Topic.Name, configured.Kafka.DeadLetter.Topic},
-		Partitions:          configured.Kafka.Topic.Partitions,
-		ReplicationFactor:   configured.Kafka.Topic.ReplicationFactor,
+		Topics:              []string{configured.Kafka.Topic.Name, configured.Kafka.DeadLetter.Name},
+		Partitions:          configured.Kafka.Partitions,
+		ReplicationFactor:   configured.Kafka.ReplicationFactor,
 		Retention:           configured.Kafka.Topic.Retention,
-		DeadLetterTopic:     configured.Kafka.DeadLetter.Topic,
+		DeadLetterTopic:     configured.Kafka.DeadLetter.Name,
 		DeadLetterRetention: configured.Kafka.DeadLetter.Retention,
-		MinInSyncReplicas:   configured.Kafka.Topic.MinInSyncReplicas,
-		MaxRecordBytes:      configured.Kafka.Topic.MaxRecordBytes,
+		MinInSyncReplicas:   configured.Kafka.MinInSyncReplicas,
+		MaxRecordBytes:      configured.Kafka.MaxRecordBytes,
 	}
 	app.topics = queuekafka.NewTopicManager(topicOptions)
 	if app.config.Mode != config.ModeEngine {
@@ -32,7 +32,7 @@ func (app *Application) configureKafka(observed *sinkmetrics.Metrics) error {
 	}
 	publisherOptions := queuekafka.PublisherOptions{
 		Store: configured.Name, Brokers: configured.Kafka.Brokers, Topics: app.topics,
-		MaxRecordBytes:   configured.Kafka.Topic.MaxRecordBytes,
+		MaxRecordBytes:   configured.Kafka.MaxRecordBytes,
 		MaxBufferedBytes: configured.Kafka.Producer.MaxBufferedBytes,
 		Topic:            configured.Kafka.Topic.Name, Metrics: observed,
 	}
@@ -58,10 +58,10 @@ func (app *Application) configureWorker(server *service.Server, observed *sinkme
 	workerOptions := queuekafka.WorkerOptions{
 		ShutdownTimeout: loaded.ShutdownTimeout, Topics: app.topics,
 		ProcessingTimeout: configured.Kafka.Consumer.ProcessingTimeout,
-		MaxRecordBytes:    configured.Kafka.Topic.MaxRecordBytes,
+		MaxRecordBytes:    configured.Kafka.MaxRecordBytes,
 		Brokers:           configured.Kafka.Brokers, Store: configured.Name,
 		Topic: configured.Kafka.Topic.Name, GroupID: configured.Kafka.Consumer.GroupID,
-		DeadLetterTopic: configured.Kafka.DeadLetter.Topic, Handler: processor,
+		DeadLetterTopic: configured.Kafka.DeadLetter.Name, Handler: processor,
 		MaxPollRecords:   configured.Kafka.Consumer.MaxPollRecords,
 		MaxRetryAttempts: configured.Kafka.Consumer.Retry.MaxAttempts,
 		RetryBackoff:     configured.Kafka.Consumer.Retry.Backoff,

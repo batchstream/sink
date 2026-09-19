@@ -16,13 +16,14 @@ storage:
 kafka:
   enabled: true # Disable for synchronous-only Stores; Worker requires true.
   brokers: [kafka:9092]
+  # Shared by the source and dead-letter Topics.
+  partitions: 4
+  replication_factor: 2
+  min_insync_replicas: 1
+  max_record_bytes: 900KiB
   topic:
     name: primary-mutations
-    partitions: 4
-    replication_factor: 2
-    min_insync_replicas: 2
     retention: 72h
-    max_record_bytes: 900KiB
   dead_letter:
-    topic: primary-mutations.dlq # Defaults to <topic.name>.dlq.
+    name: primary-mutations.dlq # Defaults to <topic.name>.dlq.
     retention: 720h

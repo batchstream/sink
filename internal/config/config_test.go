@@ -72,7 +72,10 @@ func TestComponentDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	kafka := worker.Storage.Kafka
-	if kafka.DeadLetter.Topic != "mutations.dlq" || kafka.Consumer.MaxPollRecords != 500 || kafka.Consumer.ProcessingTimeout != 20*time.Second || kafka.Consumer.Retry.MaxAttempts != 10 {
+	if kafka.Partitions != 4 || kafka.ReplicationFactor != 2 || kafka.MinInSyncReplicas != 1 || kafka.MaxRecordBytes != 900<<10 || kafka.Topic.Retention != 72*time.Hour || kafka.DeadLetter.Retention != 720*time.Hour {
+		t.Fatal("shared Kafka defaults changed")
+	}
+	if kafka.DeadLetter.Name != "mutations.dlq" || kafka.Consumer.MaxPollRecords != 500 || kafka.Consumer.ProcessingTimeout != 20*time.Second || kafka.Consumer.Retry.MaxAttempts != 10 {
 		t.Fatal("consumer defaults changed")
 	}
 }

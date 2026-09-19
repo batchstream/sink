@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/liran/sink/internal/logging"
 	searchstorage "github.com/liran/sink/internal/storage/search"
 	"google.golang.org/grpc"
 )
@@ -105,7 +106,7 @@ func (app *Application) Close() {
 		ctx, cancel := context.WithTimeout(context.Background(), app.config.ShutdownTimeout)
 		defer cancel()
 		if err := app.healthServer.Shutdown(ctx); err != nil {
-			slog.Error("shut down health endpoints", "error", err)
+			slog.Error("Health endpoint shutdown failed", "component", "runtime", "event", "health_shutdown_failed", "error_type", logging.ErrorType(err))
 			_ = app.healthServer.Close()
 		}
 	}
@@ -116,7 +117,7 @@ func (app *Application) Close() {
 		ctx, cancel := context.WithTimeout(context.Background(), app.config.ShutdownTimeout)
 		defer cancel()
 		if err := app.metricsServer.Shutdown(ctx); err != nil {
-			slog.Error("shut down Prometheus metrics", "error", err)
+			slog.Error("Metrics endpoint shutdown failed", "component", "runtime", "event", "metrics_shutdown_failed", "error_type", logging.ErrorType(err))
 			_ = app.metricsServer.Close()
 		}
 	}

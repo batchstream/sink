@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"log/slog"
 	"time"
 
 	sink "github.com/liran/sink/gen/sink"
@@ -16,10 +18,13 @@ type writeObservation struct {
 }
 
 func (s *Server) newWriteObservation(req *sink.WriteRequest) *writeObservation {
-	if s.metrics == nil || req.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED {
+	if req.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED {
 		return nil
 	}
-	store := s.metrics.RequestStore(req)
+	store := s.boundStore
+	if s.metrics != nil {
+		store = s.metrics.RequestStore(req)
+	}
 	observation := &writeObservation{metrics: s.metrics, store: store, completion: req.GetCompletionMode()}
 	return observation
 }
@@ -36,6 +41,12 @@ func (o *writeObservation) phase(phase string, started time.Time) {
 	}
 	observation := sinkmetrics.WritePhaseObservation{Store: o.store, Completion: o.completion, Phase: phase, Duration: time.Since(started)}
 	o.metrics.ObserveWritePhase(observation)
+	level := slog.LevelDebug
+	if observation.Duration > 5*time.Second {
+		level = slog.LevelWarn
+	}
+	slog.Log(context.Background(), level, "Write phase completed", "component", "execution", "event", "write_phase_completed",
+		"store", o.store, "phase", phase, "duration_ms", observation.Duration.Milliseconds())
 }
 
 func (o *writeObservation) finish() {

@@ -96,3 +96,10 @@ service:
       max_instructions: 1000000 # Maximum VM instruction checkpoints per execution.
 
 shutdown_timeout: 15s # Grace period for RPC shutdown and database disconnect.
+
+# Default internal diagnostics; configure logging.otlp to export to a Collector.
+logging:
+  level: warn
+  console:
+    enabled: true
+    format: json

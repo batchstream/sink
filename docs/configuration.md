@@ -33,6 +33,7 @@ startup. Restart after changes. Configuration files are limited to 4 MiB.
 | --- | --- |
 | `mode`, `shutdown_timeout` | Process role and shutdown |
 | `grpc`, `health`, `prometheus` | Transport and observability listeners |
+| `logging` | Default warn-level stderr logs and optional direct OTLP export; see [logging reference](logging.md) |
 | `storage` | Engine/Worker Store identity, backend and Kafka path |
 | `gateway` | Inline Store routes, forwarding capacity, connection cache and discovery |
 | `service.request` | Request deadline, operation count, and returned document budget |

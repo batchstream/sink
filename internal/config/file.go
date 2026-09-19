@@ -5,6 +5,7 @@ import "time"
 // File types preserve omission so defaults can depend on other configured limits.
 // Runtime code receives only resolved values through Config.
 type configFile struct {
+	Logging         loggingFile    `yaml:"logging"`
 	Memory          memoryFile     `yaml:"memory"`
 	Storage         *storageFile   `yaml:"storage"`
 	Gateway         *gatewayFile   `yaml:"gateway"`

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -418,6 +419,13 @@ func (b *requestBatcher[Request, Response]) executeBatch(
 		ExecutionDuration: time.Since(started),
 	}
 	b.metrics.ObserveBatch(observation)
+	level := slog.LevelDebug
+	if observation.QueueDuration > 5*time.Second || observation.ExecutionDuration > 5*time.Second {
+		level = slog.LevelWarn
+	}
+	slog.Log(context.Background(), level, "Batch completed", "component", "batcher", "event", "batch_completed",
+		"store", b.store, "method", b.method, "reason", reason, "operations", operationCount, "bytes", encodedBytes,
+		"queue_ms", observation.QueueDuration.Milliseconds(), "duration_ms", observation.ExecutionDuration.Milliseconds())
 }
 
 func batchExecutionContext[Request any, Response any](

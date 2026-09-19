@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"time"
+
+	"github.com/liran/sink/internal/logging"
 )
 
 // TopicManager gates one store until its durable topic policy has been applied.
@@ -24,9 +26,10 @@ func (m *TopicManager) Run(ctx context.Context) {
 	for {
 		if err := EnsureTopics(ctx, m.options); err == nil {
 			close(m.ready)
+			slog.Info("Kafka topic policy ready", "component", "kafka", "event", "kafka_policy_ready")
 			return
 		} else if ctx.Err() == nil {
-			slog.Error("Kafka topic policy unavailable; store remains gated", "topics", m.options.Topics, "error", err)
+			slog.Warn("Kafka topic policy unavailable; store remains gated", "component", "kafka", "event", "kafka_policy_unavailable", "error_type", logging.ErrorType(err))
 		}
 		timer := time.NewTimer(5 * time.Second)
 		select {

@@ -39,6 +39,8 @@ func (app *Application) configureGRPC(server sink.SinkServer, observed *sinkmetr
 	vtCodec := protocol.NewVTProtoCodec()
 	serverOptions = append(serverOptions, grpc.ForceServerCodecV2(vtCodec))
 	interceptors := make([]grpc.UnaryServerInterceptor, 0, 2)
+	interceptors = append(interceptors, logUnary)
+	streamInterceptors := []grpc.StreamServerInterceptor{logStream}
 	if app.memory != nil {
 		interceptors = append(interceptors, protocol.MemoryInterceptor)
 	}
@@ -62,9 +64,10 @@ func (app *Application) configureGRPC(server sink.SinkServer, observed *sinkmetr
 	if observed != nil {
 		interceptor := observed.UnaryServerInterceptor()
 		interceptors = append(interceptors, interceptor)
-		serverOptions = append(serverOptions, grpc.StreamInterceptor(observed.StreamServerInterceptor()))
+		streamInterceptors = append(streamInterceptors, observed.StreamServerInterceptor())
 	}
 	serverOptions = append(serverOptions, grpc.ChainUnaryInterceptor(interceptors...))
+	serverOptions = append(serverOptions, grpc.ChainStreamInterceptor(streamInterceptors...))
 	grpcServer := grpc.NewServer(serverOptions...)
 	sink.RegisterSinkServer(grpcServer, server)
 	healthServer := health.NewServer()

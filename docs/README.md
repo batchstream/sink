@@ -30,6 +30,7 @@
 | [Configuration reference](configuration.md) | Configure named stores, resource limits, Kafka, and process modes |
 | [Configuration migration](configuration-migration.md) | Move existing YAML to grouped settings and duration strings |
 | [Metrics and health](observability.md) | Inspect metrics, label budgets, and dependency health |
+| [Internal diagnostic logs](logging.md) | Configure warn-level console/OTLP logs, ES labels and bounded failure bodies |
 | [Batching behavior](batching.md) | Understand collection queues, ordering, and capacity |
 | [Reliability and recovery](reliability.md) | Plan idempotence, monitor dependencies, handle failures, and replay dead letters |
 | [Production sizing](production-sizing.md) | Size Gateway, Engine and Worker against workload and backend capacity |
@@ -39,6 +40,7 @@
 | Guide | What you will learn |
 | --- | --- |
 | [Store-isolated architecture design](design/store-isolated-architecture.md) | Confirmed agreements and implementation decisions for Gateway, single-Store Engine, and Worker |
+| [Internal logging design](design/internal-logging.md) | Accepted diagnostic logging scope, field contract and reliability boundaries |
 | [Contributing](../CONTRIBUTING.md) | Report an issue and prepare a focused pull request |
 | [Development](development.md) | Build, lint, generate protobuf code, run tests, and package releases |
 | [Lua benchmarks](../benchmarks/lua/README.md) | Compare Lua runtime workloads |

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/liran/sink/internal/config"
+	"github.com/liran/sink/internal/logging"
 	storagecontract "github.com/liran/sink/internal/storage"
 	"github.com/liran/sink/internal/storage/mongodb"
 	searchstorage "github.com/liran/sink/internal/storage/search"
@@ -105,6 +106,6 @@ func disconnectMongoClient(client *mongo.Client, timeout time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	if err := client.Disconnect(ctx); err != nil {
-		slog.Error("disconnect MongoDB", "error", err)
+		slog.Error("MongoDB disconnect failed", "component", "storage", "event", "storage_disconnect_failed", "error_type", logging.ErrorType(err))
 	}
 }

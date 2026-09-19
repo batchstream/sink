@@ -83,3 +83,54 @@ func assertFailureBarrier(t *testing.T, failure *sink.Failure, retain bool) {
 		t.Fatalf("permanent failure blocked following valid record: calls=%d results=%v", applier.calls, results)
 	}
 }
+
+type incompleteApplier struct {
+	write   *sink.WriteResponse
+	deleted *sink.DeleteResponse
+}
+
+func (a *incompleteApplier) Write(context.Context, *sink.WriteRequest) (*sink.WriteResponse, error) {
+	return a.write, nil
+}
+func (a *incompleteApplier) Delete(context.Context, *sink.DeleteRequest) (*sink.DeleteResponse, error) {
+	return a.deleted, nil
+}
+
+func TestIncompleteOrCanceledResultsRemainRetryable(t *testing.T) {
+	if _, err := NewProcessor(nil); err == nil {
+		t.Fatal("missing applier accepted")
+	}
+	key := uri.StringKey("record")
+	address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{"catalog", "records"}, key)}
+	document := &sink.Document{Encoding: sink.DocumentEncoding_DOCUMENT_ENCODING_JSON, Payload: []byte(`{}`)}
+	put := &sink.PutOperation{Document: document, Mode: sink.WriteMode_WRITE_MODE_UPSERT}
+	action := &sink.WriteOperation_Put{Put: put}
+	write := &sink.WriteOperation{Address: address, Action: action}
+	deleted := &sink.DeleteOperation{Address: address}
+	writeMutation, deleteMutation := queue.Mutation{Write: write}, queue.Mutation{Delete: deleted}
+	for _, canceled := range []bool{false, true} {
+		applier := &incompleteApplier{}
+		ctx, cancel := context.WithCancel(t.Context())
+		if canceled {
+			// A permanent-looking result received after cancellation cannot prove rejection.
+			failure := &sink.Failure{Code: sink.FailureCode_FAILURE_CODE_INVALID_ARGUMENT, Retryable: false}
+			written := &sink.WriteResult{Status: sink.WriteStatus_WRITE_STATUS_FAILED, Failure: failure}
+			removed := &sink.DeleteResult{Status: sink.DeleteStatus_DELETE_STATUS_FAILED, Failure: failure}
+			applier.write = &sink.WriteResponse{Results: []*sink.WriteResult{written}}
+			applier.deleted = &sink.DeleteResponse{Results: []*sink.DeleteResult{removed}}
+			cancel()
+		}
+		processor, err := NewProcessor(applier)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, mutation := range []queue.Mutation{writeMutation, deleteMutation} {
+			err := processor.Handle(ctx, mutation)
+			var failure *ApplyError
+			if !errors.As(err, &failure) || !failure.Retryable() {
+				t.Fatalf("lost unresolved source record: %v", err)
+			}
+		}
+		cancel()
+	}
+}

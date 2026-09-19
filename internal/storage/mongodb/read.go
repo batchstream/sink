@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/storage"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -91,12 +90,6 @@ func (s *Store) Read(ctx context.Context, req storage.ReadRequest) (storage.Read
 }
 
 func (s *Store) readGroup(ctx context.Context, group *readGroup, results []storage.ReadResult) {
-	wire, err := acquireWireMemory(ctx)
-	if err != nil {
-		s.setReadGroupError(group, results, storage.ResourceExhaustedError(err))
-		return
-	}
-	defer capacity.Close(wire)
 	ids := make([]any, 0, len(group.operations))
 	indexesByID := make(map[string][]int, len(group.operations))
 	budgets := make(map[int]*storage.ReadBudget, len(group.operations))

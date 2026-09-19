@@ -26,10 +26,6 @@ func (app *Application) configureGRPC(server sink.SinkServer, observed *sinkmetr
 		return fmt.Errorf("listen for gRPC: %w", err)
 	}
 	serverOptions := make([]grpc.ServerOption, 0, 4)
-	memoryStats := &protocol.MemoryStats{Pool: app.memory}
-	if app.memory != nil {
-		serverOptions = append(serverOptions, grpc.StatsHandler(memoryStats))
-	}
 	overhead := 0
 	if app.config.Mode == config.ModeEngine {
 		overhead = forwarding.EnvelopeBytes
@@ -41,9 +37,6 @@ func (app *Application) configureGRPC(server sink.SinkServer, observed *sinkmetr
 	interceptors := make([]grpc.UnaryServerInterceptor, 0, 2)
 	interceptors = append(interceptors, logUnary)
 	streamInterceptors := []grpc.StreamServerInterceptor{logStream}
-	if app.memory != nil {
-		interceptors = append(interceptors, protocol.MemoryInterceptor)
-	}
 	if app.gateway != nil {
 		interceptors = append(interceptors, app.gateway.UnaryInterceptor())
 	}

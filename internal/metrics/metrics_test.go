@@ -95,21 +95,16 @@ func TestMetricsExposeBuildRequestAndOperationResults(t *testing.T) {
 	observed.ObserveMergeFold("primary", 1)
 	observed.ObserveMergeFold("primary", 16)
 	observed.ObserveMergeFold("primary", 4)
-	observed.AdjustAdmissionPool("primary", "execution", 1, 100)
-	observed.AdjustAdmissionPool("primary", "publish", 1, 20)
-	observed.AdjustAdmissionPool("primary", "publish", -1, -20)
-	observed.ObserveAdmissionPoolRejected("primary", "execution", "fairness")
-	observed.ObserveAdmissionPoolRejected("primary", "publish", "bytes")
 
+	observed.AdjustInFlight(1)
 	body := scrape(t, observed)
+	for _, obsolete := range []string{"sink_in_flight_bytes", "sink_admission_", "sink_scan_queued_", "sink_scan_admission_", "sink_execution_queued_", "sink_execution_admission_", "sink_execution_store_bytes"} {
+		if strings.Contains(body, obsolete) {
+			t.Errorf("obsolete metric exported: %s", obsolete)
+		}
+	}
 	wanted := []string{
 		`sink_in_flight_requests 1`,
-		`sink_in_flight_bytes 100`,
-		`sink_admission_rejected_total 2`,
-		`sink_admission_pool_requests{pool="execution",store="primary"} 1`,
-		`sink_admission_pool_bytes{pool="publish",store="primary"} 0`,
-		`sink_admission_pool_rejected_total{pool="execution",reason="fairness",store="primary"} 1`,
-		`sink_admission_pool_rejected_total{pool="publish",reason="bytes",store="primary"} 1`,
 		`sink_build_info{version="test-version"} 1`,
 		`sink_grpc_server_requests_total{code="OK",method="Read",store="_unconfigured"} 1`,
 		`sink_grpc_server_operation_results_total{method="Read",status="found",store="_unconfigured"} 1`,

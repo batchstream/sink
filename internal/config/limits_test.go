@@ -6,15 +6,32 @@ import (
 	"time"
 )
 
-func TestExecutionBudgetsAreIndependentOfTransport(t *testing.T) {
-	for _, input := range []string{
-		"mode: engine\ngrpc: {max_send_message_bytes: 1MiB}\nexecution: {max_snapshot_bytes: 64MiB, max_output_bytes: 128MiB}\n",
-		"mode: worker\nconsumer: {group_id: workers}\nexecution: {max_snapshot_bytes: 64MiB, max_output_bytes: 128MiB}\n",
-	} {
-		loaded, err := Decode(strings.NewReader(input), strings.NewReader(kafkaStore))
-		if err != nil || loaded.Service.Execution.MaxSnapshotBytes != 64<<20 || loaded.Service.Execution.MaxOutputBytes != 128<<20 {
-			t.Fatalf("execution depends on gRPC: %v", err)
+func TestExecutionRejectsRemovedLimits(t *testing.T) {
+	for _, mode := range []string{"engine", "worker"} {
+		for _, fields := range []string{"max_snapshot_bytes: 64MiB", "max_output_bytes: 128MiB", "mongodb: {max_concurrent_writes: 64}"} {
+			input := "mode: " + mode + "\nexecution: {" + fields + "}\n"
+			_, err := Decode(strings.NewReader(input), strings.NewReader(kafkaStore))
+			if err == nil || !strings.Contains(err.Error(), "field ") {
+				t.Fatalf("obsolete execution field accepted: %s: %v", input, err)
+			}
 		}
+	}
+}
+
+func TestMongoDBStoreConcurrencyValidation(t *testing.T) {
+	for _, field := range []string{"max_concurrent_writes", "max_concurrent_groups"} {
+		for _, value := range []string{"0", "-1"} {
+			shared := minimalStorage + "    " + field + ": " + value + "\n"
+			_, err := Decode(strings.NewReader("mode: engine"), strings.NewReader(shared))
+			if err == nil || !strings.Contains(err.Error(), "storage.mongodb."+field) {
+				t.Fatalf("invalid concurrency accepted: %s: %v", shared, err)
+			}
+		}
+	}
+	shared := "name: primary\nstorage:\n  driver: opensearch\n  search: {endpoints: [http://localhost:9200]}\n  mongodb: {max_concurrent_writes: 4}\n"
+	_, err := Decode(strings.NewReader("mode: engine"), strings.NewReader(shared))
+	if err == nil || !strings.Contains(err.Error(), "requires the mongodb driver") {
+		t.Fatalf("MongoDB tuning accepted by another driver: %v", err)
 	}
 }
 

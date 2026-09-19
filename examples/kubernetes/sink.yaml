@@ -4,8 +4,6 @@ grpc: {address: ":8080", max_receive_message_bytes: 64MiB, max_send_message_byte
 health: {address: ":8081"}
 prometheus: {enabled: true, address: ":9090"}
 execution:
-  max_snapshot_bytes: 32MiB
-  max_output_bytes: 32MiB
   mongodb: {max_concurrent_writes: 64, max_concurrent_groups: 16}
   merge: {max_attempts: 3}
 batching:

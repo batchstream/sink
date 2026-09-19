@@ -2,12 +2,18 @@ package kafka
 
 import (
 	"context"
+	"fmt"
+	"io/fs"
+	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/liran/sink-go/uri"
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/queue"
 	"github.com/liran/sink/internal/service"
@@ -33,7 +39,7 @@ func (h *capacitySplitHandler) HandleBatch(ctx context.Context, mutations []queu
 	return results
 }
 
-func TestWorkerSplitsCapacityRejectedPollAndCommits(t *testing.T) {
+func TestWorkerPausesForMemoryPressureAndCommitsCollectedPoll(t *testing.T) {
 	cluster, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.SeedTopics(1, "review-capacity", "review-capacity.dlq"))
 	if err != nil {
 		t.Fatal(err)
@@ -45,8 +51,8 @@ func TestWorkerSplitsCapacityRejectedPollAndCommits(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := memory.New()
-	// One 600-byte mutation plus its failure response fits; two do not.
-	coreOpts := service.Options{BoundStore: "primary", Storage: store, Lua: engine, MaxInFlightBytes: 2048}
+	// The admitted poll is processed whole after memory pressure recovers.
+	coreOpts := service.Options{BoundStore: "primary", Storage: store, Lua: engine}
 	core, err := service.New(coreOpts)
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +62,14 @@ func TestWorkerSplitsCapacityRejectedPollAndCommits(t *testing.T) {
 		t.Fatal(err)
 	}
 	handler := &capacitySplitHandler{processor: processor, calls: make(chan int, 100)}
-	opts := WorkerOptions{Brokers: cluster.ListenAddrs(), Store: "primary", Topic: "review-capacity", GroupID: "review-capacity", DeadLetterTopic: "review-capacity.dlq", Handler: handler, MaxPollRecords: 2, MaxRetryAttempts: 1, RetryBackoff: time.Millisecond, MaxRetryBackoff: time.Millisecond}
+	pressure := &pressureCounter{}
+	pressure.pages.Store(90)
+	memoryOpts := capacity.Options{Bytes: int64(100 * os.Getpagesize()), HighPercent: 80, LowPercent: 70, Files: pressure}
+	guard, err := capacity.New(memoryOpts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := WorkerOptions{Memory: guard, Brokers: cluster.ListenAddrs(), Store: "primary", Topic: "review-capacity", GroupID: "review-capacity", DeadLetterTopic: "review-capacity.dlq", Handler: handler, MaxPollRecords: 2, MaxRetryAttempts: 1, RetryBackoff: time.Millisecond, MaxRetryBackoff: time.Millisecond}
 	w, err := NewWorker(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -82,6 +95,15 @@ func TestWorkerSplitsCapacityRejectedPollAndCommits(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- w.Run(ctx) }()
 	defer func() { cancel(); <-done }()
+	// No handler call or offset commit may occur while intake is paused.
+	select {
+	case <-handler.calls:
+		t.Fatal("Worker polled above its high watermark")
+	case <-time.After(2 * capacity.SampleInterval):
+	}
+	// Replace the filesystem only while no concurrent counter read can observe it.
+	// The fake counter below is backed by an atomic value for subsequent samples.
+	pressure.pages.Store(60)
 	select {
 	case size := <-handler.calls:
 		if size != 2 {
@@ -102,4 +124,12 @@ func TestWorkerSplitsCapacityRejectedPollAndCommits(t *testing.T) {
 	if ends["review-capacity.dlq"][0].Offset != 0 {
 		t.Fatal("valid records were quarantined")
 	}
+}
+
+// pressureCounter supplies changing OS readings without a test-only function hook.
+type pressureCounter struct{ pages atomic.Int64 }
+
+func (p *pressureCounter) Open(name string) (fs.File, error) {
+	files := fstest.MapFS{"proc/self/statm": {Data: []byte(fmt.Sprintf("100 %d", p.pages.Load()))}}
+	return files.Open(name)
 }

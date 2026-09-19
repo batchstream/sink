@@ -6,32 +6,8 @@ import (
 
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/merge"
-	"github.com/liran/sink/internal/storage"
 	"github.com/liran/sink/internal/storage/memory"
 )
-
-var benchmarkSnapshotBudget *storage.ReadBudget
-
-func BenchmarkSharedSnapshotBudget(b *testing.B) {
-	for _, callers := range []int{1, 128} {
-		for _, operations := range []int{1, 128, 1024} {
-			b.Run(fmt.Sprintf("callers=%d/operations=%d", callers, operations), func(b *testing.B) {
-				budgets := make([]*storage.ReadBudget, callers)
-				for i := range budgets {
-					budgets[i] = storage.NewReadBudget(4096)
-				}
-				owners := make([]int, operations)
-				for i := range owners {
-					owners[i] = i % callers
-				}
-				b.ReportAllocs()
-				for b.Loop() {
-					benchmarkSnapshotBudget = sharedSnapshotBudget(owners, budgets)
-				}
-			})
-		}
-	}
-}
 
 func BenchmarkRepeatedRecordRead(b *testing.B) {
 	for _, count := range []int{128, 1000} {

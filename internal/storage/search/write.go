@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/storage"
 )
 
@@ -190,7 +189,6 @@ func (s *Store) checkExistingWrites(ctx context.Context, works []readWork, check
 	// Replace needs only existence and revision. Even metadata can exceed the
 	// response cap for many long IDs, so split this read before any bulk write.
 	documents, err := s.multiGet(ctx, works, false)
-	defer capacity.Close(documents.memory)
 	if errors.Is(err, errResponseTooLarge) && len(works) > 1 && ctx.Err() == nil {
 		middle := len(works) / 2
 		s.checkExistingWrites(ctx, works[:middle], check)

@@ -8,9 +8,9 @@ grpc:
   max_receive_message_bytes: 64MiB
   max_send_message_bytes: 64MiB
 memory:
-  # max_bytes: 256MiB # Omit to auto-detect managed capacity; not an RSS cap.
-  burst_percent: 10 # Completion reserve, 1..99.
-  wait_timeout: 2s # Memory-growth contention bound; never an overall RPC deadline.
+  # max_bytes: 1GiB # Optional process ceiling; bounded by detected limits.
+  high_watermark_percent: 80 # Reject new work at this process memory usage.
+  low_watermark_percent: 70 # Resume new work after usage falls to this level.
 batching:
   max_wait: 2ms # Collection delay, not an execution timeout.
   max_operations: 32 # Measured small-document starting point; not the public RPC limit.
@@ -21,11 +21,6 @@ batching:
 producer:
   max_buffered_bytes: 64MiB
 execution:
-  max_snapshot_bytes: 32MiB # Conditional-write snapshots, accumulated per execution owner.
-  max_output_bytes: 32MiB # Candidate documents, accumulated separately from snapshots.
-  mongodb: # Only valid with the mongodb driver; tune independently in each role.
-    max_concurrent_writes: 64
-    max_concurrent_groups: 16
   merge:
     max_attempts: 3 # Revision-conflict attempts.
     lua:

@@ -5,7 +5,6 @@ import (
 	"errors"
 
 	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/queue"
 	"github.com/liran/sink/internal/storage"
 	"google.golang.org/grpc/codes"
@@ -45,22 +44,6 @@ func (s *Server) publishWrites(
 		}
 		mutation := queue.Mutation{Write: cloned}
 		mutations = append(mutations, mutation)
-	}
-	// Kafka serializes every mutation separately before enqueueing. Referenced
-	// Lua declarations therefore expand beyond the original RPC's wire size.
-	encodedBytes := 0
-	for _, mutation := range mutations {
-		encodedBytes += queue.MutationSize(mutation) + len(mutation.Write.GetAddress().GetUri())
-	}
-	lease := capacity.FromContext(ctx).NewLease()
-	defer capacity.Close(lease)
-	if lease != nil {
-		if err := lease.Grow(ctx, int64(encodedBytes), capacity.Request); err != nil {
-			for _, operation := range operations {
-				setWriteFailure(results[operation.index], sink.FailureCode_FAILURE_CODE_RESOURCE_EXHAUSTED, err, true)
-			}
-			return nil
-		}
 	}
 	request := queue.PublishRequest{Mutations: mutations}
 	response, err := s.publisher.Publish(ctx, request)

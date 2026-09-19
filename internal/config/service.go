@@ -17,11 +17,6 @@ func resolveService(file configFile, grpc GRPC, v *validator) Service {
 	if execution == nil {
 		execution = &executionFile{}
 	}
-	loaded.Execution.MaxSnapshotBytes = v.bytes("execution.max_snapshot_bytes", execution.MaxSnapshotBytes, 32<<20, math.MaxInt)
-	loaded.Execution.MaxOutputBytes = v.bytes("execution.max_output_bytes", execution.MaxOutputBytes, 32<<20, math.MaxInt)
-	mongo := &loaded.Execution.MongoDB
-	mongo.MaxConcurrentWrites = v.integer("execution.mongodb.max_concurrent_writes", execution.MongoDB.MaxConcurrentWrites, 64)
-	mongo.MaxConcurrentGroups = v.integer("execution.mongodb.max_concurrent_groups", execution.MongoDB.MaxConcurrentGroups, 16)
 	loaded.Merge.MaxAttempts = v.integer("execution.merge.max_attempts", execution.Merge.MaxAttempts, 3)
 	lua := &loaded.Merge.Lua
 	lua.Timeout = v.duration("execution.merge.lua.timeout", execution.Merge.Lua.Timeout, 100*time.Millisecond)

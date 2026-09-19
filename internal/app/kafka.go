@@ -55,7 +55,7 @@ func (app *Application) configureWorker(server *service.Server, observed *sinkme
 	if err != nil {
 		return err
 	}
-	workerOptions := queuekafka.WorkerOptions{
+	workerOptions := queuekafka.WorkerOptions{Memory: app.memory,
 		ShutdownTimeout: loaded.ShutdownTimeout, Topics: app.topics,
 		ProcessingTimeout: configured.Kafka.Consumer.ProcessingTimeout,
 		MaxRecordBytes:    configured.Kafka.MaxRecordBytes,

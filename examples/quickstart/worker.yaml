@@ -1,7 +1,8 @@
 mode: worker
-# Only the managed capacity is configurable; reservation policy is internal.
-# memory:
-#   max_bytes: 256MiB
+memory:
+  # max_bytes: 1GiB # Optional process ceiling; bounded by detected limits.
+  high_watermark_percent: 80
+  low_watermark_percent: 70
 consumer:
   group_id: primary-workers
   max_poll_records: 500
@@ -11,11 +12,6 @@ consumer:
     backoff: 100ms
     max_backoff: 10s
 execution:
-  max_snapshot_bytes: 32MiB # Conditional-write snapshots, accumulated per execution owner.
-  max_output_bytes: 32MiB # Candidate documents, accumulated separately from snapshots.
-  mongodb: # Only valid with the mongodb driver; tune independently in each role.
-    max_concurrent_writes: 64
-    max_concurrent_groups: 16
   merge:
     max_attempts: 3 # Revision-conflict attempts.
     lua:

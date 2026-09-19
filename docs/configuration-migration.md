@@ -11,13 +11,16 @@ from an incompatible forwarding version; old and new Engines cannot share routes
    storage settings from their component files. Gateway takes only `--config`.
 3. Move `gateway` to `forwarding`. Keep only `request.max_operations` on Gateway.
 4. Move `service.batching` to Engine's `batching`; move `service.merge` to
-   `execution.merge`. Put MongoDB concurrency under `execution.mongodb`.
+   `execution.merge`. Put MongoDB concurrency in the shared Store under `storage.mongodb`.
 5. Move Kafka `producer` to Engine and `consumer` to Worker. Worker has no `grpc`,
-   `request`, `batching`, or `producer`, and `memory` accepts only `max_bytes`.
+   `request`, `batching`, or `producer`, and uses the same memory watermarks as other roles.
 6. Remove `service.request.timeout` and response/read quotas. Caller contexts
    control request lifetime; gRPC message limits bound transport responses.
-   Snapshot/output working sets use `execution.max_snapshot_bytes` and
-   `execution.max_output_bytes`. Remove old count-based execution/publish admission.
+   Remove snapshot/output byte quotas and old count-based execution/publish admission.
+   Process watermarks now control new admission. Remove `memory.burst_percent` and
+   `memory.wait_timeout`; use `high_watermark_percent` (80) and
+   `low_watermark_percent` (70). Startup panics if estimated minimum working memory
+   cannot fit below the high watermark. See the [sizing formula](design/demand-based-admission.md).
 7. Move Kafka `topic.partitions`, `topic.replication_factor`,
    `topic.min_insync_replicas`, and `topic.max_record_bytes` directly under `kafka`;
    they apply to both Topics. Rename `dead_letter.topic` to `dead_letter.name`.

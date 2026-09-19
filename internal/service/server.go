@@ -9,7 +9,6 @@ import (
 	"time"
 
 	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/merge"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
 	"github.com/liran/sink/internal/protocol"
@@ -22,9 +21,7 @@ import (
 
 type Server struct {
 	boundStore string
-	memory     *capacity.Pool
 	sink.UnimplementedSinkServer
-	*admissionPool
 
 	storage          storage.Storage
 	lua              *merge.LuaEngine
@@ -33,9 +30,6 @@ type Server struct {
 	maxMergeAttempts int
 	metrics          *sinkmetrics.Metrics
 	maxReadBytes     int
-	maxSnapshotBytes int
-	maxOutputBytes   int
-	publishAdmission *admissionPool
 }
 
 func (s *Server) Write(ctx context.Context, req *sink.WriteRequest) (*sink.WriteResponse, error) {
@@ -60,27 +54,7 @@ func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *req
 	}
 	observation := s.newWriteObservation(req)
 	defer observation.finish()
-	estimate := s.estimateWriteExecution(req, budgets.callerCount(), returningCallerCount(req, budgets))
-	reservation := &admissionReservation{}
-	admission := admissionRequest{encodedBytes: estimate.bytes, stores: operationStores(req.GetOperations()), wait: budgets != nil, reservation: reservation}
-	admission.inputBytes = req.SizeVT() + 128*len(req.GetOperations())
-	admission.resultBytes = failureResponseBytes(len(req.GetOperations()))
-	admission.sharedInput = budgets.ownsInput()
-	admission.publish = req.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED
 	started := time.Now()
-	ctx, release, err := s.admitRequest(ctx, admission)
-	observation.phase("admission", started)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	if budgets == nil {
-		budgets = contextBudgets(ctx, len(req.GetOperations()))
-	}
-	if budgets != nil {
-		budgets.producer = capacity.FromContext(ctx)
-	}
-	started = time.Now()
 	luaPrograms, err := parseLuaPrograms(req.GetLuaPrograms())
 	if err != nil {
 		observation.phase("parse", started)
@@ -126,9 +100,7 @@ func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *req
 	}
 
 	groups := buildWriteGroups(operations)
-	memory := &writeMemoryReservation{reservation: reservation, estimate: estimate}
 	executionOptions := writeExecutionOptions{
-		memory:           memory,
 		returns:          newWriteReturns(req, budgets, s.maxReadBytes),
 		budgets:          budgets,
 		completion:       completion,
@@ -175,16 +147,6 @@ func (s *Server) delete(ctx context.Context, req *sink.DeleteRequest, budgets *r
 	if !validCompletionMode(req.GetCompletionMode()) {
 		return nil, status.Error(codes.InvalidArgument, "delete request has an invalid completion mode")
 	}
-	admission := admissionRequest{encodedBytes: req.SizeVT() + failureResponseBytes(len(req.GetOperations())), stores: operationStores(req.GetOperations()), wait: budgets != nil}
-	admission.inputBytes = req.SizeVT() + 128*len(req.GetOperations())
-	admission.resultBytes = failureResponseBytes(len(req.GetOperations()))
-	admission.sharedInput = budgets.ownsInput()
-	admission.publish = req.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED
-	ctx, release, err := s.admitRequest(ctx, admission)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
 
 	response := &sink.DeleteResponse{
 		Results: make([]*sink.DeleteResult, len(req.GetOperations())),

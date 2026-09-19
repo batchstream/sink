@@ -24,7 +24,7 @@ func TestReadFailuresPreserveDocumentBudget(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			for _, scope := range []string{"request", "operation", "working set", "exhausted"} {
+			for _, scope := range []string{"request", "operation", "exhausted"} {
 				t.Run(scope, func(t *testing.T) {
 					const source = `{"value":1}`
 					const charge = len(source) + 128
@@ -42,14 +42,10 @@ func TestReadFailuresPreserveDocumentBudget(t *testing.T) {
 						Operations: []storage.ReadOperation{{Address: testAddress("bad")}, {Address: testAddress("good")}},
 						Budget:     budget,
 					}
-					if scope == "operation" || scope == "working set" {
+					if scope == "operation" {
 						request.Budget = storage.NewTrackedReadBudget(0, nil)
-						working := storage.NewReadBudget(charge)
 						for index := range request.Operations {
 							request.Operations[index].Budget = budget
-							if scope == "working set" {
-								request.Operations[index].Budget = storage.NewWorkingSetReadBudget(budget, working)
-							}
 						}
 					}
 					response, err := store.Read(t.Context(), request)

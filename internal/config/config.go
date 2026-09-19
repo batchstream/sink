@@ -36,9 +36,9 @@ type Config struct {
 // Memory is one process-local capacity shared by all request classes.
 // MaxBytes == 0 selects runtime detection.
 type Memory struct {
-	MaxBytes     int
-	BurstPercent int
-	WaitTimeout  time.Duration
+	MaxBytes             int
+	HighWatermarkPercent int
+	LowWatermarkPercent  int
 }
 
 type GRPC struct {
@@ -57,44 +57,14 @@ type Prometheus struct {
 }
 
 type Service struct {
-	Request   Request
-	Execution Execution
-	Publish   Publish
-	Batching  Batching
-	Merge     Merge
+	Request  Request
+	Batching Batching
+	Merge    Merge
 }
 
 type Request struct {
-	Timeout       time.Duration
 	MaxOperations int
 	MaxReadBytes  int
-}
-
-type Execution struct {
-	MaxSnapshotBytes int
-	MaxOutputBytes   int
-	MongoDB          MongoDB
-	MaxRequests      int
-	MaxBytes         int
-	Queue            AdmissionQueue
-	Scan             Scan
-}
-
-type AdmissionQueue struct {
-	MaxRequests int
-	MaxBytes    int
-	MaxWait     time.Duration
-}
-
-type Scan struct {
-	MaxRequests   int
-	MaxBytes      int
-	AdmissionWait time.Duration
-}
-
-type Publish struct {
-	MaxRequests int
-	MaxBytes    int
 }
 
 type Batching struct {
@@ -181,14 +151,11 @@ type Retry struct {
 
 // Gateway owns only routing and bounded forwarding resources.
 type Gateway struct {
-	MaxRequestsPerStore int
-	Routes              []Route
-	DNSRefreshInterval  time.Duration
-	IdleTimeout         time.Duration
-	MaxConnections      int
-	MaxRequests         int
-	MaxBytes            int
-	MaxFanout           int
+	Routes             []Route
+	DNSRefreshInterval time.Duration
+	IdleTimeout        time.Duration
+	MaxConnections     int
+	MaxFanout          int
 }
 
 // Route belongs to the Gateway configuration and names one Store's Engines.

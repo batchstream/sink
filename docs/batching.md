@@ -26,7 +26,7 @@ Puts and Merges fold within a group; repeated Reads and Deletes execute once per
 full address. Executions use their live callers' deadlines and cancellation signals.
 
 Write/Delete dispatchers can collect and execute later batches while an earlier
-batch waits for refresh. Active batches acquire from the shared memory pool;
+batch waits for refresh. New RPCs pass the process memory watermark check;
 there is no separate request concurrency cap. Record
 dependencies cover both active and queued RPCs: an RPC touching several records
 waits for every predecessor, while unrelated RPCs may pass it. Ordering does not
@@ -45,9 +45,6 @@ caller touching it has finished its remaining operations for that address,
 even if their RPCs still contain other unfinished documents. Caller cancellation
 alone does not release an executing document. Backend bulk calls still return
 together; Sink cannot acknowledge an item whose backend result is not yet known.
-Producer references retain input until execution finishes. Each caller retains
-its output through transport completion, so early completion cannot release
-still-owned memory.
 
 Gateway splits cross-Store requests before forwarding them. Engine accepts only its
 bound Store and never bypasses that check through the batching layer. Budget-sensitive
@@ -62,19 +59,14 @@ omitted. Once a batch is dispatched, other live callers in that batch continue
 even if one caller cancels. Once all callers cancel, execution is cancelled too.
 Execution follows the callers' deadlines and cancellation; there is no default
 whole-request timeout.
-Dispatched micro-batches acquire known working allocations from the shared
-`memory` pool. Response growth has priority over new arrivals and may borrow its
-completion reserve. Request entry fails if ordinary capacity is unavailable;
-already admitted queue entries retain their input charge. Async publication
-uses the same memory pool; Kafka producer buffers keep their separate bounds.
-
-Each original RPC retains its snapshot/input/output/returned-document quotas
-across chunks, retries and shared-key folding. A full read working set defers
-records without consuming caller quota; conditional write chunks retain earlier
-successful results. Returned documents acquire capacity before their commit.
-Batch splitting uses known request sizes and actual working allocations, rather
-than maximum legal responses per caller. Graceful shutdown drains gRPC calls
-before stopping batch dispatchers. See [memory admission](design/demand-based-admission.md).
+Admitted batches continue through memory pressure. The entire collected batch
+executes without independent snapshot/output byte quotas or memory-based splitting.
+Record dependencies and adapter/completion grouping still apply. Public response
+allowances remain per original RPC; returned documents must fit the gRPC ceiling
+before their own commit. Kafka producer buffers and Lua sandbox limits remain.
+Queue limits count waiting work only, excluding dispatched batches. Graceful
+shutdown drains gRPC calls before stopping batch dispatchers.
+See [memory admission](design/demand-based-admission.md).
 
 Batching happens only among requests for the same store reaching the same Sink
 process. More pods increase aggregate queue and storage concurrency, but they
@@ -100,11 +92,7 @@ limit and each method's **10,000-operation** waiting queue. A valid explicit
 RPC with more than 32 operations executes alone; it is not rejected or split
 into different public requests by this default change.
 
-`memory.burst_percent` remains **10**, the smallest tested completion reserve
-that finished every admitted request in the
-[allocator saturation experiment](https://github.com/batchstream/sink-production-suite/blob/main/benchmarks/memory-admission/README.md).
-The remaining queue, byte, backend-concurrency and Kafka-consumer defaults are
-capacity or protection settings without a comparable general tuning result.
-Historical workload-specific response caps and GC settings are not carried over
-as universal defaults. Tune these separately against actual document sizes,
-resource limits and latency targets.
+Memory watermarks default to 80% for rejection and 70% for recovery. They are
+operational starting points, not benchmark-derived optima. Queue, byte,
+backend-concurrency and Kafka-consumer defaults also require workload-specific
+validation. Historical response caps and GC settings are not universal defaults.

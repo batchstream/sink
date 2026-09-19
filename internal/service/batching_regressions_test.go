@@ -54,9 +54,6 @@ func TestRegressionMicrobatchMergeBudgetIsolation(t *testing.T) {
 	server := completionServer(t, backend)
 	server.server.maxReadBytes = 256
 
-	server.server.maxSnapshotBytes = 256
-
-	server.server.maxOutputBytes = 256
 	makeCall := func(key string) *batchCall[*sink.WriteRequest, *sink.WriteResponse] {
 		op := completionMerge(key, 1)
 		op.GetMerge().LuaProgram.Source = []byte(`return function(current, incoming) return incoming end`)
@@ -89,9 +86,6 @@ func TestRegressionMicrobatchReadBudgetIsolation(t *testing.T) {
 	server := completionServer(t, backend)
 	server.server.maxReadBytes = 256
 
-	server.server.maxSnapshotBytes = 256
-
-	server.server.maxOutputBytes = 256
 	var calls []*batchCall[*sink.ReadRequest, *sink.ReadResponse]
 	for _, key := range []string{"a", "b"} {
 		address, err := protocol.ParseAddress(completionAddress(key))
@@ -128,9 +122,6 @@ func TestMicrobatchReadKeepsOversizedCallerIsolatedForSharedKey(t *testing.T) {
 	server := completionServer(t, backend)
 	server.server.maxReadBytes = 256
 
-	server.server.maxSnapshotBytes = 256
-
-	server.server.maxOutputBytes = 256
 	var operations []*sink.ReadOperation
 	for _, key := range []string{"a", "b"} {
 		address, err := protocol.ParseAddress(completionAddress(key))
@@ -162,16 +153,13 @@ func TestMicrobatchReadKeepsOversizedCallerIsolatedForSharedKey(t *testing.T) {
 	}
 }
 
-func TestMicrobatchMergeBudgetFailureDoesNotLeakIntoNextCaller(t *testing.T) {
+func TestMicrobatchMergesDoNotApplyResponseLimitToIntermediateDocuments(t *testing.T) {
 	for _, present := range []bool{false, true} {
 		t.Run(fmt.Sprint(present), func(t *testing.T) {
 			backend := memory.New()
 			server := completionServer(t, backend)
 			server.server.maxReadBytes = 150
 
-			server.server.maxSnapshotBytes = 150
-
-			server.server.maxOutputBytes = 150
 			if present {
 				for _, key := range []string{"a", "b"} {
 					address, err := protocol.ParseAddress(completionAddress(key))
@@ -187,13 +175,13 @@ func TestMicrobatchMergeBudgetFailureDoesNotLeakIntoNextCaller(t *testing.T) {
 			second := completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, completionMerge("b", 1))
 			calls := []*batchCall[*sink.WriteRequest, *sink.WriteResponse]{first, second}
 			server.executeWrites(t.Context(), calls)
-			oversized := awaitCompletion(t, first.result)
+			firstResult := awaitCompletion(t, first.result)
 			healthy := awaitCompletion(t, second.result)
-			if oversized.err != nil || healthy.err != nil {
-				t.Fatalf("write errors: %v, %v", oversized.err, healthy.err)
+			if firstResult.err != nil || healthy.err != nil {
+				t.Fatalf("write errors: %v, %v", firstResult.err, healthy.err)
 			}
-			if oversized.response.Results[0].Status != sink.WriteStatus_WRITE_STATUS_APPLIED || oversized.response.Results[1].GetFailure().GetCode() != sink.FailureCode_FAILURE_CODE_RESOURCE_EXHAUSTED {
-				t.Fatal(oversized.response)
+			if firstResult.response.Results[0].Status != sink.WriteStatus_WRITE_STATUS_APPLIED || firstResult.response.Results[1].Status != sink.WriteStatus_WRITE_STATUS_APPLIED {
+				t.Fatal(firstResult.response)
 			}
 			if healthy.response.Results[0].Status != sink.WriteStatus_WRITE_STATUS_APPLIED {
 				t.Fatal(healthy.response)
@@ -208,8 +196,8 @@ func TestMicrobatchMergeBudgetFailureDoesNotLeakIntoNextCaller(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if string(stored.Results[0].Document.Payload) != `{"value":1}` {
-				t.Fatalf("failed caller changed the folded state: %s", stored.Results[0].Document.Payload)
+			if string(stored.Results[0].Document.Payload) != `{"value":101}` {
+				t.Fatalf("folded chain lost a caller: %s", stored.Results[0].Document.Payload)
 			}
 		})
 	}
@@ -221,11 +209,6 @@ func TestMicrobatchBudgetsSplitWithinExecutionMemoryLimit(t *testing.T) {
 			backend := memory.New()
 			server := completionServer(t, backend)
 			server.server.maxReadBytes = 256
-
-			server.server.maxSnapshotBytes = 256
-
-			server.server.maxOutputBytes = 256
-			server.server.maxInFlightBytes = 1000 + failureResponseBytes(1)
 			switch method {
 			case "Write":
 				var calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]
@@ -262,9 +245,6 @@ func TestMicrobatchBudgetsSplitWithinExecutionMemoryLimit(t *testing.T) {
 					}
 				}
 			}
-			if server.server.inFlightBytes != 0 || server.server.inFlightRequests != 0 {
-				t.Fatal("execution reservation leaked")
-			}
 		})
 	}
 }
@@ -279,8 +259,6 @@ func TestMutationDispatcherPreservesDependenciesAcrossBatches(t *testing.T) {
 			method := test.method
 			backend := &completionStorage{Storage: memory.New(), events: make(chan completionEvent, 16), blocked: "product", release: make(chan struct{})}
 			core := completionServer(t, backend).server
-			core.maxInFlightRequests = 2
-			core.maxInFlightRequests = 2
 			opts := BatchingOptions{MaxOperations: 1, MaxWait: time.Millisecond}
 			server, err := NewBatchingServer(core, opts)
 			if err != nil {
@@ -357,9 +335,6 @@ func TestMutationDispatcherPreservesDependenciesAcrossBatches(t *testing.T) {
 			// active refresh wait without retaining queue/admission reservations.
 			cancel()
 			server.Close()
-			if core.inFlightBytes != 0 || core.inFlightRequests != 0 {
-				t.Fatal("shutdown leaked execution capacity")
-			}
 		})
 	}
 }
@@ -385,16 +360,13 @@ func enqueueCompletionCall[Request interface{ SizeVT() int }, Response any](t *t
 	return done
 }
 
-func TestMicrobatchConditionalWritesKeepEachCallersInputAndOutputBudget(t *testing.T) {
+func TestMicrobatchConditionalWritesShareWorkingMemory(t *testing.T) {
 	for _, kind := range []string{"Merge", "Replace"} {
 		t.Run(kind, func(t *testing.T) {
 			backend := memory.New()
 			server := completionServer(t, backend)
 			server.server.maxReadBytes = 256
 
-			server.server.maxSnapshotBytes = 256
-
-			server.server.maxOutputBytes = 256
 			var calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]
 			for _, key := range []string{"a", "b"} {
 				address, err := protocol.ParseAddress(completionAddress(key))
@@ -427,67 +399,10 @@ func TestMicrobatchConditionalWritesKeepEachCallersInputAndOutputBudget(t *testi
 	}
 }
 
-func TestCancelledRPCIsOmittedFromLaterMemoryLimitedSegment(t *testing.T) {
-	backend := &completionStorage{Storage: memory.New(), events: make(chan completionEvent, 8), blocked: "a", release: make(chan struct{})}
-	server := completionServer(t, backend)
-	server.server.maxReadBytes = 256
-
-	server.server.maxSnapshotBytes = 256
-
-	server.server.maxOutputBytes = 256
-	server.server.maxInFlightBytes = 1000 + failureResponseBytes(1)
-	cancelled, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	defer func() {
-		select {
-		case <-backend.release:
-		default:
-			close(backend.release)
-		}
-	}()
-	first := completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE, completionMerge("a", 1))
-	second := completionWriteCall(cancelled, sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE, completionMerge("b", 1))
-	third := completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE, completionMerge("c", 1))
-	calls := []*batchCall[*sink.WriteRequest, *sink.WriteResponse]{first, second, third}
-	done := make(chan struct{})
-	go func() { server.executeWrites(t.Context(), calls); close(done) }()
-	event := awaitCompletion(t, backend.events)
-	if len(event.keys) != 1 || event.keys[0] != "a" {
-		t.Fatal(event)
-	}
-	cancel()
-	close(backend.release)
-	awaitCompletion(t, done)
-	for _, call := range []*batchCall[*sink.WriteRequest, *sink.WriteResponse]{first, third} {
-		result := awaitCompletion(t, call.result)
-		if result.err != nil || result.response.Results[0].Status != sink.WriteStatus_WRITE_STATUS_APPLIED {
-			t.Fatalf("live segment: %+v", result)
-		}
-	}
-	result := awaitCompletion(t, second.result)
-	if result.err == nil {
-		t.Fatal("cancelled segment was executed")
-	}
-	event = awaitCompletion(t, backend.events)
-	if len(event.keys) != 1 || event.keys[0] != "c" {
-		t.Fatalf("cancelled write reached backend: %+v", event)
-	}
-	select {
-	case extra := <-backend.events:
-		t.Fatalf("unexpected write: %+v", extra)
-	default:
-	}
-}
-
 func TestHotRecordSharesPhysicalReservationAcrossRPCBudgets(t *testing.T) {
 	backend := &completionStorage{Storage: memory.New(), events: make(chan completionEvent, 8)}
 	server := completionServer(t, backend)
 	server.server.maxReadBytes = 256
-
-	server.server.maxSnapshotBytes = 256
-
-	server.server.maxOutputBytes = 256
-	server.server.maxInFlightBytes = 2048 + failureResponseBytes(4)
 	var calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]
 	for range 4 {
 		calls = append(calls, completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, completionMerge("hot", 1)))

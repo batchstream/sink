@@ -43,8 +43,7 @@ Gateway uses `mode: gateway`, `grpc`, `health`, `prometheus`, `request`, and `fo
 | `forwarding.max_fanout` | `8` | Maximum parallel Store calls per public batch |
 
 These are process limits, not RSS guarantees or recommended resource requests.
-Gateway charges actual input/result allocations to `memory`; growing responses
-share a bounded completion reserve. The gRPC send ceiling determines response
+Gateway checks process memory watermarks before forwarding new work. The gRPC send ceiling determines response
 capacity. Clients control request deadlines; shutdown has its own bounded drain.
 
 Routes belong to the same Gateway configuration:
@@ -93,16 +92,14 @@ request-wide declarations, operation counts and completion modes before dispatch
 Same-record operations remain together and retain their order. There is no
 cross-Store transaction or global write ordering.
 
-Reads and synchronous writes involving merge, conditional puts or returned
-documents process Store groups in first-occurrence order. Snapshot, merge-input,
-merge-output and returned-document budgets are independent. Each Engine receives
-remaining grants and returns charges; coalesced requests retain separate grants.
-CAS retries report their maximum charge per category. This conservative accounting
-can reject a boundary-size cross-Store request that the old executor accepted.
+Reads and synchronous writes requesting returned documents process Store groups in first-occurrence order. Only returned-document
+allowances cross the forwarding boundary. Each Engine receives the remaining
+response grant; coalesced requests retain their original RPC grants. Intermediate
+snapshots and merge outputs have no separate byte quota.
 Returned-document space is checked **before committing**, never truncated after
 successful writes. Native requests apply the smaller of Gateway and Engine limits.
 
-Unconditional puts without returned documents, deletes and async acceptance can
+Writes without returned documents, deletes and async acceptance can
 forward Store groups concurrently within `max_fanout`. The extra network hop and
 serial budget-sensitive groups have a latency cost; benchmark your workload.
 
@@ -137,10 +134,9 @@ not proxy named dependency health services; its default gRPC health is process h
 
 Gateway exports bounded method/code labels with `sink_gateway_requests_total`,
 `sink_gateway_request_duration_seconds`, `sink_gateway_engine_duration_seconds`,
-`sink_gateway_in_flight_requests`, `sink_gateway_in_flight_bytes`,
-`sink_gateway_rejected_total`, `sink_gateway_routes`,
+`sink_gateway_in_flight_requests`, `sink_gateway_routes`,
 and `sink_gateway_config_info`.
-Engine retains the existing `sink_grpc_server_*`, admission, batching and Lua
+Engine retains the existing `sink_grpc_server_*`, in-flight request, batching and Lua
 metrics, labeled by the original public method even over private forwarding.
 Worker retains the existing pending/oldest/last-poll/last-commit/retry/DLQ metrics.
 Broker consumer lag comes from the external Kafka scaler or exporter.
@@ -151,8 +147,8 @@ CPU, resource requests, replica floors and scale-to-zero are deployment settings
 Engine and Worker replica maxima and pool sizes must jointly fit their Store's
 backend capacity. Increasing Store A replicas creates no Store B database clients.
 Gateway remains a shared ingress: exhausting its CPU, memory or global admission
-capacity can affect multiple Stores. Per-Store forwarding limits contain individual
-backend pressure; Gateway still needs its own capacity planning and scaling.
+pressure can affect multiple Stores. Gateway needs its own capacity planning and scaling.
+All roles expose process [memory watermark metrics](observability.md#memory-capacity-and-keda).
 
 ## New-cluster deployment
 

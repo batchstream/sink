@@ -8,6 +8,7 @@ import (
 
 	forward "github.com/liran/sink/gen/forward"
 	sink "github.com/liran/sink/gen/sink"
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/forwarding"
 	"github.com/liran/sink/internal/metrics"
 	"github.com/liran/sink/internal/protocol"
@@ -16,6 +17,7 @@ import (
 )
 
 type Server struct {
+	memory *capacity.Guard
 	forward.UnimplementedEngineServer
 	service         sink.SinkServer
 	store           string
@@ -24,6 +26,7 @@ type Server struct {
 	metrics         *metrics.Metrics
 }
 type Options struct {
+	Memory          *capacity.Guard
 	Metrics         *metrics.Metrics
 	Service         sink.SinkServer
 	Store           string
@@ -38,7 +41,7 @@ func New(opts Options) (*Server, error) {
 	if opts.MaxRequestBytes == 0 {
 		opts.MaxRequestBytes = 64 << 20
 	}
-	server := &Server{maxRequestBytes: opts.MaxRequestBytes, service: opts.Service, store: opts.Store, maximum: opts.MaxReadBytes, metrics: opts.Metrics}
+	server := &Server{memory: opts.Memory, maxRequestBytes: opts.MaxRequestBytes, service: opts.Service, store: opts.Store, maximum: opts.MaxReadBytes, metrics: opts.Metrics}
 	return server, nil
 }
 func (s *Server) Forward(ctx context.Context, req *forward.ForwardRequest) (*forward.ForwardResponse, error) {
@@ -87,6 +90,13 @@ func (s *Server) Forward(ctx context.Context, req *forward.ForwardRequest) (*for
 	if err := protocol.CheckStore(request, s.store); err != nil {
 		return reject(err)
 	}
+	admitted, admissionErr := s.memory.Admit(ctx)
+	if admissionErr != nil {
+		return reject(protocol.MemoryAdmissionError(request, admissionErr))
+	}
+	s.metrics.AdjustInFlight(1)
+	defer s.metrics.AdjustInFlight(-1)
+	ctx = admitted
 	response.NotStarted = false
 	ctx = forwarding.WithTracker(ctx, tracker)
 	var err error

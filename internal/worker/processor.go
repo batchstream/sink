@@ -8,12 +8,10 @@ import (
 
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/queue"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
-// Applier returns a top-level ResourceExhausted only when the entire request
-// was rejected before execution. Per-operation failures may have applied work.
+// Applier executes one collected mutation group. Errors keep the source records
+// retryable; the processor never splits or replays a request after a top-level error.
 type Applier interface {
 	Write(ctx context.Context, req *sink.WriteRequest) (*sink.WriteResponse, error)
 	Delete(ctx context.Context, req *sink.DeleteRequest) (*sink.DeleteResponse, error)
@@ -112,14 +110,6 @@ func (p *Processor) applyWrites(ctx context.Context, operations []mutationWork, 
 	}
 	response, err := p.applier.Write(ctx, request)
 	if err != nil {
-		if status.Code(err) == codes.ResourceExhausted && len(operations) > 1 && ctx.Err() == nil {
-			// Core admission rejected every operation. Smaller requests can fit
-			// without replaying an ambiguous write or a successful sibling.
-			middle := len(operations) / 2
-			p.applyWrites(ctx, operations[:middle], results)
-			p.applyWrites(ctx, operations[middle:], results)
-			return
-		}
 		for _, operation := range operations {
 			results[operation.index] = NewApplyError("apply queued writes", true, err)
 		}
@@ -159,12 +149,6 @@ func (p *Processor) applyDeletes(ctx context.Context, operations []mutationWork,
 	}
 	response, err := p.applier.Delete(ctx, request)
 	if err != nil {
-		if status.Code(err) == codes.ResourceExhausted && len(operations) > 1 && ctx.Err() == nil {
-			middle := len(operations) / 2
-			p.applyDeletes(ctx, operations[:middle], results)
-			p.applyDeletes(ctx, operations[middle:], results)
-			return
-		}
 		for _, operation := range operations {
 			results[operation.index] = NewApplyError("apply queued deletes", true, err)
 		}

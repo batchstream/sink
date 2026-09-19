@@ -56,21 +56,6 @@ func (m *Budget) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x20
 	}
-	if m.Outputs != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Outputs))
-		i--
-		dAtA[i] = 0x18
-	}
-	if m.Inputs != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Inputs))
-		i--
-		dAtA[i] = 0x10
-	}
-	if m.Snapshots != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Snapshots))
-		i--
-		dAtA[i] = 0x8
-	}
 	return len(dAtA) - i, nil
 }
 
@@ -557,15 +542,6 @@ func (m *Budget) SizeVT() (n int) {
 	}
 	var l int
 	_ = l
-	if m.Snapshots != 0 {
-		n += 1 + protohelpers.SizeOfVarint(uint64(m.Snapshots))
-	}
-	if m.Inputs != 0 {
-		n += 1 + protohelpers.SizeOfVarint(uint64(m.Inputs))
-	}
-	if m.Outputs != 0 {
-		n += 1 + protohelpers.SizeOfVarint(uint64(m.Outputs))
-	}
 	if m.Returns != 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.Returns))
 	}
@@ -851,63 +827,6 @@ func (m *Budget) UnmarshalVT(dAtA []byte) error {
 			return fmt.Errorf("proto: Budget: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
-		case 1:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Snapshots", wireType)
-			}
-			m.Snapshots = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return protohelpers.ErrIntOverflow
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.Snapshots |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 2:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Inputs", wireType)
-			}
-			m.Inputs = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return protohelpers.ErrIntOverflow
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.Inputs |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 3:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Outputs", wireType)
-			}
-			m.Outputs = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return protohelpers.ErrIntOverflow
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.Outputs |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
 		case 4:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Returns", wireType)

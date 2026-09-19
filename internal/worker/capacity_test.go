@@ -39,15 +39,14 @@ func (a *capacityApplier) Delete(ctx context.Context, req *sink.DeleteRequest) (
 	return a.Applier.Delete(ctx, req)
 }
 
-func TestProcessorSplitsRejectedWritesAndDeletesWithoutReplayingSuccess(t *testing.T) {
+func TestProcessorHandlesCollectedWritesAndDeletesWithoutReplayingSuccess(t *testing.T) {
 	store := memory.New()
 	luaOpts := merge.LuaOptions{}
 	engine, err := merge.NewLuaEngine(luaOpts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Include room for one bounded failure response, while still forcing splits.
-	opts := service.Options{BoundStore: "primary", Storage: store, Lua: engine, MaxInFlightBytes: 2048}
+	opts := service.Options{BoundStore: "primary", Storage: store, Lua: engine}
 	core, err := service.New(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -77,27 +76,19 @@ func TestProcessorSplitsRejectedWritesAndDeletesWithoutReplayingSuccess(t *testi
 		}
 	}
 	for _, sizes := range [][]int{observed.writeSizes, observed.deleteSizes} {
-		if len(sizes) != 7 || sizes[0] != 4 {
-			t.Fatalf("unexpected split sizes %v", sizes)
-		}
-		singles := 0
-		for _, count := range sizes {
-			if count == 1 {
-				singles++
-			}
-		}
-		if singles != 4 {
-			t.Fatalf("successful records replayed: %v", sizes)
+		if len(sizes) != 1 || sizes[0] != 4 {
+			t.Fatalf("collected batch was split or replayed: %v", sizes)
 		}
 	}
+
 }
 
-func TestProcessorDoesNotSplitAmbiguousOrCanceledRequests(t *testing.T) {
-	for _, code := range []codes.Code{codes.Unavailable, codes.DeadlineExceeded, codes.Canceled, codes.Internal, codes.ResourceExhausted} {
+func TestProcessorDoesNotSplitFailedOrCanceledRequests(t *testing.T) {
+	for _, code := range []codes.Code{codes.Unknown, codes.Unavailable, codes.DeadlineExceeded, codes.Canceled, codes.Internal, codes.ResourceExhausted} {
 		t.Run(code.String(), func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			if code == codes.ResourceExhausted {
+			if code == codes.Canceled {
 				cancel()
 			}
 			applier := &capacityApplier{failure: status.Error(code, "injected failure")}

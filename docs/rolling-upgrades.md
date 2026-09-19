@@ -12,13 +12,15 @@ already accepted request.
 
 ## Memory-admission protocol upgrade
 
-Upgrade all Engines before Gateways when introducing demand-based memory
-admission. New Gateways call the private `ForwardStream` method; old Gateways
-remain compatible with the retained unary `Forward` method on new Engines.
-There is no fallback that replays a mutation or receives an unreserved maximum
-unary response. Roll back Gateways before Engines. Public Sink RPCs and SDK
-messages do not change. Migrate autoscaling to the `sink_memory_*` metrics before
-using the new policy; legacy admission settings no longer control CLI capacity.
+The new private protocol is version 6. It retains only response allowances and
+removes snapshot/input/output grants. Engines reject other protocol versions;
+retaining both `Forward` and `ForwardStream` methods does not provide compatibility
+with older versions. Use matching Gateway/Engine deployments and an isolated
+cutover for incompatible versions. Public SDK messages remain unchanged.
+
+Replace legacy admission/reservation dashboards and alerts with the new
+[memory watermark metrics](observability.md#memory-capacity-and-keda). Old metric
+families are removed, not kept as empty compatibility gauges.
 
 ## Budget both intervals
 

@@ -186,7 +186,7 @@ func parallelBatch(req *forward.ForwardRequest) bool {
 		return true
 	}
 	for _, op := range write.GetOperations() {
-		if op.GetReturnDocument() || op.GetPut() == nil || op.GetPut().GetMode() != sink.WriteMode_WRITE_MODE_UPSERT {
+		if op.GetReturnDocument() {
 			return false
 		}
 	}

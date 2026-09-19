@@ -8,9 +8,9 @@ grpc:
   max_receive_message_bytes: 64MiB
   max_send_message_bytes: 64MiB
 memory:
-  # max_bytes: 256MiB # Omit to auto-detect managed capacity; not an RSS cap.
-  burst_percent: 10 # Completion reserve, 1..99.
-  wait_timeout: 2s # Memory-growth contention bound; never an overall RPC deadline.
+  # max_bytes: 1GiB # Optional process ceiling; bounded by detected limits.
+  high_watermark_percent: 80 # Reject new work at this process memory usage.
+  low_watermark_percent: 70 # Resume new work after usage falls to this level.
 request:
   max_operations: 1000 # Entire client request across all Stores.
 forwarding:

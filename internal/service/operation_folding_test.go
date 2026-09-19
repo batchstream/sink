@@ -321,11 +321,11 @@ func TestConditionalPutFoldingBoundsOutputAndConflicts(t *testing.T) {
 			want := sink.FailureCode_FAILURE_CODE_CONFLICT
 			writes := int64(2)
 			if scenario == "output" {
-				want = sink.FailureCode_FAILURE_CODE_RESOURCE_EXHAUSTED
-				writes = 0
+				want = sink.FailureCode_FAILURE_CODE_UNSPECIFIED
+				writes = 1
 			}
 			for _, result := range response.Results {
-				if result.GetFailure().GetCode() != want || result.Status == sink.WriteStatus_WRITE_STATUS_APPLIED {
+				if result.GetFailure().GetCode() != want || (scenario == "conflict" && result.Status == sink.WriteStatus_WRITE_STATUS_APPLIED) || (scenario == "output" && result.Status != sink.WriteStatus_WRITE_STATUS_APPLIED) {
 					t.Fatalf("unbounded conditional put: %v", result)
 				}
 			}

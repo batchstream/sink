@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/liran/sink/internal/capacity"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -19,8 +18,6 @@ type batchResult[Response any] struct {
 
 type batchCall[Request any, Response any] struct {
 	ctx            context.Context
-	releaseMemory  func()
-	executing      bool
 	request        Request
 	operationCount int
 	encodedBytes   int
@@ -128,7 +125,6 @@ func (b *requestBatcher[Request, Response]) Submit(
 
 	call := &batchCall[Request, Response]{
 		ctx:            ctx,
-		releaseMemory:  capacity.FromContext(ctx).Retain(),
 		request:        request,
 		operationCount: operationCount,
 		encodedBytes:   encodedBytes,
@@ -150,7 +146,6 @@ func (b *requestBatcher[Request, Response]) Submit(
 	select {
 	case <-b.ctx.Done():
 		b.release(call)
-		call.releaseMemory()
 		return empty, status.Error(codes.Unavailable, "synchronous batcher is shutting down")
 	default:
 	}
@@ -158,11 +153,9 @@ func (b *requestBatcher[Request, Response]) Submit(
 	case b.input <- call:
 	case <-ctx.Done():
 		b.release(call)
-		call.releaseMemory()
 		return empty, contextError(ctx)
 	case <-b.ctx.Done():
 		b.release(call)
-		call.releaseMemory()
 		return empty, status.Error(codes.Unavailable, "synchronous batcher is shutting down")
 	}
 
@@ -276,7 +269,6 @@ func (b *requestBatcher[Request, Response]) run() {
 				if reason != "max_wait" || wait <= 0 {
 					pending = remaining
 					for _, call := range selected {
-						call.executing = true
 						b.release(call)
 						call.pendingRecords = make(map[recordIdentity]bool, len(call.records))
 						for _, key := range call.records {
@@ -383,13 +375,6 @@ func (b *requestBatcher[Request, Response]) executeBatch(
 	calls []*batchCall[Request, Response],
 	reason string,
 ) {
-	defer func() {
-		for _, call := range calls {
-			if call.releaseMemory != nil {
-				call.releaseMemory()
-			}
-		}
-	}()
 	operationCount := 0
 	encodedBytes := 0
 	oldest := calls[0].enqueuedAt
@@ -518,9 +503,6 @@ func completeCall[Request any, Response any](
 	err error,
 ) {
 	call.resultOnce.Do(func() {
-		if !call.executing && call.releaseMemory != nil {
-			defer call.releaseMemory()
-		}
 		result := batchResult[Response]{response: response, err: err}
 		call.result <- result
 		call.finishRecords(call.records)

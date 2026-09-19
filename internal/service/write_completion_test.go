@@ -200,12 +200,6 @@ func TestWriteCompletionReleasesDocumentBeforeWholeRPC(t *testing.T) {
 	if err != nil || response.GetResults()[0].GetStatus() != sink.WriteStatus_WRITE_STATUS_APPLIED {
 		t.Fatalf("completed document remains owned by unrelated unfinished operation: %v, %v", response, err)
 	}
-	core.admissionMu.Lock()
-	requests, reserved := core.inFlightRequests, core.inFlightBytes
-	core.admissionMu.Unlock()
-	if requests < 1 || reserved <= 0 {
-		t.Fatal("early completion released capacity still owned by unfinished execution")
-	}
 	backend.unblock()
 	if err := awaitCompletion(t, done); err != nil {
 		t.Fatal(err)

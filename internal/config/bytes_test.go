@@ -65,8 +65,6 @@ memory: {max_bytes: 256MiB}
 producer: {max_buffered_bytes: 64MiB}
 batching: {max_bytes: 16MiB, queue: {max_bytes: 128MiB}}
 execution:
- max_snapshot_bytes: 16MiB
- max_output_bytes: 64MiB
  merge:
   lua: {max_source_bytes: 64KiB, max_result_bytes: 16MiB}
 `

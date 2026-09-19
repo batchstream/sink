@@ -23,10 +23,7 @@ func (app *Application) newService(observed *sinkmetrics.Metrics) (*service.Serv
 		return nil, err
 	}
 	serverOptions := service.Options{
-		Memory:           app.memory,
-		MaxReadBytes:     max(loaded.GRPC.MaxSendMessageBytes, loaded.Service.Execution.MaxOutputBytes),
-		MaxSnapshotBytes: loaded.Service.Execution.MaxSnapshotBytes,
-		MaxOutputBytes:   loaded.Service.Execution.MaxOutputBytes,
+		MaxReadBytes:     loaded.GRPC.MaxSendMessageBytes,
 		Storage:          app.storage,
 		Lua:              luaEngine,
 		Publisher:        app.publisher,
@@ -57,7 +54,7 @@ func (app *Application) configureServer(sinkServer *service.Server, observed *si
 	if err := app.configureGRPC(app.batchingServer, observed); err != nil {
 		return err
 	}
-	opts := engine.Options{MaxRequestBytes: loaded.GRPC.MaxReceiveMessageBytes, Metrics: observed, Service: app.batchingServer, Store: loaded.Storage.Name, MaxReadBytes: loaded.GRPC.MaxSendMessageBytes}
+	opts := engine.Options{Memory: app.memory, MaxRequestBytes: loaded.GRPC.MaxReceiveMessageBytes, Metrics: observed, Service: app.batchingServer, Store: loaded.Storage.Name, MaxReadBytes: loaded.GRPC.MaxSendMessageBytes}
 	forwardingServer, err := engine.New(opts)
 	if err != nil {
 		return err

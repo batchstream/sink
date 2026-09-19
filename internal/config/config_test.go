@@ -24,9 +24,9 @@ func writeConfig(t *testing.T, contents string) string {
 }
 
 func TestSharedStoreWithIndependentRoleSettings(t *testing.T) {
-	storePath := writeConfig(t, kafkaStore)
-	enginePath := writeConfig(t, "mode: engine\nproducer: {max_buffered_bytes: 8MiB}\nexecution:\n  mongodb: {max_concurrent_writes: 17}\n")
-	workerPath := writeConfig(t, "mode: worker\nconsumer: {group_id: workers, max_poll_records: 2000}\nexecution:\n  mongodb: {max_concurrent_writes: 7}\n")
+	storePath := writeConfig(t, strings.Replace(kafkaStore, "  mongodb:\n", "  mongodb:\n    max_concurrent_writes: 17\n    max_concurrent_groups: 5\n", 1))
+	enginePath := writeConfig(t, "mode: engine\nproducer: {max_buffered_bytes: 8MiB}\n")
+	workerPath := writeConfig(t, "mode: worker\nconsumer: {group_id: workers, max_poll_records: 2000}\n")
 	engine, err := Load(enginePath, storePath)
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +38,7 @@ func TestSharedStoreWithIndependentRoleSettings(t *testing.T) {
 	if engine.Storage.Name != worker.Storage.Name || engine.Storage.MongoDB.URI != worker.Storage.MongoDB.URI || !reflect.DeepEqual(engine.Storage.Kafka.Topic, worker.Storage.Kafka.Topic) {
 		t.Fatal("shared identity or dependencies diverged")
 	}
-	if engine.Storage.MongoDB.MaxConcurrentWrites != 17 || worker.Storage.MongoDB.MaxConcurrentWrites != 7 || worker.Storage.Kafka.Consumer.MaxPollRecords != 2000 || engine.Storage.Kafka.Producer.MaxBufferedBytes != 8<<20 {
+	if engine.Storage.MongoDB.MaxConcurrentWrites != 17 || worker.Storage.MongoDB.MaxConcurrentWrites != 17 || engine.Storage.MongoDB.MaxConcurrentGroups != 5 || worker.Storage.MongoDB.MaxConcurrentGroups != 5 || worker.Storage.Kafka.Consumer.MaxPollRecords != 2000 || engine.Storage.Kafka.Producer.MaxBufferedBytes != 8<<20 {
 		t.Fatal("role tuning was not independent")
 	}
 	if worker.Storage.Kafka.Consumer.GroupID != "workers" || engine.Storage.Kafka.Consumer.GroupID != "" {
@@ -51,20 +51,20 @@ func TestComponentDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if engine.Service.Request.Timeout != 0 || engine.Service.Request.MaxOperations != 0 || engine.Service.Request.MaxReadBytes != 0 {
+	if engine.Service.Request.MaxOperations != 0 || engine.Service.Request.MaxReadBytes != 0 {
 		t.Fatal("Engine acquired public request limits")
 	}
 	if engine.Service.Batching.MaxOperations != 32 || engine.Service.Batching.MaxWait != 2*time.Millisecond || engine.Service.Batching.Queue.MaxBytes != 128<<20 {
 		t.Fatal("batch defaults changed")
 	}
-	if engine.Service.Execution.MaxSnapshotBytes != 32<<20 || engine.Service.Execution.MaxOutputBytes != 32<<20 || engine.Service.Merge.Lua.MaxResultBytes != 16<<20 {
+	if engine.Storage.MongoDB.MaxConcurrentWrites != 64 || engine.Storage.MongoDB.MaxConcurrentGroups != 16 || engine.Service.Merge.Lua.MaxResultBytes != 16<<20 {
 		t.Fatal("execution defaults changed")
 	}
 	if engine.Storage.Kafka.Enabled || engine.Prometheus.Enabled || engine.Health.Address != ":8081" || engine.GRPC.MaxSendMessageBytes != 64<<20 {
 		t.Fatal("process defaults changed")
 	}
 	gateway, err := Decode(strings.NewReader(gatewayConfig), nil)
-	if err != nil || gateway.Service.Request.MaxOperations != 1000 || gateway.Service.Request.Timeout != 0 {
+	if err != nil || gateway.Service.Request.MaxOperations != 1000 {
 		t.Fatalf("Gateway defaults: %v", err)
 	}
 	worker, err := Decode(strings.NewReader("mode: worker\nconsumer: {group_id: workers}\n"), strings.NewReader(kafkaStore))
@@ -88,7 +88,7 @@ func TestStoreIdentityAndBackendValidation(t *testing.T) {
 		"name: primary\nstorage: {driver: opensearch, search: {endpoints: [http://search:9200], username: test}}",
 		"name: primary\nstorage: {driver: opensearch, search: {endpoints: [http://search:9200], username: test, password: test, api_key: test}}",
 		minimalStorage + "consumer: {group_id: workers}\n", minimalStorage + "producer: {}\n",
-		strings.Replace(minimalStorage, "uri: mongodb://127.0.0.1:1", "uri: mongodb://127.0.0.1:1\n    max_concurrent_writes: 3", 1),
+		strings.Replace(minimalStorage, "uri: mongodb://127.0.0.1:1", "uri: mongodb://127.0.0.1:1\n    max_concurrent_writes: 0", 1),
 	} {
 		loaded, err := Decode(strings.NewReader("mode: engine\n"), strings.NewReader(shared))
 		if err == nil || !reflect.ValueOf(loaded).IsZero() {

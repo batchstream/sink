@@ -108,8 +108,11 @@ func resolve(file configFile, shared storeFile) (Config, error) {
 			v.reject(errors.New("memory.max_bytes must be at least 1KiB"))
 		}
 	}
-	loaded.Memory.BurstPercent = v.bounded("memory.burst_percent", file.Memory.BurstPercent, capacity.DefaultBurstPercent, 99)
-	loaded.Memory.WaitTimeout = v.duration("memory.wait_timeout", file.Memory.WaitTimeout, 2*time.Second)
+	loaded.Memory.HighWatermarkPercent = v.bounded("memory.high_watermark_percent", file.Memory.HighWatermarkPercent, capacity.DefaultHighPercent, 99)
+	loaded.Memory.LowWatermarkPercent = v.bounded("memory.low_watermark_percent", file.Memory.LowWatermarkPercent, capacity.DefaultLowPercent, 99)
+	if loaded.Memory.LowWatermarkPercent >= loaded.Memory.HighWatermarkPercent {
+		v.reject(errors.New("memory.low_watermark_percent must be lower than high_watermark_percent"))
+	}
 	grpcFile := gRPCFile{}
 	if file.GRPC != nil {
 		grpcFile = *file.GRPC
@@ -122,9 +125,6 @@ func resolve(file configFile, shared storeFile) (Config, error) {
 	loaded.Prometheus.Address = valueOrDefault(file.Prometheus.Address, ":9090")
 	loaded.ShutdownTimeout = v.duration("shutdown_timeout", file.ShutdownTimeout, 15*time.Second)
 	loaded.Service = resolveService(file, loaded.GRPC, &v)
-	if loaded.Mode == ModeWorker && (file.Memory.BurstPercent != nil || file.Memory.WaitTimeout != nil) {
-		v.reject(errors.New("worker memory only accepts max_bytes"))
-	}
 	if v.err != nil {
 		return loaded, v.err
 	}
@@ -159,8 +159,6 @@ func resolve(file configFile, shared storeFile) (Config, error) {
 	if !uri.ValidStore(name) {
 		return loaded, errors.New("store name must be a canonical lowercase identity")
 	}
-	configured.MongoDB.MaxConcurrentWrites = loaded.Service.Execution.MongoDB.MaxConcurrentWrites
-	configured.MongoDB.MaxConcurrentGroups = loaded.Service.Execution.MongoDB.MaxConcurrentGroups
 	configured.Kafka = resolveKafka("kafka", shared.Kafka, &v)
 	configured.Kafka.Producer = resolveProducer(file.Producer, &v)
 	configured.Kafka.Consumer = resolveConsumer(file.Consumer, &v)
@@ -169,9 +167,6 @@ func resolve(file configFile, shared storeFile) (Config, error) {
 	}
 	if loaded.Mode == ModeEngine && configured.Kafka.MaxRecordBytes > configured.Kafka.Producer.MaxBufferedBytes {
 		v.reject(errors.New("producer.max_buffered_bytes must cover kafka.max_record_bytes"))
-	}
-	if file.Execution != nil && file.Execution.MongoDB != (mongoExecutionFile{}) && configured.Driver != DriverMongoDB {
-		v.reject(errors.New("execution.mongodb requires the mongodb driver"))
 	}
 	if v.err != nil {
 		return loaded, v.err

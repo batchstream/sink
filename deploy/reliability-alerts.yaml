@@ -31,11 +31,11 @@ groups:
         annotations:
           summary: "Sink Kafka fetch errors for store {{ $labels.store }}"
           description: "Check broker reachability and offset retention gaps; never reset offsets blindly."
-      - alert: SinkAdmissionSaturated
-        expr: rate(sink_admission_rejected_total[5m]) > 1
+      - alert: SinkMemoryPressure
+        expr: sink_memory_pressure == 1
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Sink execution capacity is saturated"
-          description: "Inspect backend latency, input/output reservations and queue limits before adding replicas."
+          summary: "Sink process memory admission is paused"
+          description: "Inspect backend latency, process RSS and memory watermarks and queue limits before adding replicas."

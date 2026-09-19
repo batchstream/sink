@@ -7,6 +7,8 @@ storage:
     uri: mongodb://mongodb:27017 # Example endpoint; required unless uri_file is set.
     # uri_file: /etc/sink-secrets/mongodb-uri # Omit uri when using its file alternative.
     metadata_field: __sink # Must match across roles and replicas.
+    max_concurrent_writes: 64 # Per process; shared by Engine and Worker configuration.
+    max_concurrent_groups: 16
   # For elasticsearch/opensearch, replace mongodb with search:
   # search:
   #   endpoints: [http://opensearch:9200]

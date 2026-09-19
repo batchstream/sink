@@ -22,7 +22,7 @@ import (
 )
 
 type Application struct {
-	memory          *capacity.Pool
+	memory          *capacity.Guard
 	draining        atomic.Bool
 	gateway         *gateway.Server
 	topics          *queuekafka.TopicManager
@@ -113,13 +113,4 @@ func New(ctx context.Context, opts Options) (*Application, error) {
 	}
 	ready = true
 	return app, nil
-}
-
-func newMemory(loaded config.Config) (*capacity.Pool, error) {
-	bytes, source := int64(loaded.Memory.MaxBytes), "configured"
-	if bytes == 0 {
-		bytes, source = capacity.Detect()
-	}
-	opts := capacity.Options{Bytes: bytes, BurstPercent: loaded.Memory.BurstPercent, WaitTimeout: loaded.Memory.WaitTimeout, Role: string(loaded.Mode), Store: loaded.Storage.Name, Source: source}
-	return capacity.New(opts)
 }

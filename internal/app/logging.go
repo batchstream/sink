@@ -8,7 +8,6 @@ import (
 
 	forward "github.com/liran/sink/gen/forward"
 	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -21,11 +20,6 @@ func logUnary(ctx context.Context, req any, info *grpc.UnaryServerInfo, next grp
 	if method != "" {
 		code := status.Code(err)
 		observed := response
-		// Inspect the underlying message while returning the original wrapper;
-		// the codec still owns its reservation through response serialization.
-		if managed, ok := observed.(*protocol.ManagedMessage); ok {
-			observed = managed.Message
-		}
 		if forwarded, ok := observed.(*forward.ForwardResponse); ok {
 			if code == codes.OK {
 				code = codes.Code(forwarded.GetCode())

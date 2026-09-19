@@ -41,15 +41,7 @@ type requestFile struct {
 }
 
 type executionFile struct {
-	MaxSnapshotBytes *byteSize          `yaml:"max_snapshot_bytes"`
-	MaxOutputBytes   *byteSize          `yaml:"max_output_bytes"`
-	MongoDB          mongoExecutionFile `yaml:"mongodb"`
-	Merge            mergeFile          `yaml:"merge"`
-}
-
-type mongoExecutionFile struct {
-	MaxConcurrentWrites *int `yaml:"max_concurrent_writes"`
-	MaxConcurrentGroups *int `yaml:"max_concurrent_groups"`
+	Merge mergeFile `yaml:"merge"`
 }
 
 // Store files contain shared identity and dependency policy, never role tuning.
@@ -91,9 +83,11 @@ type storageFile struct {
 }
 
 type mongoDBFile struct {
-	URI           *string `yaml:"uri"`
-	URIFile       *string `yaml:"uri_file"`
-	MetadataField string  `yaml:"metadata_field"`
+	URI                 *string `yaml:"uri"`
+	URIFile             *string `yaml:"uri_file"`
+	MetadataField       string  `yaml:"metadata_field"`
+	MaxConcurrentWrites *int    `yaml:"max_concurrent_writes"`
+	MaxConcurrentGroups *int    `yaml:"max_concurrent_groups"`
 }
 
 type searchFile struct {
@@ -149,7 +143,7 @@ type gatewayFile struct {
 }
 
 type memoryFile struct {
-	MaxBytes     *byteSize      `yaml:"max_bytes"`
-	BurstPercent *int           `yaml:"burst_percent"`
-	WaitTimeout  *time.Duration `yaml:"wait_timeout"`
+	MaxBytes             *byteSize `yaml:"max_bytes"`
+	HighWatermarkPercent *int      `yaml:"high_watermark_percent"`
+	LowWatermarkPercent  *int      `yaml:"low_watermark_percent"`
 }

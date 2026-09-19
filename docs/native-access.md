@@ -431,30 +431,26 @@ from changing the record.
 
 ## Limits, deadlines, and retries
 
-Native RPCs use the shared process memory pool and honor the caller context.
+Native RPCs use the process memory watermark guard and honor the caller context.
 `ClientOptions.ScanTimeout` is opt-in; zero adds no deadline. Between Scan calls there is no held request
 capacity or background cursor.
 
-New requests acquire ordinary memory capacity or fail immediately. Temporary
+New requests fail immediately while process memory pressure is active. Temporary
 refusal before backend execution preserves Scan's safe retry detail:
 `google.rpc.ErrorInfo` with `domain="sink"`, `reason="SCAN_ADMISSION_REJECTED"`
 and metadata `pool=memory`, `reason=busy`. Oversized requests and failures after
-execution begins do not advertise this pre-execution guarantee. Actual response
-growth may wait up to `memory.wait_timeout` (default 2s), bounded by the page's
-original deadline. Cancellation and deadline expiry retain `CANCELED` and
+execution begins do not advertise this pre-execution guarantee. Admitted work follows the caller deadline and continues through memory pressure. Cancellation and deadline expiry retain `CANCELED` and
 `DEADLINE_EXCEEDED` respectively. See [memory admission](design/demand-based-admission.md).
 
 Execute responses and returned Write documents share the gRPC send ceiling
 semantics; returned-document budgets are per original RPC even after batching.
 Count uses a separate backend response budget of min(the gRPC send ceiling,
-256 KiB), enforced by the adapter as well as admission. MongoDB counts still
-reserve the driver's 48 MiB wire ceiling. This keeps small count responses from
-reserving a full document page.
+256 KiB), enforced by the adapter. This limits backend page sizes without per-allocation memory accounting.
 Output space is reserved before committing a returned write. A candidate that
 cannot fit fails before its own write; earlier operations may already be applied.
 Scan pages use at most min(the gRPC send ceiling, 4 MiB), with count and byte
 limits both enforced. A single oversized document fails with
-`RESOURCE_EXHAUSTED`. Search grows its backend response buffer against actual capacity, within the
+`RESOURCE_EXHAUSTED`. Search bounds its backend response buffer within the
 logical limit of two page budgets plus 64 KiB of metadata and the store response limit. It reduces the hit count
 when that buffer is exceeded, preserving one lookahead hit and validating the
 complete response before returning a smaller page. A stricter store response

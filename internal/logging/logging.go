@@ -106,7 +106,7 @@ func (r *Runtime) Install() {
 
 func (r *Runtime) Close() {
 	if suppressed := r.limiter.pending(); suppressed > 0 {
-		r.Logger.Warn("Repeated diagnostic events suppressed", "component", "logging", "event", "log_suppressed", "suppressed", suppressed)
+		r.console.Warn("Repeated diagnostic events suppressed", "component", "logging", "event", "log_suppressed", "suppressed", suppressed)
 	}
 	if r.provider == nil {
 		return

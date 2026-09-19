@@ -144,7 +144,8 @@ the durable Kafka record when a summary needs more context.
 For severe final failures, explicitly enable `logging.failure_body: true`.
 Currently `kafka_quarantined` can include the failed write's document after DLQ
 acknowledgement. JSON is readable, BSON is base64 with its encoding marked, and
-truncated payloads end in `[truncated]`. Deletes and undecodable envelopes have no
+truncated payloads end in `[truncated]`. Unknown encoding values are marked with
+their numeric enum value and use base64. Deletes and undecodable envelopes have no
 document body. Bodies may contain business data: this switch deliberately permits
 that diagnostic content. Payloads never become labels. Lua source, native commands,
 record addresses and connection settings are not included. Normal warnings never
@@ -159,7 +160,8 @@ use, especially with debug enabled. stderr retains ordinary synchronous writes.
 
 Warn/error events allow ten emissions per component/event/level per 30 seconds.
 State is bounded to 256 distinct keys plus an overflow bucket. The next emission
-after a window carries its suppressed count; shutdown reports remaining counts.
+after a window carries its suppressed count; shutdown reports remaining counts
+to the console-only diagnostic path, regardless of the configured log level.
 Errors have a separate budget from warnings. Debug is not rate limited and should
 be enabled briefly. These are diagnostic logs, not a lossless audit trail.
 

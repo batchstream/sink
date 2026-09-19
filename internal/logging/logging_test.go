@@ -141,6 +141,28 @@ func TestRateLimitBoundsStateAndReportsSuppression(t *testing.T) {
 	}
 }
 
+func TestShutdownReportsSuppressedErrorsRegardlessOfLevel(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Level = "error"
+	output := &lockedBuffer{}
+	runtime := newTestRuntime(t, cfg, output)
+	for range 25 {
+		runtime.Logger.Error("failed", "component", "kafka", "event", "kafka_quarantined")
+	}
+	runtime.Close()
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	if len(lines) != 11 {
+		t.Fatalf("expected 10 errors and one suppression summary, got %d", len(lines))
+	}
+	var summary map[string]any
+	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary["event"] != "log_suppressed" || summary["suppressed"] != "15" {
+		t.Fatalf("missing shutdown suppression count: %v", summary)
+	}
+}
+
 func TestHandlerBoundsAndDiscardsNestedFields(t *testing.T) {
 	cfg := testConfig(t)
 	output := &lockedBuffer{}

@@ -28,3 +28,19 @@ func TestQuarantineDiagnosticIncludesOnlyDocument(t *testing.T) {
 		t.Fatal("malformed envelope exported as a document")
 	}
 }
+
+func TestQuarantineDiagnosticPreservesUnknownEncoding(t *testing.T) {
+	document := &sink.Document{Encoding: 42, Payload: []byte{0xff, 0x01}}
+	put := &sink.PutOperation{Document: document}
+	body := &sink.WriteOperation_Put{Put: put}
+	write := &sink.WriteOperation{Action: body}
+	mutation := queue.Mutation{Write: write}
+	envelope, err := queue.MarshalMutation(mutation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostic := quarantinedBody(envelope)
+	if diagnostic == nil || diagnostic.Encoding != "enum:42" || !bytes.Equal(diagnostic.Payload, document.Payload) {
+		t.Fatalf("unknown document encoding was lost: %+v", diagnostic)
+	}
+}

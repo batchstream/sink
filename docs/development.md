@@ -27,26 +27,29 @@ in-process Kafka broker; they do not require external services. Go may download
 module dependencies on the first run. `make lint` checks formatting, vet, and
 staticcheck without changing source files. Use `make fmt` to apply formatting.
 
-Run external backend tests explicitly:
+The Sink checkout contains component unit tests, input fuzzers and unit
+microbenchmarks. Real transport and process assembly tests, backend integrations,
+cross-component benchmarks, load tests and capacity experiments
+belong to [sink-production-suite](https://github.com/batchstream/sink-production-suite).
+Controlled storage doubles, offline MongoDB wire fixtures and fake HTTP/Kafka
+backends used to test a single adapter remain unit tests. Tests which assemble
+multiple Sink components or run real gRPC/OTLP paths belong to the suite.
+
+Run qualification from that checkout:
 
 ```shell
-make test-integration
+SINK_SERVER_DIR=/path/to/sink make test-candidate
+SINK_SERVER_DIR=/path/to/sink make test-server-integration
+SINK_SERVER_DIR=/path/to/sink make test-isolated-quickstart
 ```
 
-`make test-integration` starts ephemeral MongoDB ReplicaSet, Elasticsearch, and
-OpenSearch containers, runs storage lifecycle and concurrent read-modify-write
-tests, and then stops the containers. `make test-search-integration` runs only
-the Elasticsearch and OpenSearch suites. The Kafka path uses franz-go's
-in-process broker in the normal test suite.
-
-Use `make test-isolated-quickstart` to run the existing sibling sink-go SDK
-against independent Gateway, Engine and Worker containers. Set `SINK_GO_DIR` if
-the SDK checkout is elsewhere. The script uses disposable ports and cleans up
-its containers and volumes. CI requires this scenario and the loopback DNS
-Gateway scaling test.
-
-Use `make quickstart` for the end-to-end public API scenario and
-`make quickstart-down` when finished.
+The suite owns the [test runner and classification](https://github.com/batchstream/sink-production-suite/blob/main/server-tests/README.md).
+Sink CI calls its pinned reusable workflow; the required reliability gate still
+requires compatibility, backend, conformance, quickstart and benchmark checks.
+`make lint` prevents integration tags and gRPC server
+fixtures from being added back to this repository. Product examples remain here;
+use `make quickstart` to try the documented example and `make quickstart-down`
+when finished.
 
 ### Repository checks
 
@@ -88,13 +91,21 @@ make proto
 Include changes under `gen/sink` in the PR. CI compares the public protocol with
 the Go client, using a matching client branch when available and `main` otherwise.
 
-## Synchronous capacity measurements
+## Performance qualification
 
-workload, resource limits, measurements, and commands for comparing revisions.
+Component microbenchmarks remain beside the unit tests in Sink:
+
+```shell
+make benchmark-unit BENCHTIME=1x  # bounded correctness smoke of every microbenchmark
+make fuzz-unit                  # envelope and BSON input fuzzing, 30 seconds each
+```
+
 `BenchmarkSynchronousMergeMicrobatch` isolates batching and adapter round trips
-without external services. The opt-in `BenchmarkSynchronousStorage` exercises
-the actual gRPC codec, dispatcher, Lua engine, and disposable MongoDB/OpenSearch
-backends, then verifies every writer's persisted counter.
+with local doubles. Cross-component Gateway/Engine and real-backend benchmarks,
+Lua runtime comparisons, the memory reserve experiment and the fixed-resource
+load runner belong to the production suite. See its
+[benchmark commands](https://github.com/batchstream/sink-production-suite/blob/main/docs/server-benchmarks.md).
+Timing measurements have no CI ranking threshold.
 
 ### Gateway routing allocations
 
@@ -221,7 +232,7 @@ instead of attaching an untested binary.
 Default race tests include fake-broker outage recovery beyond the retry budget,
 DLQ publication failure, CREATE replay continuation, partition-prefix commits,
 rebalance cancellation, admission/cancellation, and read/Lua output budgets.
-CI also fuzzes mutation envelopes for 20 seconds on each change.
+Sink CI fuzzes mutation envelopes and BSON inputs for 30 seconds each on every change.
 
 The public [production suite](https://github.com/liran/sink-production-suite)
 owns release and sustained qualification. Sink's release workflow pins both the
@@ -242,7 +253,7 @@ SINK_SERVER_DIR=/path/to/sink make test-production
 SINK_SERVER_DIR=/path/to/sink make test-reliability
 ```
 
-The first command includes a three-minute fault workload; the second uses two
+The first command includes a six-minute fault workload; the second uses two
 hours. The business counter implements application idempotence and reconciles
 stored results. Passing the short gate does not establish a completed two-hour
 run. Real multi-node failover, disk pressure and backup restoration remain
@@ -250,9 +261,14 @@ deployment qualification; see [the reliability runbook](reliability.md).
 
 ## Coverage regression gate
 
-`make test-coverage` runs ordinary tests with the race detector and writes
+`make test-coverage` runs unit tests with the race detector and writes
 coverage, JSON test events and a package summary to `.reports/coverage/`.
 CI enforces the package floors in `.github/coverage-minimums.json`; generated
 protobuf files do not count. Keep floors stable or raise them when adding tests.
 The report is statement coverage, not branch or end-to-end scenario coverage.
-Real backend tests remain separate from this infrastructure-free gate.
+The unit-only baseline excludes the migrated transport and assembly scenarios.
+The suite retains the previous combined package floors in its
+`.github/candidate-coverage-minimums.json` and enforces them over unit plus
+suite-owned component tests. Lower unit-only numbers are a change of measurement
+scope; the combined gate must not be reduced to accommodate this migration.
+Real backend profiles remain separate and are retained by the suite.

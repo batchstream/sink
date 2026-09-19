@@ -79,7 +79,7 @@ its Engine exits. Cleanup qualification is recorded separately above.
 ## Local performance baseline
 
 Command:
-`go test ./internal/gateway -run '^$' -bench '^BenchmarkGatewaySmallPut$' -benchtime=1s -benchmem -cpu=2`
+`SINK_SERVER_DIR=/path/to/sink bash scripts/server-go.sh test ./internal/gateway -run '^$' -bench '^BenchmarkGatewaySmallPut$' -benchtime=1s -benchmem -cpu=2`
 
 Apple M2, local TCP, Gateway and Engine in one process, memory storage, 1 ms batch
 wait; measured before legacy cleanup:
@@ -129,3 +129,5 @@ while HTTP health endpoints always run on their own port. Configuration and appl
 all three roles, enabled/disabled/omitted flags, occupied ports, and actual metrics
 and health responses on separate ports. Quickstart and qualification fixtures
 use `health.address` for probes and `prometheus.address` for metrics.
+
+The benchmark command above now runs from the production-suite checkout; see [test ownership](https://github.com/batchstream/sink-production-suite/blob/main/server-tests/README.md).

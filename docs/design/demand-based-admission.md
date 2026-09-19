@@ -16,7 +16,7 @@ Lua heaps, caches and GC. This is a managed capacity limit, **not an RSS cap**.
 
 `memory.burst_percent` defaults to 10, leaving 90% for ordinary allocations.
 The default is the smallest tested reserve that completed every accepted request
-in the saturation experiment; see [the experiment](../../benchmarks/memory-admission/README.md).
+in the saturation experiment; see [the experiment](https://github.com/batchstream/sink-production-suite/blob/main/benchmarks/memory-admission/README.md).
 It is configurable from 1 to 99 and is not a universal optimum.
 
 New requests acquire known input, small completion envelopes and forwarding

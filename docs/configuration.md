@@ -227,7 +227,7 @@ Responses have priority over new arrivals. A selected completion owner may use
 the reserve; waits remain bounded even when a response cannot make progress.
 There is no separate request concurrency cap in this version.
 
-The default reserve was chosen from the [reproducible saturation experiment](../benchmarks/memory-admission/README.md).
+The default reserve was chosen from the [reproducible saturation experiment](https://github.com/batchstream/sink-production-suite/blob/main/benchmarks/memory-admission/README.md).
 Override it for your measured workload. Automatic capacity detection runs once
 at startup, leaving half the effective limit for unmanaged runtime/driver/GC
 memory. The source is exported in `sink_memory_capacity_source_info`.

@@ -626,7 +626,7 @@ func productMergeSource(t testing.TB) []byte {
 	if !ok {
 		t.Fatal("runtime.Caller() failed")
 	}
-	sourcePath := filepath.Join(filepath.Dir(filename), "..", "..", "benchmarks", "lua", "product_merge.lua")
+	sourcePath := filepath.Join(filepath.Dir(filename), "testdata", "product_merge.lua")
 	source, err := os.ReadFile(sourcePath)
 	if err != nil {
 		t.Fatalf("read product merge program: %v", err)

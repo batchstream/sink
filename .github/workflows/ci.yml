@@ -17,7 +17,7 @@ jobs:
   reliability-gate:
     name: Sink reliability gate
     if: always()
-    needs: [repository, public-conformance, client-contract, test, mongodb, search, image, release-assets, quickstart, isolated-quickstart]
+    needs: [repository, test, unit-benchmarks, image, release-assets, qualification]
     runs-on: ubuntu-latest
     steps:
       - name: Require every qualification job to pass
@@ -47,79 +47,9 @@ jobs:
         with:
           args: >-
             --offline --include-fragments --no-progress
-            '*.md' 'configs/*.md' 'docs/**/*.md' 'examples/**/*.md' 'benchmarks/**/*.md' '.github/*.md'
+            '*.md' 'configs/*.md' 'docs/**/*.md' 'examples/**/*.md' '.github/*.md'
           output: /tmp/sink-doc-links.md
           fail: true
-
-  public-conformance:
-    name: Public API conformance (OpenSearch ${{ matrix.version }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - version: '3.8'
-            image: opensearchproject/opensearch:3.8.0@sha256:bcc1797519726ceb6d651d4a3e60b7c30da91793914a8dfe75fd441d4f641509
-          - version: '2.17'
-            image: opensearchproject/opensearch:2.17.0@sha256:7b9517dff561f54456fad947f11820fa595a340fd1034fc63d57b77f724b3f8f
-    steps:
-      - name: Check out Sink candidate
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Check out immutable public suite
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: liran/sink-production-suite
-          path: qualification
-          ref: b02419b105d5cd2faecb4f808d509b857f26527e
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: qualification/go.mod
-          cache-dependency-path: qualification/go.sum
-      - name: Qualify public behavior, isolation and operation sequences
-        env:
-          SINK_SERVER_DIR: ${{ github.workspace }}
-          SINK_CONFORMANCE_OPENSEARCH_IMAGE: ${{ matrix.image }}
-          TMPDIR: ${{ runner.temp }}
-        run: make -C qualification test-conformance
-      - name: Upload public API qualification evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: public-api-conformance-${{ matrix.version }}
-          path: ${{ runner.temp }}/sink-conformance.*
-          retention-days: 14
-
-  client-contract:
-    name: Go client protocol contract
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out server
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Resolve Go client ref
-        id: client-ref
-        env:
-          CANDIDATE_REF: ${{ github.head_ref }}
-        run: |
-          ref=main
-          if [[ -n "${CANDIDATE_REF}" ]] && git ls-remote --exit-code --heads https://github.com/liran/sink-go.git "refs/heads/${CANDIDATE_REF}" >/dev/null 2>&1; then
-            ref="${CANDIDATE_REF}"
-          fi
-          echo "ref=${ref}" >> "${GITHUB_OUTPUT}"
-
-      - name: Check out Go client
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: liran/sink-go
-          path: sink-go
-          ref: ${{ steps.client-ref.outputs.ref }}
-
-      - name: Verify protobuf compatibility
-        run: |
-          sed 's#github.com/liran/sink/gen/sink;sink#github.com/liran/sink-go/api/sink/v1;sinkv1#' \
-            proto/sink/sink.proto | diff -u - sink-go/proto/sink/sink.proto
 
   test:
     name: Test and lint
@@ -149,69 +79,33 @@ jobs:
           include-hidden-files: true
           retention-days: 14
 
-      - name: Verify Gateway DNS scale-out and scale-in
-        run: go test -race -tags=integration ./internal/gateway -run '^TestGateway(DiscoversDNSScaleChanges|DNSWithdrawalDrainBoundary)$' -count=1 -timeout=2m
+      - name: Run lint and enforce unit-test ownership
+        run: make lint
 
-      - name: Fuzz mutation envelopes
-        run: |
-          mkdir -p .reports/fuzz
-          go test ./internal/queue -run='^$' -fuzz='^FuzzMutationEnvelope$' -fuzztime=30s -parallel=2 2>&1 | tee .reports/fuzz/envelope.log
-          go test ./internal/storage -run='^$' -fuzz='^FuzzValidateBSONDocument$' -fuzztime=30s -parallel=2 2>&1 | tee .reports/fuzz/bson.log
-          grep -q 'new interesting:' .reports/fuzz/envelope.log
-          grep -q 'new interesting:' .reports/fuzz/bson.log
-
-      - name: Preserve fuzz evidence
+  unit-benchmarks:
+    name: Unit fuzzing and microbenchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Fuzz malformed envelope and BSON inputs
+        run: make fuzz-unit
+      - name: Exercise component microbenchmarks
+        run: make benchmark-unit BENCHTIME=1x
+      - name: Preserve unit fuzz evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: input-fuzzing
-          path: |
-            .reports/fuzz/
-            internal/queue/testdata/fuzz/
-            internal/storage/testdata/fuzz/
+          name: unit-fuzz-evidence
+          path: .reports/fuzz/
           include-hidden-files: true
           retention-days: 14
-
-      - name: Run lint
-        run: make lint
-
-  mongodb:
-    name: MongoDB ReplicaSet integration
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Run MongoDB integration tests
-        run: bash scripts/test-mongodb-integration.sh
-
-  search:
-    name: ${{ matrix.backend }} integration
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        backend:
-          - elasticsearch
-          - opensearch
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Run search integration tests
-        run: bash scripts/test-search-integration.sh "${{ matrix.backend }}"
 
   image:
     name: Build container image
@@ -251,63 +145,10 @@ jobs:
       - name: Build cross-platform archives
         run: scripts/build-release-binaries.sh ci dist
 
-      - name: Verify archive set and checksums
-        run: |
-          test "$(find dist -maxdepth 1 -type f -name 'sink_ci_*' | wc -l)" -eq 4
-          test "$(wc -l < dist/checksums.txt)" -eq 4
-          cd dist
-          sha256sum --check checksums.txt
-
-      - name: Run documented Lua test example
-        run: |
-          go run ./cmd/sink lua test \
-            --script examples/lua-test/product.lua \
-            --cases examples/lua-test/cases
-
-  quickstart:
-    name: Docker Compose quickstart
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Run end-to-end example
-        run: bash examples/quickstart/run.sh
-
-      - name: Print service logs after failure
-        if: failure()
-        run: docker compose --file examples/quickstart/compose.yaml logs --no-color || true
-
-      - name: Stop example services
-        if: always()
-        run: docker compose --file examples/quickstart/compose.yaml down --volumes --remove-orphans
-
-  isolated-quickstart:
-    name: Isolated Gateway / Engine / Worker compatibility
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Check out Sink candidate
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Resolve the SDK pinned by the server
-        id: sdk
-        run: |
-          go mod download github.com/liran/sink-go
-          echo "directory=$(go list -m -f '{{.Dir}}' github.com/liran/sink-go)" >> "${GITHUB_OUTPUT}"
-      - name: Verify matching SDK against isolated roles
-        env:
-          SINK_GO_DIR: ${{ steps.sdk.outputs.directory }}
-          TMPDIR: ${{ runner.temp }}
-        run: bash scripts/test-isolated-quickstart.sh
-      - name: Upload isolated role evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: isolated-role-compatibility
-          path: ${{ runner.temp }}/sink-isolated-smoke.*
-          retention-days: 14
+  qualification:
+    name: External test suite
+    uses: batchstream/sink-production-suite/.github/workflows/server-qualification.yml@f22863d37c81d4a8976b2229f68d245110b5ab51
+    with:
+      suite_ref: f22863d37c81d4a8976b2229f68d245110b5ab51
+      sink_ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      sdk_ref: ${{ github.head_ref || 'main' }}

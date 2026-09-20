@@ -101,10 +101,8 @@ type Storage struct {
 }
 
 type MongoDB struct {
-	URI                 string
-	MetadataField       string
-	MaxConcurrentWrites int
-	MaxConcurrentGroups int
+	URI           string
+	MetadataField string
 }
 
 type Search struct {

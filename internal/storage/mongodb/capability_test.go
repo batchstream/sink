@@ -51,7 +51,7 @@ func TestClientBulkDiscoveryCannotUndoCommandRejection(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = client.Disconnect(context.Background()) })
-	storeOptions := Options{Store: "primary", MaxConcurrentWrites: 1, MaxConcurrentGroups: 1}
+	storeOptions := Options{Store: "primary"}
 	store, err := New(client, storeOptions)
 	if err != nil {
 		t.Fatal(err)

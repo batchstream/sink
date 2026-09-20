@@ -70,18 +70,13 @@ func (s *Store) Read(ctx context.Context, req storage.ReadRequest) (storage.Read
 	var reads sync.WaitGroup
 	reads.Add(len(groups))
 	for _, group := range groups {
-		select {
-		case s.groups <- struct{}{}:
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			s.setReadGroupError(group, response.Results, storage.BackendError(ctx.Err()))
 			reads.Done()
 			continue
 		}
 		go func() {
 			defer reads.Done()
-			defer func() {
-				<-s.groups
-			}()
 			s.readGroup(ctx, group, response.Results)
 		}()
 	}

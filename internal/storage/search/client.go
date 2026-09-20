@@ -85,6 +85,11 @@ func (s *Store) perform(ctx context.Context, opts requestOptions) (apiResponse, 
 		endpoint.RawQuery = opts.query.Encode()
 		response, err := s.performOnce(ctx, opts, endpoint)
 		if err != nil {
+			// A successful HTTP response may already have delivered documents.
+			// Never replay decoding or callback failures, even before the first hit.
+			if opts.decode != nil && response.statusCode >= 200 && response.statusCode < 300 {
+				return empty, err
+			}
 			// Caller cancellation and local response limits say nothing about
 			// endpoint health. Let reads split oversized batches immediately.
 			code, _ := storage.ErrorDetails(err)
@@ -144,16 +149,13 @@ func (s *Store) performOnce(ctx context.Context, opts requestOptions, endpoint *
 		return empty, errResponseTooLarge
 	}
 	if opts.decode != nil && httpResponse.StatusCode >= 200 && httpResponse.StatusCode < 300 {
+		response := apiResponse{statusCode: httpResponse.StatusCode, headers: httpResponse.Header.Clone()}
 		reader := &io.LimitedReader{R: httpResponse.Body, N: maximum + 1}
 		err := opts.decode(reader)
 		if reader.N == 0 {
-			return empty, errResponseTooLarge
+			return response, errResponseTooLarge
 		}
-		if err != nil {
-			return empty, err
-		}
-		response := apiResponse{statusCode: httpResponse.StatusCode, headers: httpResponse.Header.Clone()}
-		return response, nil
+		return response, err
 	}
 	body, err := io.ReadAll(io.LimitReader(httpResponse.Body, maximum+1))
 	if err != nil {

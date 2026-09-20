@@ -74,8 +74,6 @@ func (s *Store) pageOptions(req storage.NativeRequest) (requestOptions, map[stri
 func (s *Store) performQuery(ctx context.Context, opts requestOptions) (scanPage, error) {
 	var page scanPage
 	if opts.emitHit != nil {
-		// Retrying after delivery would duplicate callback side effects.
-		opts.retrySafe = false
 		opts.decode = func(reader io.Reader) error {
 			decoded, err := decodeSearchPage(reader, opts.emitHit)
 			page = decoded

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/liran/sink/gen/forward"
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/config"
 	"github.com/liran/sink/internal/logging"
@@ -110,8 +111,15 @@ func TestStreamDiagnosticsPreserveOutcomeAndExcludeHealth(t *testing.T) {
 		called := false
 		next := func(server any, stream grpc.ServerStream) error {
 			called = true
-			if server != runtime || stream != nil {
-				t.Fatal("interceptor changed stream arguments")
+			if server != runtime {
+				t.Fatal("interceptor changed server")
+			}
+			if test.level == "" {
+				if stream != nil {
+					t.Fatal("interceptor wrapped an unrelated stream")
+				}
+			} else if observed, ok := stream.(*diagnosticStream); !ok || observed.ServerStream != nil {
+				t.Fatal("interceptor lost the underlying stream")
 			}
 			return test.err
 		}
@@ -134,4 +142,90 @@ func TestStreamDiagnosticsPreserveOutcomeAndExcludeHealth(t *testing.T) {
 			t.Fatalf("wrong stream diagnostic: %s", output.String())
 		}
 	}
+}
+
+func TestStreamDiagnosticsCountResultsAcrossFramesWithoutPayload(t *testing.T) {
+	var output bytes.Buffer
+	options := &slog.HandlerOptions{Level: slog.LevelDebug}
+	logger := slog.New(slog.NewJSONHandler(&output, options))
+	previous := slog.Default()
+	slog.SetDefault(logger)
+	defer slog.SetDefault(previous)
+	failure := &sink.Failure{Code: sink.FailureCode_FAILURE_CODE_UNAVAILABLE, Message: "private failure"}
+	document := &sink.Document{Payload: []byte("private document")}
+	read := &sink.ReadResponse{Results: []*sink.ReadResult{{Document: document}, {Failure: failure}}}
+	write := &sink.WriteResponse{Results: []*sink.WriteResult{{Document: document}, {Failure: failure}}}
+	deleted := &sink.DeleteResponse{Results: []*sink.DeleteResult{{}, {Failure: failure}}}
+	executed := &sink.ExecuteResponse{Payload: []byte("private document")}
+	forwardRead := &forward.ForwardResponse{Response: &forward.ForwardResponse_Read{Read: read}}
+	forwardWrite := &forward.ForwardResponse{Response: &forward.ForwardResponse_Write{Write: write}}
+	forwardDelete := &forward.ForwardResponse{Response: &forward.ForwardResponse_Delete{Delete: deleted}}
+	forwardExecute := &forward.ForwardResponse{Response: &forward.ForwardResponse_Execute{Execute: executed}}
+	cases := []struct {
+		method     string
+		message    any
+		operations int
+	}{
+		{method: "Read", message: read, operations: 4},
+		{method: "Write", message: write, operations: 4},
+		{method: "Delete", message: deleted, operations: 4},
+		{method: "Forward", message: forwardRead, operations: 4},
+		{method: "Forward", message: forwardWrite, operations: 4},
+		{method: "Forward", message: forwardDelete, operations: 4},
+		{method: "Forward", message: forwardExecute, operations: 2},
+	}
+	for _, test := range cases {
+		t.Run(test.method, func(t *testing.T) {
+			output.Reset()
+			stream := &diagnosticTestStream{}
+			prefix := "/sink.v1.Sink/"
+			if test.method == "Forward" {
+				prefix = "/sink.forward.v1.Engine/"
+			}
+			info := &grpc.StreamServerInfo{FullMethod: prefix + test.method}
+			next := func(_ any, observed grpc.ServerStream) error {
+				for range 2 {
+					if err := observed.SendMsg(test.message); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+			err := logStream(nil, stream, info, next)
+			if err != nil || stream.sent != 2 {
+				t.Fatalf("logging changed delivery: sent=%d err=%v", stream.sent, err)
+			}
+			var record map[string]any
+			if err := json.Unmarshal(output.Bytes(), &record); err != nil {
+				t.Fatal(err)
+			}
+			if record["level"] != "WARN" || record["failed"] != float64(2) || record["operations"] != float64(test.operations) || strings.Contains(output.String(), "private") {
+				t.Fatalf("incorrect stream summary: %s", output.String())
+			}
+		})
+	}
+}
+
+func TestStreamDiagnosticsPreserveSendError(t *testing.T) {
+	failure := status.Error(codes.Canceled, "client disconnected")
+	underlying := &diagnosticTestStream{err: failure}
+	stream := &diagnosticStream{ServerStream: underlying}
+	response := &sink.WriteResponse{Results: []*sink.WriteResult{{}}}
+	if err := stream.SendMsg(response); err != failure || stream.summary.operations != 0 {
+		t.Fatalf("failed send counted or changed: summary=%+v err=%v", stream.summary, err)
+	}
+}
+
+type diagnosticTestStream struct {
+	grpc.ServerStream
+	sent int
+	err  error
+}
+
+func (s *diagnosticTestStream) SendMsg(any) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.sent++
+	return nil
 }

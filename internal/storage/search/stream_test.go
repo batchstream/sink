@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -217,5 +218,85 @@ func TestScanStreamFailuresWithholdCursor(t *testing.T) {
 			}
 			handler.verify()
 		})
+	}
+}
+
+func TestManagedStreamsRecoverOnlyBeforeDecoding(t *testing.T) {
+	const body = `{"hits":{"hits":[{"_source":{"value":1},"sort":[1]}],"total":{"value":1,"relation":"eq"}},"timed_out":false,"_shards":{"total":1,"successful":1,"failed":0}}`
+	for _, method := range []string{"Query", "Scan"} {
+		for _, fault := range []string{"http-503", "transport", "malformed", "truncated", "callback"} {
+			t.Run(method+"/"+fault, func(t *testing.T) {
+				var firstCalls, secondCalls atomic.Int32
+				firstHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					firstCalls.Add(1)
+					_, _ = io.Copy(io.Discard, r.Body)
+					switch fault {
+					case "http-503":
+						w.WriteHeader(http.StatusServiceUnavailable)
+					case "transport":
+						connection, _, err := w.(http.Hijacker).Hijack()
+						if err != nil {
+							t.Error(err)
+							return
+						}
+						_ = connection.Close()
+					case "malformed":
+						_, _ = io.WriteString(w, `{"hits":[]}`)
+					case "truncated":
+						_, _ = io.WriteString(w, `{"hits":{"hits":[{"_source":{"value":1},"sort":[1]},`)
+					default:
+						_, _ = io.WriteString(w, body)
+					}
+				})
+				first := httptest.NewServer(firstHandler)
+				t.Cleanup(first.Close)
+				secondHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					secondCalls.Add(1)
+					_, _ = io.WriteString(w, body)
+				})
+				second := httptest.NewServer(secondHandler)
+				t.Cleanup(second.Close)
+				opts := Options{Driver: DriverOpenSearch, Store: "primary", Endpoints: []string{first.URL, second.URL}}
+				store, err := New(opts)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(store.Close)
+				emitted := 0
+				stopped := errors.New("consumer stopped")
+				emit := func(storage.Document) error {
+					emitted++
+					if fault == "callback" {
+						return stopped
+					}
+					return nil
+				}
+				native := storage.NativeRequest{URI: "sink://primary/items", ContentType: ContentTypeJSON, Payload: []byte(`{"sort":["uid"]}`), MaxBytes: 4096}
+				if method == "Query" {
+					request := storage.QueryRequest{Request: native, PageSize: 1, Emit: emit}
+					_, err = store.Query(t.Context(), request)
+				} else {
+					request := storage.ScanRequest{Request: native, BatchSize: 1, Emit: emit}
+					_, err = store.Scan(t.Context(), request)
+				}
+				recoverable := fault == "http-503" || fault == "transport"
+				wantSecond, wantEmitted := int32(0), 1
+				if recoverable {
+					wantSecond = 1
+				}
+				if fault == "malformed" {
+					wantEmitted = 0
+				}
+				if (err == nil) != recoverable || firstCalls.Load() != 1 || secondCalls.Load() != wantSecond || emitted != wantEmitted {
+					t.Fatalf("unsafe recovery: err=%v calls=%d/%d emitted=%d", err, firstCalls.Load(), secondCalls.Load(), emitted)
+				}
+				if fault == "callback" && !errors.Is(err, stopped) {
+					t.Fatalf("callback error lost: %v", err)
+				}
+				if (store.endpoints[0].retryAfter.Load() != 0) != recoverable || store.endpoints[1].retryAfter.Load() != 0 {
+					t.Fatal("decoding or callback failure changed endpoint health")
+				}
+			})
+		}
 	}
 }

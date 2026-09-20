@@ -4,13 +4,19 @@ on:
   release:
     types:
       - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing published release tag to qualify and publish
+        required: true
+        type: string
 
 permissions:
   contents: write
   packages: write
 
 concurrency:
-  group: release-artifacts-${{ github.event.release.tag_name }}
+  group: release-artifacts-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: false
 
 env:
@@ -18,21 +24,59 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  release:
+    name: Resolve published release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.metadata.outputs.tag }}
+      latest: ${{ steps.metadata.outputs.latest }}
+      revision: ${{ steps.revision.outputs.revision }}
+    steps:
+      - name: Require an existing published release
+        id: metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          metadata=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease)
+          jq -e '.isDraft == false' <<< "$metadata"
+          latest=false
+          if [[ "$(jq -r '.isPrerelease' <<< "$metadata")" == false ]]; then
+            latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+            if [[ "$RELEASE_TAG" == "$latest_tag" ]]; then
+              latest=true
+            fi
+          fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+      - name: Check out the release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.metadata.outputs.tag }}
+      - name: Resolve the immutable release commit
+        id: revision
+        run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   qualify:
     name: Public production qualification
-    uses: batchstream/sink-production-suite/.github/workflows/release-qualification.yml@959a7e74d77f308e7167878ab175f4266c7ee11f
+    needs: release
+    uses: batchstream/sink-production-suite/.github/workflows/release-qualification.yml@d1e792d21a77e4a589ce1a33125e7cb0b85ba885
     with:
-      suite_ref: 959a7e74d77f308e7167878ab175f4266c7ee11f
-      sink_ref: ${{ github.event.release.tag_name }}
+      suite_ref: d1e792d21a77e4a589ce1a33125e7cb0b85ba885
+      sink_ref: ${{ needs.release.outputs.revision }}
 
   binaries:
     name: Attach standalone binaries
     needs:
+      - release
       - qualify
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.revision }}
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -41,23 +85,28 @@ jobs:
           cache: true
 
       - name: Build release binaries
-        run: scripts/build-release-binaries.sh "${{ github.event.release.tag_name }}" dist
+        env:
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+        run: scripts/build-release-binaries.sh "$RELEASE_TAG" dist
 
       - name: Verify Linux amd64 binary version
+        env:
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
         run: |
           mkdir -p /tmp/sink-release-verify
-          tar -C /tmp/sink-release-verify -xzf "dist/sink_${{ github.event.release.tag_name }}_linux_amd64.tar.gz"
-          test "$(/tmp/sink-release-verify/sink version)" = "${{ github.event.release.tag_name }}"
+          tar -C /tmp/sink-release-verify -xzf "dist/sink_${RELEASE_TAG}_linux_amd64.tar.gz"
+          test "$(/tmp/sink-release-verify/sink version)" = "$RELEASE_TAG"
 
       - name: Attach binaries and checksums
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
         run: gh release upload "${RELEASE_TAG}" dist/* --clobber
 
   publish:
     name: Publish multi-platform image
     needs:
+      - release
       - qualify
     runs-on: ubuntu-latest
     outputs:
@@ -65,6 +114,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.revision }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
@@ -81,11 +132,13 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: latest=false
+          labels: org.opencontainers.image.revision=${{ needs.release.outputs.revision }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable=${{ !github.event.release.prerelease }}
+            type=semver,pattern={{version}},value=${{ needs.release.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release.outputs.tag }},enable=${{ needs.release.outputs.latest == 'true' }}
+            type=semver,pattern={{major}},value=${{ needs.release.outputs.tag }},enable=${{ needs.release.outputs.latest == 'true' }}
+            type=raw,value=latest,enable=${{ needs.release.outputs.latest == 'true' }}
 
       - name: Build and publish image
         id: build
@@ -96,7 +149,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: VERSION=${{ github.event.release.tag_name }}
+          build-args: VERSION=${{ needs.release.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: mode=max
@@ -105,18 +158,21 @@ jobs:
   describe:
     name: Update release installation details
     needs:
+      - release
       - binaries
       - publish
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release.outputs.revision }}
 
       - name: Add tagged image and binary details to release
         env:
           GH_TOKEN: ${{ github.token }}
           IMAGE_DIGEST: ${{ needs.publish.outputs.digest }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
         run: |
           image_tag="${RELEASE_TAG#v}"
           tagged_image="${REGISTRY}/${IMAGE_NAME}:${image_tag}"

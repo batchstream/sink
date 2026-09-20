@@ -158,7 +158,7 @@ result reduced median allocated bytes as follows (five samples):
 | MongoDB | 64 KiB | 386,795 | 306,979 | 20.6% |
 | MongoDB | 1 MiB | 5,909,091 | 4,576,522 | 22.6% |
 
-Repeated results still own separate mutable documents and revisions. The read
+Repeated storage results still own separate mutable documents and internal revisions. The read
 measurements include the local harness and do not establish database throughput.
 Encoding queue messages directly into their final envelope reduced allocations
 from two to one and allocated bytes by 50% for 4 KiB, 64 KiB, and 1 MiB payloads.

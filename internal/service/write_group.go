@@ -23,7 +23,6 @@ func (s *Server) prepareWriteGroup(ctx context.Context, input writeGroupPreparat
 		// failures whose outcome depended on an uncommitted predecessor.
 		result := input.results[operation.index]
 		result.Status = sink.WriteStatus_WRITE_STATUS_UNSPECIFIED
-		result.Revision = nil
 		result.Failure = nil
 		result.Document = nil
 		var merged storage.WriteOperation

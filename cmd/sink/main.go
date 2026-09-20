@@ -12,10 +12,10 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/liran/sink/internal/app"
-	"github.com/liran/sink/internal/config"
-	"github.com/liran/sink/internal/gateway"
-	"github.com/liran/sink/internal/logging"
+	"github.com/batchstream/sink/internal/app"
+	"github.com/batchstream/sink/internal/config"
+	"github.com/batchstream/sink/internal/gateway"
+	"github.com/batchstream/sink/internal/logging"
 )
 
 var version = "dev"

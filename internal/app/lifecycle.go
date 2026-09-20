@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/liran/sink/internal/logging"
-	searchstorage "github.com/liran/sink/internal/storage/search"
+	"github.com/batchstream/sink/internal/logging"
+	searchstorage "github.com/batchstream/sink/internal/storage/search"
 	"google.golang.org/grpc"
 )
 

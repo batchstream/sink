@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/liran/sink/internal/protocol"
+	"github.com/batchstream/sink/internal/protocol"
 
-	sink "github.com/liran/sink/gen/sink"
+	sink "github.com/batchstream/sink/gen/sink"
 )
 
 var envelopeMagic = [4]byte{'S', 'N', 'K', 'Q'}

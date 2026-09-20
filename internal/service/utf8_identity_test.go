@@ -6,9 +6,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/protocol"
-	"github.com/liran/sink/internal/storage/memory"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/protocol"
+	"github.com/batchstream/sink/internal/storage/memory"
 )
 
 func TestVTRecordRequestsRejectInvalidUTF8Identities(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 
 	"github.com/liran/sink-go/uri"
 
-	"github.com/liran/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage"
 )
 
 const (

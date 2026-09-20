@@ -11,9 +11,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/liran/sink/internal/config"
-	"github.com/liran/sink/internal/queue"
-	queuekafka "github.com/liran/sink/internal/queue/kafka"
+	"github.com/batchstream/sink/internal/config"
+	"github.com/batchstream/sink/internal/queue"
+	queuekafka "github.com/batchstream/sink/internal/queue/kafka"
 )
 
 type deadLetterReport struct {

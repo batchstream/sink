@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/batchstream/sink/internal/protocol"
+	"github.com/batchstream/sink/internal/testuri"
 	"github.com/liran/sink-go/uri"
-	"github.com/liran/sink/internal/protocol"
-	"github.com/liran/sink/internal/testuri"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/merge"
-	"github.com/liran/sink/internal/storage"
-	"github.com/liran/sink/internal/storage/memory"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/merge"
+	"github.com/batchstream/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage/memory"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

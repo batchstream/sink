@@ -4,10 +4,10 @@ package service
 import (
 	"errors"
 
-	"github.com/liran/sink/internal/merge"
-	sinkmetrics "github.com/liran/sink/internal/metrics"
-	"github.com/liran/sink/internal/queue"
-	"github.com/liran/sink/internal/storage"
+	"github.com/batchstream/sink/internal/merge"
+	sinkmetrics "github.com/batchstream/sink/internal/metrics"
+	"github.com/batchstream/sink/internal/queue"
+	"github.com/batchstream/sink/internal/storage"
 )
 
 const defaultMaxMergeAttempts = 3

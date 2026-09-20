@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/storage"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/storage"
 )
 
 func TestFinalWriteConflictsPreservePreconditionStatus(t *testing.T) {

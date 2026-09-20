@@ -1,11 +1,11 @@
 package app
 
 import (
-	forward "github.com/liran/sink/gen/forward"
-	"github.com/liran/sink/internal/engine"
-	"github.com/liran/sink/internal/merge"
-	sinkmetrics "github.com/liran/sink/internal/metrics"
-	"github.com/liran/sink/internal/service"
+	forward "github.com/batchstream/sink/gen/forward"
+	"github.com/batchstream/sink/internal/engine"
+	"github.com/batchstream/sink/internal/merge"
+	sinkmetrics "github.com/batchstream/sink/internal/metrics"
+	"github.com/batchstream/sink/internal/service"
 )
 
 func (app *Application) newService(observed *sinkmetrics.Metrics) (*service.Server, error) {

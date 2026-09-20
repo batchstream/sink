@@ -5,9 +5,9 @@ import (
 
 	"google.golang.org/grpc"
 
-	forward "github.com/liran/sink/gen/forward"
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/protocol"
+	forward "github.com/batchstream/sink/gen/forward"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

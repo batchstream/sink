@@ -180,7 +180,7 @@ allowance and waiting-allocation metrics have been removed.
 Worker uses the pressure gauge and Kafka lag; its poll pause is not a rejected RPC.
 Usage is sampled at most once per 100 ms. It includes resident memory retained by
 the runtime and does not return to zero when requests finish. The fallback Go
-runtime measurement excludes some native allocations. See [memory policy](design/demand-based-admission.md).
+runtime measurement excludes some native allocations. See [memory policy](design/process-memory-admission.md).
 
 The [KEDA example](../examples/autoscaling/memory-keda.yaml) uses observed usage
 divided by the fleet's high watermarks, plus the recent fraction of refused RPCs.

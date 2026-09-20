@@ -29,7 +29,7 @@ identity hook. Storage's `BatchKey` only selects which physical resource can
 share a backend batch. Different records in the same collection or index can
 share that batch without sharing record identity.
 
-Canonical syntax is implemented once in `github.com/liran/sink-go/uri`:
+Canonical syntax is implemented once in `github.com/batchstream/sink-go/uri`:
 
 - Scheme is exactly `sink://`. Store names are lowercase ASCII, start with a
   letter or digit, and otherwise contain letters, digits, `.`, `_`, or `-`.

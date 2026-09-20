@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	forward "github.com/liran/sink/gen/forward"
-	"github.com/liran/sink/internal/protocol"
+	forward "github.com/batchstream/sink/gen/forward"
+	"github.com/batchstream/sink/internal/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"

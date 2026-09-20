@@ -20,7 +20,7 @@ from an incompatible forwarding version; old and new Engines cannot share routes
    Process watermarks now control new admission. Remove `memory.burst_percent` and
    `memory.wait_timeout`; use `high_watermark_percent` (80) and
    `low_watermark_percent` (70). Startup panics if estimated minimum working memory
-   cannot fit below the high watermark. See the [sizing formula](design/demand-based-admission.md).
+   cannot fit below the high watermark. See the [sizing formula](design/process-memory-admission.md).
 7. Move Kafka `topic.partitions`, `topic.replication_factor`,
    `topic.min_insync_replicas`, and `topic.max_record_bytes` directly under `kafka`;
    they apply to both Topics. Rename `dead_letter.topic` to `dead_letter.name`.
@@ -35,7 +35,7 @@ sink config check --config configs/worker.yaml --store-config configs/stores/pri
 
 The [annotated examples](../configs/README.md) and [configuration reference](configuration.md)
 cover the complete schema. The Chart mounts one shared Store ConfigMap into both
-roles and passes the second argument. Chart 0.8 requires the matching Sink 0.19
+roles and passes the second argument. Chart 0.9 requires the matching Sink 0.19
 release; pre-release validation must override its image with this candidate build.
 Existing Kafka data and Store identities need not change for this configuration
 migration when the stored mutation protocol is already compatible. This change

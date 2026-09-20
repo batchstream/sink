@@ -1,4 +1,4 @@
-module github.com/liran/sink
+module github.com/batchstream/sink
 
 go 1.27.0
 

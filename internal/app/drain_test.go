@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liran/sink/internal/config"
+	"github.com/batchstream/sink/internal/config"
 )
 
 func TestHTTPReadinessRejectsClosedRoles(t *testing.T) {

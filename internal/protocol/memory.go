@@ -3,9 +3,9 @@ package protocol
 import (
 	"errors"
 
-	forward "github.com/liran/sink/gen/forward"
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/capacity"
+	forward "github.com/batchstream/sink/gen/forward"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/capacity"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/status"
 )

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/liran/sink/internal/config"
+	"github.com/batchstream/sink/internal/config"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	sdklog "go.opentelemetry.io/otel/sdk/log"

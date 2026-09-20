@@ -7,16 +7,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/batchstream/sink/internal/testuri"
 	"github.com/liran/sink-go/uri"
-	"github.com/liran/sink/internal/testuri"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/merge"
-	"github.com/liran/sink/internal/service"
-	"github.com/liran/sink/internal/storage"
-	"github.com/liran/sink/internal/storage/memory"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/merge"
+	"github.com/batchstream/sink/internal/service"
+	"github.com/batchstream/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage/memory"
 )
 
 func foldingPut(key string, mode sink.WriteMode, value int) *sink.WriteOperation {

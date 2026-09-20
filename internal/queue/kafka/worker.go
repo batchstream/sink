@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/liran/sink/internal/capacity"
-	"github.com/liran/sink/internal/logging"
-	sinkmetrics "github.com/liran/sink/internal/metrics"
-	"github.com/liran/sink/internal/queue"
-	"github.com/liran/sink/internal/storage"
+	"github.com/batchstream/sink/internal/capacity"
+	"github.com/batchstream/sink/internal/logging"
+	sinkmetrics "github.com/batchstream/sink/internal/metrics"
+	"github.com/batchstream/sink/internal/queue"
+	"github.com/batchstream/sink/internal/storage"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 )

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liran/sink/internal/queue/kafka"
+	"github.com/batchstream/sink/internal/queue/kafka"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"

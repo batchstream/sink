@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/batchstream/sink/internal/config"
 	"github.com/liran/sink-go/uri"
-	"github.com/liran/sink/internal/config"
 )
 
 type TLS struct {

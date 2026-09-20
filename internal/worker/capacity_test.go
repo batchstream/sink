@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/merge"
-	"github.com/liran/sink/internal/queue"
-	"github.com/liran/sink/internal/service"
-	"github.com/liran/sink/internal/storage/memory"
-	"github.com/liran/sink/internal/worker"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/merge"
+	"github.com/batchstream/sink/internal/queue"
+	"github.com/batchstream/sink/internal/service"
+	"github.com/batchstream/sink/internal/storage/memory"
+	"github.com/batchstream/sink/internal/worker"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

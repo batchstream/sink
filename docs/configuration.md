@@ -216,7 +216,7 @@ Before opening dependencies, Sink estimates minimum working memory from transpor
 Lua, driver and Kafka settings. Startup panics if the high-watermark portion of the
 effective ceiling cannot cover it. The panic lists the required components and
 available ceiling. This catches undersized configurations; it does not guarantee
-against OOM under concurrent load. See the [sizing formula and runtime behavior](design/demand-based-admission.md)
+against OOM under concurrent load. See the [sizing formula and runtime behavior](design/process-memory-admission.md)
 and [metrics/KEDA migration](observability.md#memory-capacity-and-keda).
 
 The former `service` sections, snapshot/output quotas, `memory.burst_percent`,

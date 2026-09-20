@@ -101,7 +101,7 @@ registry or historical Store/database association cache is introduced.
 
 ### 4.1 Platform-Neutral Route Input
 
-Gateway reads `gateway.routes` from its own configuration at startup. Each route
+Gateway reads `forwarding.routes` from its own configuration at startup. Each route
 contains a Store name, Engine target, and transport settings. Every configured
 route is active; there is no state flag, separate route file, or hot reload.
 Concurrency, byte, and connection limits belong to the same process configuration.
@@ -126,7 +126,7 @@ arrival, departure, and load distribution with long-lived connections.
 
 ### 4.3 Route Changes
 
-Add, change, or remove entries in `gateway.routes` and restart Gateway. Removing a
+Add, change, or remove entries in `forwarding.routes` and restart Gateway. Removing a
 route stops new instances from forwarding to that Store; it does not delete the
 Store's database, topics, or workloads. Old instances retain their startup routes
 until they stop, so emergency access revocation belongs at Engine/network controls.

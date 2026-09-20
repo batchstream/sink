@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/protocol"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

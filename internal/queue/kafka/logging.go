@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"strconv"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/logging"
-	"github.com/liran/sink/internal/queue"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/logging"
+	"github.com/batchstream/sink/internal/queue"
 )
 
 type quarantinedDocument struct{ envelope []byte }

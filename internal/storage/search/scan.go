@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/liran/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage"
 )
 
 func scanSort(body map[string]json.RawMessage) (int, error) {

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liran/sink/internal/queue"
+	"github.com/batchstream/sink/internal/queue"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 

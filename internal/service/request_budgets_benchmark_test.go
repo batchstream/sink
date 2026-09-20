@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/merge"
-	"github.com/liran/sink/internal/storage/memory"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/merge"
+	"github.com/batchstream/sink/internal/storage/memory"
 )
 
 func BenchmarkRepeatedRecordRead(b *testing.B) {

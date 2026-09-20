@@ -7,9 +7,9 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/storage"
-	"github.com/liran/sink/internal/storage/memory"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage/memory"
 )
 
 type failureBudgetStorage struct {

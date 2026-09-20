@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	sink "github.com/liran/sink/gen/sink"
-	sinkmetrics "github.com/liran/sink/internal/metrics"
-	"github.com/liran/sink/internal/protocol"
+	sink "github.com/batchstream/sink/gen/sink"
+	sinkmetrics "github.com/batchstream/sink/internal/metrics"
+	"github.com/batchstream/sink/internal/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"

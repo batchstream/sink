@@ -1,13 +1,13 @@
 package app
 
 import (
-	"github.com/liran/sink/internal/testuri"
+	"github.com/batchstream/sink/internal/testuri"
 
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/liran/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )

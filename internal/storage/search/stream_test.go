@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liran/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage"
 )
 
 func TestQueryEmitsBeforeHTTPResponseCompletes(t *testing.T) {

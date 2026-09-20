@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/liran/sink/internal/merge"
-	"github.com/liran/sink/internal/storage"
+	"github.com/batchstream/sink/internal/merge"
+	"github.com/batchstream/sink/internal/storage"
 )
 
 func TestLuaMergeRejectsMalformedUTF8JSON(t *testing.T) {

@@ -12,7 +12,7 @@ capacity measurements with the [rollout drain budget](rolling-upgrades.md).
 
 All roles use process memory watermarks: reject/pause at 80% and resume at 70%
 of the effective Go/container/host ceiling. Startup panics if estimated minimum
-working memory exceeds the high-watermark allowance. See the [sizing formula](design/demand-based-admission.md)
+working memory exceeds the high-watermark allowance. See the [sizing formula](design/process-memory-admission.md)
 and [memory/KEDA signals](observability.md#memory-capacity-and-keda).
 This is overload control, not an OOM guarantee. There is no separate execution
 concurrency cap. Batch queues, Gateway fanout/connections, backend pools, Kafka

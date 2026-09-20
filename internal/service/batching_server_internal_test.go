@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	sink "github.com/liran/sink/gen/sink"
+	sink "github.com/batchstream/sink/gen/sink"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

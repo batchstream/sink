@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"errors"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/storage"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/storage"
 )
 
 // Reserve the largest candidate for each operation across CAS attempts. This

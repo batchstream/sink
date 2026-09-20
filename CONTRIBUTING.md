@@ -2,9 +2,9 @@
 
 Focused bug fixes, documentation improvements, tests, and feature proposals are
 welcome. For changes to the public protocol or storage semantics, open an
-[issue](https://github.com/liran/sink/issues/new/choose) first so the server,
-[Go client](https://github.com/liran/sink-go), and
-[production suite](https://github.com/liran/sink-production-suite) can evolve
+[issue](https://github.com/batchstream/sink/issues/new/choose) first so the server,
+[Go client](https://github.com/batchstream/sink-go), and
+[production suite](https://github.com/batchstream/sink-production-suite) can evolve
 together.
 
 ## Report a problem
@@ -22,7 +22,7 @@ Install the Go version declared in [go.mod](go.mod), Git, and Make. Docker with
 Compose is needed only for the quickstart and external integration suites.
 
 ```shell
-git clone https://github.com/liran/sink.git
+git clone https://github.com/batchstream/sink.git
 cd sink
 make build
 make test

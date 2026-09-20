@@ -3,7 +3,7 @@ package metrics
 import (
 	"time"
 
-	forward "github.com/liran/sink/gen/forward"
+	forward "github.com/batchstream/sink/gen/forward"
 	"google.golang.org/grpc/codes"
 )
 

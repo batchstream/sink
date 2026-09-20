@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liran/sink/internal/storage"
-	"github.com/liran/sink/internal/testuri"
+	"github.com/batchstream/sink/internal/storage"
+	"github.com/batchstream/sink/internal/testuri"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liran/sink/internal/merge"
+	"github.com/batchstream/sink/internal/merge"
 )
 
 func TestLuaPatternSearchClassifiesExecutionLimits(t *testing.T) {

@@ -6,12 +6,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	forward "github.com/liran/sink/gen/forward"
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/capacity"
-	"github.com/liran/sink/internal/config"
-	"github.com/liran/sink/internal/forwarding"
-	"github.com/liran/sink/internal/protocol"
+	forward "github.com/batchstream/sink/gen/forward"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/capacity"
+	"github.com/batchstream/sink/internal/config"
+	"github.com/batchstream/sink/internal/forwarding"
+	"github.com/batchstream/sink/internal/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

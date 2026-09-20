@@ -1,7 +1,7 @@
 package service
 
 import (
-	"github.com/liran/sink/internal/testuri"
+	"github.com/batchstream/sink/internal/testuri"
 
 	"context"
 	"fmt"
@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/merge"
-	"github.com/liran/sink/internal/storage"
-	"github.com/liran/sink/internal/storage/memory"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/merge"
+	"github.com/batchstream/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage/memory"
 )
 
 // Count actual adapter rounds for the same collected RPCs, including admission

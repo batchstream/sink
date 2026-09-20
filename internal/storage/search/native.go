@@ -10,8 +10,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/batchstream/sink-go/uri"
 	"github.com/batchstream/sink/internal/storage"
-	"github.com/liran/sink-go/uri"
 	"golang.org/x/net/http/httpguts"
 )
 

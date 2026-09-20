@@ -11,6 +11,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/batchstream/sink-go/uri"
 	sink "github.com/batchstream/sink/gen/sink"
 	"github.com/batchstream/sink/internal/capacity"
 	"github.com/batchstream/sink/internal/merge"
@@ -19,7 +20,6 @@ import (
 	"github.com/batchstream/sink/internal/storage/memory"
 	"github.com/batchstream/sink/internal/testuri"
 	"github.com/batchstream/sink/internal/worker"
-	"github.com/liran/sink-go/uri"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"

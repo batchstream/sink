@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/batchstream/sink-go/uri"
 	"github.com/batchstream/sink/internal/testuri"
-	"github.com/liran/sink-go/uri"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 

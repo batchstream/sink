@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/liran/sink-go/uri"
+	"github.com/batchstream/sink-go/uri"
 
 	"github.com/batchstream/sink/internal/storage"
 	"go.mongodb.org/mongo-driver/v2/mongo"

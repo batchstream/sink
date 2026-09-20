@@ -31,15 +31,31 @@ buffer. Existing message, backend response, scan-page and Lua bounds remain;
 this change introduces no additional memory-limit setting. Concurrent requests,
 transport/driver buffers and one large document still contribute to process RSS.
 
-The Go SDK accepts slices for record collections and an optional callback:
+The Go SDK methods accept `ctx` and a typed request. Request fields hold record
+slices, completion mode, and an optional `OnResult` or `OnDocument` callback:
 
 ```go
-results, err := client.Read(ctx, addresses) // Collected in request order.
-results, err = client.Read(ctx, addresses, onRead) // results is nil.
-written, err := client.Write(ctx, mode, operations, onWrite)
-queryPage, err := client.Query(ctx, query, onDocument) // queryPage.Documents is nil.
-scanPage, err := client.Scan(ctx, scan, onDocument) // scanPage.Documents is nil.
+readRequest := sink.ReadRequest{Addresses: addresses}
+results, err := client.Read(ctx, readRequest) // Collected in request order.
+readRequest.OnResult = onRead
+results, err = client.Read(ctx, readRequest) // results is nil.
+writeRequest := sink.WriteRequest{
+    CompletionMode: mode,
+    Operations: operations,
+    OnResult: onWrite,
+}
+written, err := client.Write(ctx, writeRequest) // written is nil.
+query.OnDocument = onDocument
+queryPage, err := client.Query(ctx, query) // queryPage.Documents is nil.
+scan.OnDocument = onDocument
+scanPage, err := client.Scan(ctx, scan) // scanPage.Documents is nil.
 ```
+
+Dataset record methods use `DatasetReadRequest.Keys` and
+`DatasetWriteRequest.Records`, with the same `OnResult` behavior. Nil callbacks
+collect results; non-nil callbacks consume them without collection. Query/Scan
+still return page metadata after successful EOF. New per-call options extend
+request structs without adding positional arguments.
 
 Callbacks execute serially, provide backpressure, and cancel the RPC when they
 return an error. They receive owned immutable documents. Callback errors are not

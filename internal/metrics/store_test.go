@@ -33,9 +33,9 @@ func TestMixedStoreRPCsCountEachRequestOnceAndAttributeEveryResult(t *testing.T)
 		read.Operations = append(read.Operations, readOp)
 		write.Operations = append(write.Operations, writeOp)
 		remove.Operations = append(remove.Operations, deleteOp)
-		readResult := &sink.ReadResult{Status: sink.ReadStatus_READ_STATUS_FOUND}
-		writeResult := &sink.WriteResult{Status: sink.WriteStatus_WRITE_STATUS_APPLIED}
-		deleteResult := &sink.DeleteResult{Status: sink.DeleteStatus_DELETE_STATUS_APPLIED}
+		readResult := &sink.ReadResult{OperationIndex: uint32(index), Status: sink.ReadStatus_READ_STATUS_FOUND}
+		writeResult := &sink.WriteResult{OperationIndex: uint32(index), Status: sink.WriteStatus_WRITE_STATUS_APPLIED}
+		deleteResult := &sink.DeleteResult{OperationIndex: uint32(index), Status: sink.DeleteStatus_DELETE_STATUS_APPLIED}
 		if index >= 3 {
 			readResult.Status = sink.ReadStatus_READ_STATUS_FAILED
 			writeResult.Status = sink.WriteStatus_WRITE_STATUS_FAILED

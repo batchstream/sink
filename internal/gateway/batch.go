@@ -19,7 +19,10 @@ type storeGroup struct {
 	indices []int
 }
 
-func (s *Server) records(ctx context.Context, req *forward.ForwardRequest) (*forward.ForwardResponse, error) {
+func (s *Server) deleteRecords(ctx context.Context, req *forward.ForwardRequest) (*forward.ForwardResponse, error) {
+	if req.GetDelete() == nil {
+		return nil, status.Error(codes.Internal, "expected delete request")
+	}
 	addresses, err := s.validateBatch(req)
 	if err != nil {
 		return nil, err
@@ -106,7 +109,7 @@ func (s *Server) records(ctx context.Context, req *forward.ForwardRequest) (*for
 		}
 		return used
 	}
-	if len(groups) > 1 && parallelBatch(req) {
+	if len(groups) > 1 {
 		// These operations do not consume document budgets. Bound fanout independently
 		// of the number of Stores; requests never create an unbounded goroutine fanout.
 		var work sync.WaitGroup
@@ -173,24 +176,6 @@ func (s *Server) validateBatch(req *forward.ForwardRequest) ([]*sink.RecordAddre
 }
 func validCompletion(mode sink.CompletionMode) bool {
 	return mode >= sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED && mode <= sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE
-}
-func parallelBatch(req *forward.ForwardRequest) bool {
-	if req.GetDelete() != nil {
-		return true
-	}
-	write := req.GetWrite()
-	if write == nil {
-		return false
-	}
-	if write.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED {
-		return true
-	}
-	for _, op := range write.GetOperations() {
-		if op.GetReturnDocument() {
-			return false
-		}
-	}
-	return true
 }
 func splitRequest(req *forward.ForwardRequest, indices []int) *forward.ForwardRequest {
 	split := &forward.ForwardRequest{}

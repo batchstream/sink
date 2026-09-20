@@ -12,6 +12,29 @@ func (m *Metrics) ObserveForward(req *forward.ForwardRequest, resp *forward.Forw
 	if m == nil {
 		return
 	}
+	method, request, response := forwardObservation(req, resp)
+	if method == "" {
+		return
+	}
+	store := m.RequestStore(request)
+	m.requests.WithLabelValues(store, method, codes.Code(resp.GetCode()).String()).Inc()
+	m.requestDuration.WithLabelValues(store, method).Observe(elapsed.Seconds())
+	if resp.GetCode() == 0 {
+		m.observeOperationResults(method, request, response)
+	}
+}
+
+// ObserveForwardResult records delivered outcomes without retaining documents.
+func (m *Metrics) ObserveForwardResult(req *forward.ForwardRequest, resp *forward.ForwardResponse) {
+	if m == nil {
+		return
+	}
+	method, request, response := forwardObservation(req, resp)
+	if method != "" {
+		m.observeOperationResults(method, request, response)
+	}
+}
+func forwardObservation(req *forward.ForwardRequest, resp *forward.ForwardResponse) (string, any, any) {
 	var method string
 	var request, response any
 	switch body := req.GetRequest().(type) {
@@ -44,12 +67,7 @@ func (m *Metrics) ObserveForward(req *forward.ForwardRequest, resp *forward.Forw
 		request = body.Scan
 		response = resp.GetScan()
 	default:
-		return
+		return "", nil, nil
 	}
-	store := m.RequestStore(request)
-	m.requests.WithLabelValues(store, method, codes.Code(resp.GetCode()).String()).Inc()
-	m.requestDuration.WithLabelValues(store, method).Observe(elapsed.Seconds())
-	if resp.GetCode() == 0 {
-		m.observeOperationResults(method, request, response)
-	}
+	return method, request, response
 }

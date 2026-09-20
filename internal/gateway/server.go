@@ -87,39 +87,29 @@ func (s *Server) begin(ctx context.Context, req *forward.ForwardRequest) (contex
 	release := func() { cancel(); s.metrics.inFlight.Dec() }
 	return execution, release, nil
 }
+
+// Scalar RPCs carry one typed response plus the final settlement.
 func (s *Server) forward(ctx context.Context, route Route, req *forward.ForwardRequest) (*forward.ForwardResponse, error) {
-	if route.endpoint == "" {
-		targets, release, err := s.pool.destinations(ctx, route)
-		if err != nil {
-			return localRejection(route, status.Code(err), status.Convert(err).Message()), nil
-		}
-		defer release()
-		route = targets[(s.nativeSequence.Add(1)-1)%uint64(len(targets))]
-	}
-	req.Version = forwarding.Version
-	req.Store = route.Store
-	entry, err := s.pool.acquire(route)
-	if err != nil {
-		return localRejection(route, status.Code(err), status.Convert(err).Message()), nil
-	}
-	defer s.pool.release(entry)
-	started := time.Now()
 	var response *forward.ForwardResponse
-	if s.memory != nil {
-		response, err = s.forwardStream(ctx, entry, req)
-	} else {
-		response, err = entry.client.Forward(ctx, req)
+	call := forwardCall{route: route, request: req}
+	call.emit = func(frame *forward.ForwardResponse) error {
+		if response != nil {
+			return status.Error(codes.Internal, "unexpected extra scalar response")
+		}
+		response = frame
+		return nil
 	}
-	s.metrics.downstream.Observe(time.Since(started).Seconds())
+	final, err := s.forwardEach(ctx, call)
 	if err != nil {
 		return nil, err
 	}
-	if response.GetVersion() != forwarding.Version || response.GetStore() != route.Store || response.GetUsed() == nil || response.GetCode() > uint32(codes.Unauthenticated) {
-		return nil, status.Error(codes.Internal, "invalid Engine response identity or version")
+	if final.GetCode() != 0 {
+		return final, nil
 	}
-	if !validUsage(req.GetGrant(), response.GetUsed()) {
-		return nil, status.Error(codes.Internal, "invalid Engine budget settlement")
+	if response == nil {
+		return nil, status.Error(codes.Internal, "Engine omitted scalar response")
 	}
+	response.Used, response.NotStarted = final.Used, final.NotStarted
 	return response, nil
 }
 func validUsage(grant, used *forward.Budget) bool {

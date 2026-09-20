@@ -55,7 +55,7 @@ func diagnosticMethod(full string) string {
 	}
 	method := full[strings.LastIndexByte(full, '/')+1:]
 	switch method {
-	case "Read", "Write", "Delete", "Execute", "Query", "Count", "Scan", "Forward", "ForwardStream":
+	case "Read", "Write", "Delete", "Execute", "Query", "Count", "Scan", "Forward":
 		return method
 	default:
 		return ""

@@ -51,11 +51,18 @@ func (b *requestBudgets) tracker(owner int) *forwarding.Tracker {
 	return b.trackers[owner]
 }
 func (b *requestBudgets) addContext(ctx context.Context, count int) {
+	if streaming, _ := ctx.Value(streamingKey{}).(bool); streaming {
+		for range count {
+			b.add(1)
+			b.trackers = append(b.trackers, forwarding.FromContext(ctx))
+		}
+		return
+	}
 	b.add(count)
 	b.trackers = append(b.trackers, forwarding.FromContext(ctx))
 }
 func contextBudgets(ctx context.Context, count int) *requestBudgets {
-	if forwarding.FromContext(ctx) == nil {
+	if streaming, _ := ctx.Value(streamingKey{}).(bool); !streaming && forwarding.FromContext(ctx) == nil {
 		return nil
 	}
 	budgets := &requestBudgets{}

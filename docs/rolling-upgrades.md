@@ -10,17 +10,22 @@ snapshot for each Store throughout an accepted public batch. Stopping an Engine
 as soon as one DNS lookup removes it can still interrupt a later group of an
 already accepted request.
 
-## Memory-admission protocol upgrade
+## Streaming protocol upgrade
 
-The new private protocol is version 6. It retains only response allowances and
-removes snapshot/input/output grants. Engines reject other protocol versions;
-retaining both `Forward` and `ForwardStream` methods does not provide compatibility
-with older versions. Use matching Gateway/Engine deployments and an isolated
-cutover for incompatible versions. Public SDK messages remain unchanged.
+The private forwarding protocol is version 7. `Forward` is one server-streaming
+RPC carrying typed results and a final usage/status settlement. The old unary
+endpoint and byte-chunk protocol have been removed.
 
-Replace legacy admission/reservation dashboards and alerts with the new
-[memory watermark metrics](observability.md#memory-capacity-and-keda). Old metric
-families are removed, not kept as empty compatibility gauges.
+Public `Read`, `Write`, `Query` and `Scan` are server-streaming RPCs. Upgrade the
+Gateway, Engine and SDK together; there is no fallback to an older protocol.
+`Delete`, `Execute` and `Count` retain their scalar response contracts. Use a
+separate matching cluster for cutover across this incompatible boundary.
+
+The SDK collects results by default. Supplying a callback consumes results as
+they arrive without retaining document results. Completed record results survive
+an interrupted stream; missing write outcomes are unknown and are never replayed
+automatically. Query/Scan continuation metadata is valid only after the final
+completion frame **and** successful EOF. See [streaming responses](streaming.md).
 
 ## Budget both intervals
 

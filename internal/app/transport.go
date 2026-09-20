@@ -39,6 +39,7 @@ func (app *Application) configureGRPC(server sink.SinkServer, observed *sinkmetr
 	streamInterceptors := []grpc.StreamServerInterceptor{logStream}
 	if app.gateway != nil {
 		interceptors = append(interceptors, app.gateway.UnaryInterceptor())
+		streamInterceptors = append(streamInterceptors, app.gateway.StreamInterceptor())
 	}
 	if app.config.Mode == config.ModeEngine {
 		store := app.config.Storage.Name

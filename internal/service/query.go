@@ -13,24 +13,24 @@ import (
 
 const maxCountResponseBytes = 256 << 10
 
-func (s *Server) Query(ctx context.Context, req *sink.QueryRequest) (*sink.QueryResponse, error) {
+func (s *Server) query(ctx context.Context, req *sink.QueryRequest, send func(*sink.QueryResponse) error) error {
 	maximum := forwarding.FromContext(ctx).Limit(forwarding.Returns, s.maxReadBytes)
 	if maximum <= 0 {
-		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
+		return status.Error(codes.ResourceExhausted, "native response budget is exhausted")
 	}
 	if err := protocol.CheckStore(req, s.boundStore); err != nil {
-		return nil, err
+		return err
 	}
 	request, err := nativeRequest(req.GetCommand(), maximum)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	pageSize := int(req.GetPageSize())
 	if pageSize == 0 {
 		pageSize = 100
 	}
 	if pageSize > 1000 {
-		return nil, status.Error(codes.InvalidArgument, "query page size exceeds 1000")
+		return status.Error(codes.InvalidArgument, "query page size exceeds 1000")
 	}
 	page := max(req.GetPage(), 1)
 	query := storage.QueryRequest{Request: request, Offset: int64(page-1) * int64(pageSize), PageSize: pageSize}
@@ -42,28 +42,34 @@ func (s *Server) Query(ctx context.Context, req *sink.QueryRequest) (*sink.Query
 		query.Projection = &storage.Projection{Fields: projection.GetFields(), Exclude: projection.GetExclude()}
 	}
 	if err := query.Validate(); err != nil {
-		return nil, nativeStatus(err)
+		return nativeStatus(err)
 	}
 	backend, ok := s.storage.(storage.NativeStorage)
 	if !ok {
-		return nil, nativeStatus(storage.ErrNativeUnsupported)
+		return nativeStatus(storage.ErrNativeUnsupported)
+	}
+	count := 0
+	query.Emit = func(document storage.Document) error {
+		count++
+		if count > pageSize {
+			return status.Error(codes.Internal, "backend exceeded query page size")
+		}
+		encoded := &sink.Document{Encoding: sink.DocumentEncoding(document.Encoding), Payload: document.Payload}
+		frame := &sink.QueryResponse{Documents: []*sink.Document{encoded}}
+		if frame.SizeVT() > maximum {
+			return status.Error(codes.ResourceExhausted, "query document exceeds message limit")
+		}
+		return send(frame)
 	}
 	result, err := backend.Query(ctx, query)
 	if err != nil {
-		return nil, nativeStatus(err)
+		return nativeStatus(err)
 	}
-	if len(result.Documents) > pageSize || (result.HasMore && len(result.Documents) != pageSize) {
-		return nil, status.Error(codes.Internal, "backend returned an invalid query page")
+	if len(result.Documents) != 0 || (result.HasMore && count != pageSize) {
+		return status.Error(codes.Internal, "backend returned an invalid streaming query page")
 	}
-	response := &sink.QueryResponse{HasMore: result.HasMore}
-	for _, document := range result.Documents {
-		encoded := &sink.Document{Encoding: sink.DocumentEncoding(document.Encoding), Payload: document.Payload}
-		response.Documents = append(response.Documents, encoded)
-	}
-	if response.SizeVT() > maximum {
-		return nil, status.Error(codes.ResourceExhausted, "query response exceeds byte limit")
-	}
-	return response, nil
+	final := &sink.QueryResponse{Complete: true, HasMore: result.HasMore}
+	return send(final)
 }
 
 func (s *Server) Count(ctx context.Context, req *sink.CountRequest) (*sink.CountResponse, error) {
@@ -91,10 +97,6 @@ func (s *Server) Count(ctx context.Context, req *sink.CountRequest) (*sink.Count
 	}
 	response := &sink.CountResponse{Count: count.Count, Estimated: count.Estimated}
 	return response, nil
-}
-
-func (s *BatchingServer) Query(ctx context.Context, req *sink.QueryRequest) (*sink.QueryResponse, error) {
-	return s.server.Query(ctx, req)
 }
 
 func (s *BatchingServer) Count(ctx context.Context, req *sink.CountRequest) (*sink.CountResponse, error) {

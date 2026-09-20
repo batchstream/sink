@@ -287,7 +287,7 @@ byte limits as Execute.
 
 ## Scan
 
-Scan is one unary RPC per page. `ScanRequest` contains the shared `Command`,
+Scan is one server-streaming RPC per page. Documents are followed by a completion frame; the cursor is usable only after successful EOF. `ScanRequest` contains the shared `Command`,
 `batch_size` (default 100, maximum 1000), an opaque bytes `cursor`, and optional
 `projection` using the same `fields` and `exclude` controls as Query.
 `ScanResponse` contains native `documents` and `next_cursor`. A byte-limited

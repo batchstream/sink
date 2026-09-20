@@ -34,8 +34,6 @@ type BatchingOptions struct {
 }
 
 type BatchingServer struct {
-	sink.UnimplementedSinkServer
-
 	server  *Server
 	reads   *requestBatcher[*sink.ReadRequest, *sink.ReadResponse]
 	writes  *requestBatcher[*sink.WriteRequest, *sink.WriteResponse]
@@ -327,16 +325,16 @@ func (s *BatchingServer) executeWrites(
 				continue
 			}
 			if parallel {
-				executions.Go(func() { s.executeWriteBatch(ctx, group) })
+				executions.Go(func() { s.executeWrite(ctx, group) })
 			} else {
-				s.executeWriteBatch(ctx, group)
+				s.executeWrite(ctx, group)
 			}
 		}
 		executions.Wait()
 	}
 }
 
-func (s *BatchingServer) executeWriteBatch(ctx context.Context, calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]) {
+func (s *BatchingServer) executeWrite(ctx context.Context, calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]) {
 	calls = liveMutationCalls(calls)
 	if len(calls) == 0 {
 		return

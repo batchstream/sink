@@ -40,6 +40,7 @@ type NativeResponse struct {
 }
 
 type ScanRequest struct {
+	Emit       func(Document) error `json:"-"`
 	Request    NativeRequest
 	BatchSize  int
 	Cursor     []byte
@@ -52,6 +53,7 @@ type ScanResponse struct {
 }
 
 type QueryRequest struct {
+	Emit       func(Document) error `json:"-"`
 	Request    NativeRequest
 	Offset     int64
 	PageSize   int

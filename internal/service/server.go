@@ -21,7 +21,6 @@ import (
 
 type Server struct {
 	boundStore string
-	sink.UnimplementedSinkServer
 
 	storage          storage.Storage
 	lua              *merge.LuaEngine

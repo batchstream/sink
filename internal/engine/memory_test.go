@@ -10,6 +10,7 @@ import (
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/forwarding"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 )
 
@@ -18,10 +19,10 @@ type pressureService struct {
 	calls int
 }
 
-func (s *pressureService) Write(context.Context, *sink.WriteRequest) (*sink.WriteResponse, error) {
+func (s *pressureService) Write(_ *sink.WriteRequest, stream grpc.ServerStreamingServer[sink.WriteResponse]) error {
 	s.calls++
 	response := &sink.WriteResponse{}
-	return response, nil
+	return stream.Send(response)
 }
 
 func TestEnginePressureRejectsBeforeExecution(t *testing.T) {
@@ -40,11 +41,25 @@ func TestEnginePressureRejectsBeforeExecution(t *testing.T) {
 	write := &sink.WriteRequest{}
 	body := &forward.ForwardRequest_Write{Write: write}
 	request := &forward.ForwardRequest{Version: forwarding.Version, Store: "primary", Grant: forwarding.FullBudget(1 << 20), Request: body}
-	response, err := server.Forward(t.Context(), request)
+	stream := &forwardRecorder{ctx: t.Context()}
+	err = server.Forward(request, stream)
+	response := stream.response
 	if err != nil || !response.GetNotStarted() || response.GetCode() != uint32(codes.ResourceExhausted) || backend.calls != 0 {
 		t.Fatalf("pressure reached service: %v %v calls=%d", response, err, backend.calls)
 	}
 	if response.GetUsed().GetReturns() != 0 {
 		t.Fatal("rejection consumed response allowance")
 	}
+}
+
+type forwardRecorder struct {
+	grpc.ServerStream
+	ctx      context.Context
+	response *forward.ForwardResponse
+}
+
+func (s *forwardRecorder) Context() context.Context { return s.ctx }
+func (s *forwardRecorder) Send(response *forward.ForwardResponse) error {
+	s.response = response
+	return nil
 }

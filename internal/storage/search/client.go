@@ -20,6 +20,8 @@ import (
 var errResponseTooLarge = errors.New("search response exceeds configured byte limit")
 
 type requestOptions struct {
+	decode      func(io.Reader) error
+	emitHit     func(json.RawMessage) error
 	method      string
 	path        string
 	rawPath     string
@@ -137,6 +139,21 @@ func (s *Store) performOnce(ctx context.Context, opts requestOptions, endpoint *
 	maximum := s.maxResponseSize
 	if opts.maxBytes > 0 {
 		maximum = min(maximum, opts.maxBytes)
+	}
+	if httpResponse.ContentLength > maximum {
+		return empty, errResponseTooLarge
+	}
+	if opts.decode != nil && httpResponse.StatusCode >= 200 && httpResponse.StatusCode < 300 {
+		reader := &io.LimitedReader{R: httpResponse.Body, N: maximum + 1}
+		err := opts.decode(reader)
+		if reader.N == 0 {
+			return empty, errResponseTooLarge
+		}
+		if err != nil {
+			return empty, err
+		}
+		response := apiResponse{statusCode: httpResponse.StatusCode, headers: httpResponse.Header.Clone()}
+		return response, nil
 	}
 	body, err := io.ReadAll(io.LimitReader(httpResponse.Body, maximum+1))
 	if err != nil {

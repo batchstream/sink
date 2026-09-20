@@ -57,3 +57,17 @@ func (s *Server) UnaryInterceptor() grpc.UnaryServerInterceptor {
 		return response, err
 	}
 }
+
+func (s *Server) StreamInterceptor() grpc.StreamServerInterceptor {
+	return func(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		started := time.Now()
+		err := handler(server, stream)
+		method := strings.TrimPrefix(info.FullMethod, "/sink.v1.Sink/")
+		switch method {
+		case "Read", "Write", "Query", "Scan":
+			s.metrics.requests.WithLabelValues(method, status.Code(err).String()).Inc()
+			s.metrics.duration.WithLabelValues(method).Observe(time.Since(started).Seconds())
+		}
+		return err
+	}
+}

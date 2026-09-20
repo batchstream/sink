@@ -108,7 +108,7 @@ from healthy Stores are retained when another Store fails. A lost Engine mutatio
 is represented as a failed operation with `retryable=false`, since the effect may
 already exist. A missing budget settlement consumes the entire grant; it cannot
 be reused by another Store. A proven local rejection before dispatch consumes
-nothing. The public unary RPC itself may be cancelled before any partial response
+nothing. The public result stream itself may be cancelled before a pending result
 can reach the caller; completed writes are not rolled back.
 
 Public gRPC status details survive forwarding, including the Scan admission retry

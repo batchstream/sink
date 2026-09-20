@@ -241,7 +241,7 @@ Preserve explicit temporary Scan admission rejections and their retry details. K
 Internal forwarding results can distinguish `not_started`, complete per-operation results, and unknown outcomes. Only verifiable `not_started` evidence permits mapping the entire group to unexecuted operations.
 A gRPC status code alone, particularly downstream ResourceExhausted, is not such evidence.
 If complete results are received, their successes must not be overwritten because another Store failed.
-If the entire public RPC has already been cancelled or its transport has failed, delivery of known successes cannot be guaranteed. This is the existing unary transport boundary.
+If the entire public RPC has already been cancelled or its transport has failed, delivery of known successes cannot be guaranteed. Delivered stream results remain known; undelivered mutation outcomes remain unknown.
 
 Propagate the original context's remaining deadline and cancellation. Do not restart a full timeout at each hop.
 When the client supplies no deadline, Gateway applies the public request timeout. Downstream processes may impose shorter local limits but must not extend the original deadline.

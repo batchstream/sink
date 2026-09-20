@@ -104,9 +104,9 @@ func TestStreamDiagnosticsPreserveOutcomeAndExcludeHealth(t *testing.T) {
 		err    error
 		level  string
 	}{
-		{method: "/sink.forward.v1.Engine/ForwardStream", level: "debug"},
-		{method: "/sink.forward.v1.Engine/ForwardStream", err: status.Error(codes.Canceled, "private request"), level: "warn"},
-		{method: "/sink.forward.v1.Engine/ForwardStream", err: status.Error(codes.DataLoss, "private response"), level: "error"},
+		{method: "/sink.forward.v1.Engine/Forward", level: "debug"},
+		{method: "/sink.forward.v1.Engine/Forward", err: status.Error(codes.Canceled, "private request"), level: "warn"},
+		{method: "/sink.forward.v1.Engine/Forward", err: status.Error(codes.DataLoss, "private response"), level: "error"},
 		{method: "/grpc.health.v1.Health/Watch"},
 		{method: "/sink.forward.v1.Engine/Unknown"},
 	}
@@ -135,7 +135,7 @@ func TestStreamDiagnosticsPreserveOutcomeAndExcludeHealth(t *testing.T) {
 		if err := json.Unmarshal(output.Bytes(), &record); err != nil {
 			t.Fatal(err)
 		}
-		if record["method"] != "ForwardStream" || record["status"] != status.Code(test.err).String() || record["level"] != test.level || strings.Contains(output.String(), "private") {
+		if record["method"] != "Forward" || record["status"] != status.Code(test.err).String() || record["level"] != test.level || strings.Contains(output.String(), "private") {
 			t.Fatalf("wrong stream diagnostic: %s", output.String())
 		}
 	}

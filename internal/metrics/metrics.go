@@ -540,17 +540,20 @@ func (m *Metrics) observeOperationResults(method string, request any, response a
 	switch typed := response.(type) {
 	case *sink.ReadResponse:
 		req, _ := request.(*sink.ReadRequest)
-		for index, result := range typed.GetResults() {
+		for _, result := range typed.GetResults() {
+			index := int(result.GetOperationIndex())
 			m.operationResults.WithLabelValues(operationStore(m, req.GetOperations(), index), method, readStatus(result.GetStatus())).Inc()
 		}
 	case *sink.WriteResponse:
 		req, _ := request.(*sink.WriteRequest)
-		for index, result := range typed.GetResults() {
+		for _, result := range typed.GetResults() {
+			index := int(result.GetOperationIndex())
 			m.operationResults.WithLabelValues(operationStore(m, req.GetOperations(), index), method, writeStatus(result.GetStatus())).Inc()
 		}
 	case *sink.DeleteResponse:
 		req, _ := request.(*sink.DeleteRequest)
-		for index, result := range typed.GetResults() {
+		for _, result := range typed.GetResults() {
+			index := int(result.GetOperationIndex())
 			m.operationResults.WithLabelValues(operationStore(m, req.GetOperations(), index), method, deleteStatus(result.GetStatus())).Inc()
 		}
 	case *sink.ExecuteResponse:

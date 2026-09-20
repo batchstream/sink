@@ -147,8 +147,8 @@ jobs:
 
   qualification:
     name: External test suite
-    uses: batchstream/sink-production-suite/.github/workflows/server-qualification.yml@924aa80684708a06685625b8161fc3529c218529
+    uses: batchstream/sink-production-suite/.github/workflows/server-qualification.yml@da993409f9a6fd3b99012a285b4308253158af10
     with:
-      suite_ref: 924aa80684708a06685625b8161fc3529c218529
+      suite_ref: da993409f9a6fd3b99012a285b4308253158af10
       sink_ref: ${{ github.event.pull_request.head.sha || github.sha }}
       sdk_ref: ${{ github.head_ref || 'main' }}

@@ -19,8 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Engine_Forward_FullMethodName       = "/sink.forward.v1.Engine/Forward"
-	Engine_ForwardStream_FullMethodName = "/sink.forward.v1.Engine/ForwardStream"
+	Engine_Forward_FullMethodName = "/sink.forward.v1.Engine/Forward"
 )
 
 // EngineClient is the client API for Engine service.
@@ -29,10 +28,8 @@ const (
 //
 // Private Gateway-to-Engine protocol. Never used by public clients.
 type EngineClient interface {
-	Forward(ctx context.Context, in *ForwardRequest, opts ...grpc.CallOption) (*ForwardResponse, error)
-	// The first frame announces the encoded response size; subsequent frames
-	// contain bounded chunks. Public clients continue using unary Sink RPCs.
-	ForwardStream(ctx context.Context, in *ForwardRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ResponseFrame], error)
+	// Typed result frames followed by exactly one complete settlement frame.
+	Forward(ctx context.Context, in *ForwardRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ForwardResponse], error)
 }
 
 type engineClient struct {
@@ -43,23 +40,13 @@ func NewEngineClient(cc grpc.ClientConnInterface) EngineClient {
 	return &engineClient{cc}
 }
 
-func (c *engineClient) Forward(ctx context.Context, in *ForwardRequest, opts ...grpc.CallOption) (*ForwardResponse, error) {
+func (c *engineClient) Forward(ctx context.Context, in *ForwardRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ForwardResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ForwardResponse)
-	err := c.cc.Invoke(ctx, Engine_Forward_FullMethodName, in, out, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Engine_ServiceDesc.Streams[0], Engine_Forward_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
-}
-
-func (c *engineClient) ForwardStream(ctx context.Context, in *ForwardRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ResponseFrame], error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Engine_ServiceDesc.Streams[0], Engine_ForwardStream_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &grpc.GenericClientStream[ForwardRequest, ResponseFrame]{ClientStream: stream}
+	x := &grpc.GenericClientStream[ForwardRequest, ForwardResponse]{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -70,7 +57,7 @@ func (c *engineClient) ForwardStream(ctx context.Context, in *ForwardRequest, op
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Engine_ForwardStreamClient = grpc.ServerStreamingClient[ResponseFrame]
+type Engine_ForwardClient = grpc.ServerStreamingClient[ForwardResponse]
 
 // EngineServer is the server API for Engine service.
 // All implementations must embed UnimplementedEngineServer
@@ -78,10 +65,8 @@ type Engine_ForwardStreamClient = grpc.ServerStreamingClient[ResponseFrame]
 //
 // Private Gateway-to-Engine protocol. Never used by public clients.
 type EngineServer interface {
-	Forward(context.Context, *ForwardRequest) (*ForwardResponse, error)
-	// The first frame announces the encoded response size; subsequent frames
-	// contain bounded chunks. Public clients continue using unary Sink RPCs.
-	ForwardStream(*ForwardRequest, grpc.ServerStreamingServer[ResponseFrame]) error
+	// Typed result frames followed by exactly one complete settlement frame.
+	Forward(*ForwardRequest, grpc.ServerStreamingServer[ForwardResponse]) error
 	mustEmbedUnimplementedEngineServer()
 }
 
@@ -92,11 +77,8 @@ type EngineServer interface {
 // pointer dereference when methods are called.
 type UnimplementedEngineServer struct{}
 
-func (UnimplementedEngineServer) Forward(context.Context, *ForwardRequest) (*ForwardResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Forward not implemented")
-}
-func (UnimplementedEngineServer) ForwardStream(*ForwardRequest, grpc.ServerStreamingServer[ResponseFrame]) error {
-	return status.Errorf(codes.Unimplemented, "method ForwardStream not implemented")
+func (UnimplementedEngineServer) Forward(*ForwardRequest, grpc.ServerStreamingServer[ForwardResponse]) error {
+	return status.Errorf(codes.Unimplemented, "method Forward not implemented")
 }
 func (UnimplementedEngineServer) mustEmbedUnimplementedEngineServer() {}
 func (UnimplementedEngineServer) testEmbeddedByValue()                {}
@@ -119,34 +101,16 @@ func RegisterEngineServer(s grpc.ServiceRegistrar, srv EngineServer) {
 	s.RegisterService(&Engine_ServiceDesc, srv)
 }
 
-func _Engine_Forward_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ForwardRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(EngineServer).Forward(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Engine_Forward_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(EngineServer).Forward(ctx, req.(*ForwardRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Engine_ForwardStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+func _Engine_Forward_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(ForwardRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(EngineServer).ForwardStream(m, &grpc.GenericServerStream[ForwardRequest, ResponseFrame]{ServerStream: stream})
+	return srv.(EngineServer).Forward(m, &grpc.GenericServerStream[ForwardRequest, ForwardResponse]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type Engine_ForwardStreamServer = grpc.ServerStreamingServer[ResponseFrame]
+type Engine_ForwardServer = grpc.ServerStreamingServer[ForwardResponse]
 
 // Engine_ServiceDesc is the grpc.ServiceDesc for Engine service.
 // It's only intended for direct use with grpc.RegisterService,
@@ -154,16 +118,11 @@ type Engine_ForwardStreamServer = grpc.ServerStreamingServer[ResponseFrame]
 var Engine_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "sink.forward.v1.Engine",
 	HandlerType: (*EngineServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "Forward",
-			Handler:    _Engine_Forward_Handler,
-		},
-	},
+	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "ForwardStream",
-			Handler:       _Engine_ForwardStream_Handler,
+			StreamName:    "Forward",
+			Handler:       _Engine_Forward_Handler,
 			ServerStreams: true,
 		},
 	},

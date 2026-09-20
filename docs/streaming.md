@@ -35,19 +35,15 @@ The Go SDK methods accept `ctx` and a typed request. Request fields hold record
 slices, completion mode, and an optional `OnResult` or `OnDocument` callback:
 
 ```go
-readRequest := sink.ReadRequest{Addresses: addresses}
+readRequest := sink.NewReadRequest(addresses...)
 results, err := client.Read(ctx, readRequest) // Collected in request order.
-readRequest.OnResult = onRead
+readRequest = readRequest.WithOnResult(onRead)
 results, err = client.Read(ctx, readRequest) // results is nil.
-writeRequest := sink.WriteRequest{
-    CompletionMode: mode,
-    Operations: operations,
-    OnResult: onWrite,
-}
+writeRequest := sink.NewWriteRequest(operations...).WithOnResult(onWrite)
 written, err := client.Write(ctx, writeRequest) // written is nil.
-query.OnDocument = onDocument
+query = query.WithOnDocument(onDocument)
 queryPage, err := client.Query(ctx, query) // queryPage.Documents is nil.
-scan.OnDocument = onDocument
+scan = scan.WithOnDocument(onDocument)
 scanPage, err := client.Scan(ctx, scan) // scanPage.Documents is nil.
 ```
 
@@ -55,7 +51,10 @@ Dataset record methods use `DatasetReadRequest.Keys` and
 `DatasetWriteRequest.Records`, with the same `OnResult` behavior. Nil callbacks
 collect results; non-nil callbacks consume them without collection. Query/Scan
 still return page metadata after successful EOF. New per-call options extend
-request structs without adding positional arguments.
+request structs without adding positional arguments. Constructors and direct
+struct literals share defaults: writes/deletes wait until applied, Query uses
+page 1 with 100 documents, and Scan uses 100 documents per page. Override them
+with `WithCompletionMode`, `WithPage`, `WithPageSize` or `WithBatchSize`.
 
 Callbacks execute serially, provide backpressure, and cancel the RPC when they
 return an error. They receive owned immutable documents. Callback errors are not

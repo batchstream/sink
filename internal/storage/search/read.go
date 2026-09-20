@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/liran/sink/internal/storage"
@@ -112,6 +113,40 @@ func (s *Store) multiGet(ctx context.Context, works []readWork, source bool) (mu
 		payload:     payload,
 		retrySafe:   true,
 	}
+	var decoded multiGetResponse
+	opts.decode = func(reader io.Reader) error {
+		decoded.Documents = nil
+		decoder := json.NewDecoder(reader)
+		decoder.UseNumber()
+		found := false
+		err := objectFields(decoder, func(field string) error {
+			if field != "docs" {
+				return discardJSON(decoder)
+			}
+			found = true
+			if err := delimiter(decoder, '['); err != nil {
+				return err
+			}
+			for decoder.More() {
+				if len(decoded.Documents) >= len(works) {
+					return errors.New("search returned too many multi-get results")
+				}
+				var document multiGetDocument
+				if err := decoder.Decode(&document); err != nil {
+					return err
+				}
+				decoded.Documents = append(decoded.Documents, document)
+			}
+			return delimiter(decoder, ']')
+		})
+		if err != nil {
+			return err
+		}
+		if !found {
+			return errors.New("search response omitted multi-get results")
+		}
+		return jsonEnd(decoder)
+	}
 	response, err := s.perform(ctx, opts)
 	if err != nil {
 		return empty, fmt.Errorf("read search documents: %w", err)
@@ -119,10 +154,6 @@ func (s *Store) multiGet(ctx context.Context, works []readWork, source bool) (mu
 	defer response.close()
 	if response.statusCode < 200 || response.statusCode >= 300 {
 		return empty, responseError(s.driver, response)
-	}
-	var decoded multiGetResponse
-	if err := json.Unmarshal(response.body, &decoded); err != nil {
-		return empty, fmt.Errorf("decode search multi-get response: %w", err)
 	}
 	if len(decoded.Documents) != len(works) {
 		return empty, fmt.Errorf("search returned %d multi-get results for %d operations", len(decoded.Documents), len(works))

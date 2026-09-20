@@ -101,10 +101,9 @@ requirements still apply; folding does not provide exactly-once execution or
 batch transactions.
 
 Reads share one backend observation per address but produce independent payload
-and revision copies. Every returned document, including repetitions, consumes
-the response budget in original input order. Deduplication therefore does not
-allow repeated keys to bypass the public response allowance. The backend's unique-document
-read also remains bounded. Missing/error results are returned to all matching
+and revision copies. Every streamed result, including repetitions, must fit its
+own message ceiling. Internal batch callers retain their local response limits.
+The backend's unique-document read remains bounded by the active microbatch. Missing/error results are returned to all matching
 operations.
 
 Snapshot-based Put chains reserve read/output admission space before execution,

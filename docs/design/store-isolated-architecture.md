@@ -65,7 +65,7 @@ flowchart LR
 
 | Component | Responsibilities | Excluded responsibilities | Connections and configuration |
 | --- | --- | --- | --- |
-| Gateway | Routing, public request boundary validation, cross-Store splitting and result merging, request-level budgets, forwarding backpressure, observability | Lua execution, database access, Kafka publishing or consumption, business-operation retries | Engine service addresses, downstream connections, secure transport settings; no database or Kafka credentials |
+| Gateway | Routing, public request boundary validation, cross-Store splitting and result forwarding, message limits, stream backpressure, observability | Lua execution, database access, Kafka publishing or consumption, business-operation retries | Engine service addresses, downstream connections, secure transport settings; no database or Kafka credentials |
 | Engine | Read/Write/Delete/Execute/Query/Count/Scan for one Store, batching, Lua, conditional writes, asynchronous publishing | Multi-Store routing, Kafka consumption, cross-Store result merging | This Store's database connection pool; a producer when asynchronous publishing is enabled |
 | Worker | Consumption, execution, retries, DLQ handling, and offset commits for one Store | Public business RPCs, cross-Store routing, calling Engine RPCs to perform writes | This Store's database connection pool, consumer, and DLQ producer |
 
@@ -136,7 +136,7 @@ check alone cannot detect a different database configured under the same name.
 
 ### 4.4 Meaning of Stateless
 
-Route snapshots, connection caches, metrics, and in-flight request budgets are reconstructible process state, not persistent business state.
+Route snapshots, connection caches, metrics, and in-flight request state are reconstructible process state, not persistent business state.
 Gateway replicas do not replicate request state or require sticky sessions. Scan cursors retain their existing semantics without database sessions.
 A Gateway crash can leave callers without results for in-flight RPCs. A new replica cannot recover those RPCs or automatically replay their writes.
 
@@ -164,61 +164,42 @@ Cross-Store requests remain non-transactional. This design adds neither compensa
 
 ### 5.2 Internal Forwarding Contract
 
-Copying the public RPC unchanged to multiple Engines is insufficient to preserve the original request's shared budgets.
-Gateway and Engine use a versioned internal forwarding contract while the public client protobuf remains unchanged.
-The internal contract adds only Store identity, request correlation, budget grants/settlements, and capability information. Business requests and responses reuse the public messages.
-This is a new internal capability introduced by the design and requires implementation and validation.
+Gateway and Engine use private protocol version 8. `Forward` carries typed public
+results with Store identity and protocol version. Read, Write, Query and Scan
+return streams; scalar methods carry one result. Standard gRPC status and EOF
+finish every stream. There are no budget grants, usage reports, settlement frames
+or custom status envelopes.
 
-Internal protocol v2 has a fixed set of seven methods and four document-budget categories. Each call validates version and identity without a separate capability-negotiation round trip. Request limits are validated in each process's configuration. Version 2 uses only the Store name for identity; the removed database field number and name remain reserved. Gateway and Engine must run matching protocol versions; a version mismatch fails before execution.
-An incompatible target makes only its route unavailable. Internal methods must not become unprotected entry points that bypass public limits.
-Gateway does not trust internal control fields supplied by clients. Engine uses the smaller of each internal grant and its local limit.
-When Engine combines multiple original calls, it retains their separate budget ownership and never pools one request's allowance with another's.
+Engine validates version, identity and request size before invoking the service.
+A private `sink-forward-not-started` trailer marks an execution-time rejection
+only when the service was never invoked. Gateway trusts that marker only on a
+failed stream with no delivered results. Status codes alone cannot prove that a
+mutation did not run. Public status details pass through unchanged.
 
-### 5.3 Request Budgets: Check Before Commit
+### 5.3 Local Message Limits: Check Before Commit
 
-There are three distinct kinds of budget; they must not be collapsed into one configuration value:
+Gateway bounds fanout with `max_fanout` for every Store group. Engine processes
+one existing microbatch at a time; sends occur after execution releases its
+shared scheduling locks. A slow receiver delays the next microbatch through
+stream backpressure. Same-record operations retain their request order.
 
-1. **Public request contract:** total operations, input message size, read/returned-document limits, and deadline. Splitting a request must not turn a 32MiB allowance into 32MiB per Store.
-2. **Gateway resources:** input, results, envelope overhead, in-flight subrequests, and connection caches. Both global and per-route usage are bounded.
-3. **Local Engine/Worker resources:** working sets, driver buffers, Lua, queues, and connection pools, limited within each process.
+Each process enforces its own configured message ceiling. Read and Write results
+must fit individually; returned-write candidates are checked before their own
+commit. Query emits individual documents and Scan retains its existing page
+boundary. Scalar Delete reserves room for result envelopes before execution.
+There is no cross-Store balance to allocate, transfer, settle or reuse.
 
-**The first version uses two scheduling paths:**
+### 5.4 Response and Memory Boundaries
 
-| Request type | Scheduling |
-| --- | --- |
-| Delete, plain Put known not to consume shared document budgets, and asynchronous acceptance requests | Bounded parallelism by Store; reserve status/error envelope space for the entire public response |
-| Cross-Store Read and synchronous Write containing Merge, conditional writes, or returned documents | Execute complete Store groups in order of first appearance, using the remaining budget; batching within each group remains available |
-| Single-Store requests and the four native RPCs | No cross-Store scheduling; apply both public and Engine limits directly |
+Gateway relays typed frames without accumulating complete responses. It validates
+each result's identity, type, size and operation index before delivery. Engine
+also checks frame size before sending. Align Gateway and Engine message limits;
+a smaller downstream limit can interrupt a stream after earlier writes commit.
 
-Whether a plain Put qualifies for the fast path must follow actual execution semantics. Operations that coalesce into a conditional chain must not be misclassified.
-If any part of a mixed synchronous Write needs shared document budgets, the entire request uses the budget-aware path. Do not discover a total-budget violation only after parallel commits.
-
-Rules for the budget-aware path:
-
-1. Gateway creates one document-budget ledger for the request. Account for budget categories separately according to existing semantics; do not arbitrarily add inputs, snapshots, and responses together.
-2. Before scheduling a Store, grant Engine the remaining snapshot, conditional-output, and returned-document allowances, subject to its local limits.
-3. Engine enforces limits when retaining read results, generating candidate documents, and **before committing writes**. It returns known results and the corresponding budget settlement.
-4. Retained responses continue to consume Gateway capacity. Releasable temporary working sets are released only after their owner has finished.
-5. Process the next Store only after Engine returns a complete settlement. CAS retries do not reset the public request's returned-document allowance.
-6. A missing settlement is not evidence that a grant was unused. Conservatively retain the allowance delegated to that group. Continue other groups only with a balance that is provably available; do not wait indefinitely.
-7. Operations with insufficient allowance receive the appropriate failure. Do not relabel known successful writes as unexecuted or silently discard returned documents promised by successful operations.
-
-For snapshot/conditional-document budgets that currently reset on each attempt, internal settlement reports the group's maximum charge across attempts for each category. Gateway accumulates those values across Stores.
-This mapping is safe but conservative: combining different retry attempts from different Stores can exhaust a near-limit request earlier than the old single-process implementation.
-That boundary difference must be explicitly accepted during review and validated against the old implementation. Scheduling and the exact set of near-limit requests that succeed are not claimed to be identical.
-
-**The cost is lower parallelism for budget-sensitive cross-Store requests.** The high-frequency single-Store path is unaffected by this serialization policy.
-This avoids denying a large Store an otherwise available budget through equal allocation, and avoids distributed budget leases and wait cycles introduced solely for parallelism.
-If review requires preserving parallelism on these cross-Store paths or every near-limit budget outcome, extend the coordination protocol before implementation. Never silently give every subrequest a separate full allowance.
-
-Do not let every Store execute with a full allowance and then truncate returned documents at Gateway. Existing returned-document limits are checked before commit; truncation after commit would break that safety boundary.
-
-### 5.4 Total Response and Memory Boundaries
-
-Before scheduling, Gateway reserves space for result envelopes and the maximum permitted document occupancy. Final gRPC serialization must not be the first place that detects an oversized response.
-Per-route and global forwarding budgets jointly bound active calls and retained responses, preventing a few slow Stores from consuming all Gateway capacity.
-Capacity planning must also include input copies, downstream receive buffers, and protobuf encoding overhead. Public document allowances are not RSS limits.
-If an Engine has a smaller request limit, Gateway must handle that mismatch before sending, based on declared capabilities. Configuration differences must not reject the rest of a request after an earlier part has already written.
+Process admission, existing method queues, backend buffers and Lua limits still
+bound their respective work. Input batches, active microbatches, transport buffers
+and concurrent calls contribute to RSS; a message ceiling is not a process memory
+limit. Worker consumes the existing internal batch execution API unchanged.
 
 ## 6. Partial Failures, Timeouts, and Unknown Outcomes
 
@@ -229,19 +210,19 @@ If an Engine has a smaller request limit, Gateway must handle that mismatch befo
 | A Store route is absent, identity mismatches, or scheduling fails before sending | Fail the affected operations; identify a safe temporary rejection only when non-dispatch can be proven | Gateway still does not replay |
 | Engine returns complete, valid results | Preserve status, revision, document, and failure; restore original indexes | No |
 | A subrequest disconnects, times out, or returns malformed results after sending | Operations in that group without confirmed results have unknown outcomes; preserve known results from other groups | No |
-| The original call is cancelled/times out, or Gateway crashes | Cancel downstream promptly; the complete aggregate response may be undeliverable, and existing side effects remain | No |
+| The original call is cancelled/times out, or Gateway crashes | Cancel downstream promptly; pending stream results may be undeliverable, and existing side effects remain | No |
 
 Public Failure currently has only code/message/retryable, without a separate field indicating whether side effects occurred.
-The first version leaves public messages unchanged. Unknown mutation outcomes use appropriate UNAVAILABLE/DEADLINE_EXCEEDED/INTERNAL failures, `retryable=false`, and an explicit explanation that the outcome is unknown.
+Unknown mutation outcomes use appropriate UNAVAILABLE/DEADLINE_EXCEEDED/INTERNAL failures, `retryable=false`, and an explicit explanation that the outcome is unknown.
 This does not mean the error is permanently unrecoverable. It means safe automatic replay cannot be justified; applications must verify state or use their own idempotency mechanism.
-Error text must not become a machine-readable protocol. If callers later need to distinguish unknown outcomes programmatically, review a backward-compatible field extension separately.
+Error text must not become a machine-readable protocol. If callers later need to distinguish unknown outcomes programmatically, review an explicit field extension separately.
 Reads have no write side effects and may retain existing client read retries. The first Gateway version adds no application retry layer.
 Preserve explicit temporary Scan admission rejections and their retry details. Keep complete native Execute error responses distinct from transport errors.
 
 Internal forwarding results can distinguish `not_started`, complete per-operation results, and unknown outcomes. Only verifiable `not_started` evidence permits mapping the entire group to unexecuted operations.
 A gRPC status code alone, particularly downstream ResourceExhausted, is not such evidence.
 If complete results are received, their successes must not be overwritten because another Store failed.
-If the entire public RPC has already been cancelled or its transport has failed, delivery of known successes cannot be guaranteed. This is the existing unary transport boundary.
+If the entire public RPC has already been cancelled or its transport has failed, delivery of known successes cannot be guaranteed. Delivered stream results remain known; undelivered mutation outcomes remain unknown.
 
 Propagate the original context's remaining deadline and cancellation. Do not restart a full timeout at each hop.
 When the client supplies no deadline, Gateway applies the public request timeout. Downstream processes may impose shorter local limits but must not extend the original deadline.
@@ -342,8 +323,8 @@ The following criteria define the required behavior. The [validation record](sto
 | Globally invalid declarations | No Store starts writing or publishing |
 | Partial downstream failure | Preserve complete known successes, never retry mutations, and never disguise unknown outcomes as unexecuted operations |
 | Request cancellation or Gateway crash | Downstream resources are eventually released; completed side effects are acknowledged as possible, and callers receive no fabricated success |
-| Returned documents/conditional writes near the total allowance | Enforce limits before commit without Gateway truncation of successful returned documents; explicitly record differences from the old implementation |
-| Missing budget settlement | No allowance reuse or deadlock; remaining Stores follow ledger and failure rules |
+| Returned documents/conditional writes near the local message limit | Enforce limits before commit without Gateway truncation of successful returned documents; explicitly record differences from the old implementation |
+| Stream disconnect or invalid rejection marker | Preserve delivered results; classify unacknowledged mutations as unknown and do not replay |
 | Route change and Gateway restart | Running instances retain startup routes; new instances validate changed routes; old connections drain during shutdown |
 | Downstream identity/version mismatch | Reject only the affected route without incorrect writes |
 | One Store's database slows down or disconnects | Effects on other Stores' queues and tail latency stay within agreed bounds; the same Store's asynchronous capability follows the failure matrix |
@@ -354,7 +335,7 @@ The following criteria define the required behavior. The [validation record](sto
 | A hot Store adds Engine replicas | Other Stores' database connection-pool counts do not increase |
 
 Performance validation covers single-Store and cross-Store requests, large returned documents, slow dependencies, and different Store counts. Record throughput, P99, CPU, RSS, connections, and backlog.
-Measure both the extra hop and serialization of budget-sensitive cross-Store requests. Do not promise zero performance loss during design.
+Measure the extra hop, bounded fanout and backpressure from slow stream receivers. Do not promise zero performance loss during design.
 Set acceptance thresholds after defining workload and SLOs; arbitrary fixed percentages are not a substitute for measurement.
 
 ## 11. Implementation Decisions and Authorization
@@ -367,10 +348,10 @@ The following engineering decisions follow that authorization. They do not imply
 | R01 | Gateway / Engine / Worker; one binary, three runtime modes, independent assembly | Implemented; Gateway branches early without constructing the execution core or storage/Kafka clients |
 | R02 | Use globally unique Store names; validate protocol version and Store on every internal forward | Implemented; deployment inventory guarantees names and actual database ownership across configurations |
 | R03 | Files + DNS; complete snapshots, one version per request, bounded on-demand connections, periodic DNS refresh | Implemented; reject duplicate names and invalid snapshots without retaining identity history |
-| R04 | A private protobuf Forward contract carries budget grants/settlements; budget-sensitive groups run sequentially | Implemented; read snapshots, inputs, outputs, and returned documents are accounted for separately; CAS uses category peaks, conservatively relative to the old path |
+| R04 | A private protobuf Forward stream carries typed results and standard gRPC status | Protocol v8 removes all grants, usage ledgers and settlement frames; local message limits, bounded fanout and backpressure remain |
 | R05 | Unknown write outcomes are neither replayed nor marked safe to retry; preserve other Stores' known results | Implemented; no public effect field is added, and cancellation may prevent delivery of partial responses |
-| R06 | Separate process readiness from dependency capability health; each role exposes metrics | Implemented; Gateway does not proxy legacy named dependency health services; the seven public business RPCs remain unchanged |
-| R07 | Only Gateway / Engine / Worker; remove server/all, plural storages, internal multi-Store routers, per-Store execution subquotas, and obsolete examples | The user explicitly authorized complete cleanup. Old configurations are rejected; migrate process configuration and topology before upgrading. The public client protocol remains unchanged. |
+| R06 | Separate process readiness from dependency capability health; each role exposes metrics | Implemented; Gateway does not proxy legacy named dependency health services; public methods retain their operation semantics while result-bearing methods stream |
+| R07 | Only Gateway / Engine / Worker; remove server/all, plural storages, internal multi-Store routers, per-Store execution subquotas, and obsolete examples | The user explicitly authorized complete cleanup. Old configurations are rejected; migrate process configuration and topology before upgrading. The streaming client protocol requires a coordinated SDK upgrade. |
 
 The [deployment and configuration guide](../store-isolation.md) is authoritative for runnable fields and migration steps.
 Sections 3–10 record semantic agreements; this table records implementation decisions; the runtime guide provides exact configuration fields.
@@ -380,7 +361,7 @@ Sections 3–10 record semantic agreements; this table records implementation de
 - Preserve C02–C11. Do not reintroduce multi-Store Engines, make Workers call Engine for execution, or give Gateway database/Kafka connections.
 - Update this document and the runtime guide together when boundaries change, explicitly describing budgets, failure semantics, and migration costs.
 - Implementation and testing are authorized without waiting for individual review. Release and production deployment remain separate decisions.
-- Keep the public protobuf unchanged. The internal protocol lives in `proto/forward/forward.proto`; reject version mismatches before side effects.
+- Update the SDK alongside public protobuf changes. The internal protocol lives in `proto/forward/forward.proto`; reject version mismatches before side effects.
 - Run new configuration checks and route/budget/lost-response/snapshot/connection/DNS regression tests in the default offline suite.
 - Use isolated containers and the production suite's `make test-isolated` for real-backend validation. Successful compilation is not evidence of successful execution.
 - See the [validation record](store-isolated-validation.md) for completed work and limitations.
@@ -394,7 +375,7 @@ Confirmed agreements come from this user discussion. Older documentation is used
 - [Existing storage initialization](../../internal/app/storage.go): driver instances and health checks for configured Stores.
 - [Existing Worker assembly](../../internal/app/kafka.go): direct reuse of the local execution service for consumed messages.
 - [Returned-document budgets](../../internal/service/write_return.go): reservation and settlement of returned-document space before commit.
-- [Conditional-write retries](../../internal/service/write.go) and [original-request budget ownership](../../internal/service/request_budgets.go): boundaries that cross-Store splitting must preserve.
+- [Conditional-write retries](../../internal/service/write.go) and [local response boundaries](../../internal/service/response_groups.go): boundaries that cross-Store splitting must preserve.
 - [Existing health checks](../../internal/app/health.go): aggregate dependency-readiness logic that the new architecture separates.
 - [Reliability contract](../reliability.md) and [metrics](../observability.md): compatibility baselines for failures, retries, and observability.
 - [gRPC deadlines](https://grpc.io/docs/guides/deadlines/) and [cancellation propagation](https://grpc.io/docs/guides/cancellation/): propagate remaining deadlines and cancellation across calls; business logic must stop derived work.

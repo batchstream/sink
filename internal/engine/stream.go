@@ -1,31 +1,56 @@
 package engine
 
 import (
+	"context"
+
 	forward "github.com/liran/sink/gen/forward"
+	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/forwarding"
+	"github.com/liran/sink/internal/metrics"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-func (s *Server) ForwardStream(req *forward.ForwardRequest, stream grpc.ServerStreamingServer[forward.ResponseFrame]) error {
-	ctx := stream.Context()
-	response, err := s.Forward(ctx, req)
-	if err != nil {
-		return err
+// resultStream adapts execution messages to the private typed stream without
+// marshalling or retaining an aggregate response.
+type resultStream[T any] struct {
+	metrics *metrics.Metrics
+	request *forward.ForwardRequest
+	grpc.ServerStream
+	ctx     context.Context
+	store   string
+	maximum int
+	send    func(*forward.ForwardResponse) error
+}
+
+func (s *resultStream[T]) Context() context.Context { return s.ctx }
+func (s *resultStream[T]) Send(result *T) error {
+	if sized, ok := any(result).(interface{ SizeVT() int }); ok && sized.SizeVT() > s.maximum {
+		return status.Error(codes.ResourceExhausted, "result exceeds public message limit")
 	}
-	size := response.SizeVT()
-	frame := &forward.ResponseFrame{Size: uint64(size)}
-	if err := stream.SendMsg(frame); err != nil {
-		return err
+	frame := &forward.ForwardResponse{Version: forwarding.Version, Store: s.store}
+	switch result := any(result).(type) {
+	case *sink.ReadResponse:
+		frame.Response = &forward.ForwardResponse_Read{Read: result}
+	case *sink.WriteResponse:
+		frame.Response = &forward.ForwardResponse_Write{Write: result}
+	case *sink.DeleteResponse:
+		frame.Response = &forward.ForwardResponse_Delete{Delete: result}
+	case *sink.ExecuteResponse:
+		frame.Response = &forward.ForwardResponse_Execute{Execute: result}
+	case *sink.CountResponse:
+		frame.Response = &forward.ForwardResponse_Count{Count: result}
+	case *sink.QueryResponse:
+		frame.Response = &forward.ForwardResponse_Query{Query: result}
+	case *sink.ScanResponse:
+		frame.Response = &forward.ForwardResponse_Scan{Scan: result}
+	default:
+		return status.Error(codes.Internal, "invalid streaming result type")
 	}
-	encoded, err := response.MarshalVT()
-	if err != nil {
-		return err
+	err := s.send(frame)
+	if err == nil {
+		s.metrics.ObserveForwardResult(s.request, frame)
 	}
-	for offset := 0; offset < len(encoded); offset += forwarding.FrameBytes {
-		frame := &forward.ResponseFrame{Data: encoded[offset:min(offset+forwarding.FrameBytes, len(encoded))]}
-		if err := stream.SendMsg(frame); err != nil {
-			return err
-		}
-	}
-	return nil
+	return err
 }

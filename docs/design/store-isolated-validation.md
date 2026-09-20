@@ -14,12 +14,12 @@ implementation are unchanged. No release or production rollout is included.
   rejected before effects. The removed `server`/`all` modes, plural `storages`,
   per-Store execution subquotas, and Store byte ceilings are rejected.
 - Cross-Store batches preserve indexes, duplicate keys, Lua references, global
-  validation, partial failures, and budgets for returned documents.
+  validation, partial failures, and per-result message limits.
 - Internal forwarding supports all seven public RPCs, gRPC status details,
   deadlines, and cancellation. Unknown mutation outcomes are never replayed.
-- Budgets are checked before commit and remain scoped to each original RPC even
-  when requests are coalesced. Saturating one Store's forwarding allowance leaves
-  another Store's allowance available.
+- Returned documents are checked against the local message limit before commit.
+  The private protocol has no grants or usage settlement; independent Store
+  groups use bounded fanout and per-result stream backpressure.
 - Gateway uses an immutable startup route snapshot. Configuration changes take
   effect after restart, and duplicate Store names fail validation. Removed route
   file, reload interval, and state settings are rejected.
@@ -41,8 +41,8 @@ External backend tests remain explicit opt-ins.
   delivery, reads, deletes, and metrics.
 - Existing sink-go `TestSinkCompatibility` and `TestNativeCompatibility` pass
   through Gateway against that topology with the race detector enabled.
-- Public protobuf and generated public bindings are unchanged. The public schema
-  matches sink-go after its Go package-name substitution.
+- Public protobuf and generated bindings now stream result-bearing methods. The
+  schema matches sink-go after its Go package-name substitution; upgrades are coordinated.
 - The production suite now uses separate Engines and distinct database targets
   in cross-Store scenarios. Its seven-Store deployment has two Gateways, two
   Engines per Store, and one Worker per asynchronous Store.
@@ -90,8 +90,8 @@ wait; measured before legacy cleanup:
 | Gateway → Engine | 1.71 ms | 31,964 B / 519 allocations |
 
 This measures the local extra hop. It does not establish production throughput,
-P99, or a capacity recommendation for 2 CPU / 4 GiB. Budget-sensitive cross-Store
-calls execute sequentially; production sizing still needs actual document sizes,
+P99, or a capacity recommendation for 2 CPU / 4 GiB. Independent cross-Store
+groups use bounded fanout; production sizing still needs actual document sizes,
 request mixes, and latency targets.
 
 ## Boundaries
@@ -113,8 +113,8 @@ request mixes, and latency targets.
 The configured identity is now only Store file `name` (Gateway routes use `store`).
 Local race tests cover duplicate route names, configuration changes taking effect
 only after restart, and rejection of old forwarding versions
-or mismatched envelope/operation Stores before writes. The public protobuf is
-unchanged. Real MongoDB/Kafka quickstart tests pass through Gateway for public
+or mismatched envelope/operation Stores before writes. The current public protocol
+requires the matching streaming SDK. Real MongoDB/Kafka quickstart checks exercise Gateway for public
 record operations, native methods, and asynchronous Worker completion.
 
 The annotated [Gateway](../../configs/gateway.yaml),

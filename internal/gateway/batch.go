@@ -11,7 +11,6 @@ import (
 	"github.com/liran/sink/internal/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 type storeGroup struct {
@@ -19,10 +18,16 @@ type storeGroup struct {
 	indices []int
 }
 
-func (s *Server) records(ctx context.Context, req *forward.ForwardRequest) (*forward.ForwardResponse, error) {
+func (s *Server) deleteRecords(ctx context.Context, req *forward.ForwardRequest) (*forward.ForwardResponse, error) {
+	if req.GetDelete() == nil {
+		return nil, status.Error(codes.Internal, "expected delete request")
+	}
 	addresses, err := s.validateBatch(req)
 	if err != nil {
 		return nil, err
+	}
+	if len(addresses) > s.request.MaxReadBytes/1280 {
+		return nil, status.Error(codes.ResourceExhausted, "delete result envelopes exceed gRPC send limit")
 	}
 	ctx, release, err := s.begin(ctx, req)
 	if err != nil {
@@ -80,41 +85,24 @@ func (s *Server) records(ctx context.Context, req *forward.ForwardRequest) (*for
 		}
 		groups[position].indices = append(groups[position].indices, index)
 	}
-	remaining, err := s.responseBudget(len(addresses))
-	if err != nil {
-		return nil, err
-	}
-	run := func(group storeGroup, grant *forward.Budget) *forward.Budget {
+	run := func(group storeGroup) {
 		sub := splitRequest(req, group.indices)
-		sub.Grant = grant
-		result, callErr := s.forward(ctx, group.route, sub)
-		// An absent settlement consumes its entire grant, including on a lost reply.
-		used := grant
-		notStarted := false
+		result, notStarted, callErr := s.forward(ctx, group.route, sub)
 		if callErr == nil {
-			used = result.GetUsed()
-			notStarted = result.GetNotStarted()
-			if result.GetCode() != 0 {
-				callErr = forwardedError(result)
-			}
-		}
-		if callErr == nil {
-			callErr = mergeRecords(response, result, group.indices)
+			callErr = mergeDeleteResults(response.GetDelete().GetResults(), result.GetDelete().GetResults(), group.indices)
 		}
 		if callErr != nil {
 			failRecords(response, group.indices, callErr, notStarted)
 		}
-		return used
 	}
-	if len(groups) > 1 && parallelBatch(req) {
-		// These operations do not consume document budgets. Bound fanout independently
-		// of the number of Stores; requests never create an unbounded goroutine fanout.
+	if len(groups) > 1 {
+		// Bound concurrency independently of the number of Stores.
 		var work sync.WaitGroup
 		jobs := make(chan storeGroup)
 		for range min(s.config.MaxFanout, len(groups)) {
 			work.Go(func() {
 				for group := range jobs {
-					run(group, remaining)
+					run(group)
 				}
 			})
 		}
@@ -125,12 +113,10 @@ func (s *Server) records(ctx context.Context, req *forward.ForwardRequest) (*for
 		work.Wait()
 	} else {
 		for _, group := range groups {
-			grant := proto.Clone(remaining).(*forward.Budget)
-			used := run(group, grant)
-			consume(remaining, used)
+			run(group)
 		}
 	}
-	boundFailures(response, s.request.MaxReadBytes, len(addresses))
+	boundDeleteFailures(response.GetDelete().GetResults(), s.request.MaxReadBytes)
 	return response, nil
 }
 
@@ -173,24 +159,6 @@ func (s *Server) validateBatch(req *forward.ForwardRequest) ([]*sink.RecordAddre
 }
 func validCompletion(mode sink.CompletionMode) bool {
 	return mode >= sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED && mode <= sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE
-}
-func parallelBatch(req *forward.ForwardRequest) bool {
-	if req.GetDelete() != nil {
-		return true
-	}
-	write := req.GetWrite()
-	if write == nil {
-		return false
-	}
-	if write.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_RETURN_AFTER_ACCEPTED {
-		return true
-	}
-	for _, op := range write.GetOperations() {
-		if op.GetReturnDocument() {
-			return false
-		}
-	}
-	return true
 }
 func splitRequest(req *forward.ForwardRequest, indices []int) *forward.ForwardRequest {
 	split := &forward.ForwardRequest{}
@@ -274,24 +242,13 @@ func failRecords(response *forward.ForwardResponse, indices []int, err error, no
 		}
 	}
 }
-func mergeRecords(response, sub *forward.ForwardResponse, indices []int) error {
-	switch body := response.GetResponse().(type) {
-	case *forward.ForwardResponse_Read:
-		return mergeResults(body.Read.Results, sub.GetRead().GetResults(), indices)
-	case *forward.ForwardResponse_Write:
-		return mergeResults(body.Write.Results, sub.GetWrite().GetResults(), indices)
-	case *forward.ForwardResponse_Delete:
-		return mergeResults(body.Delete.Results, sub.GetDelete().GetResults(), indices)
-	}
-	return status.Error(codes.Internal, "unexpected response type")
-}
 
 type recordResult interface {
 	*sink.ReadResult | *sink.WriteResult | *sink.DeleteResult
 	GetOperationIndex() uint32
 }
 
-func mergeResults[T recordResult](dest, source []T, indices []int) error {
+func mergeDeleteResults(dest, source []*sink.DeleteResult, indices []int) error {
 	if len(source) != len(indices) {
 		return status.Error(codes.Internal, "Engine returned an invalid result count")
 	}
@@ -305,32 +262,16 @@ func mergeResults[T recordResult](dest, source []T, indices []int) error {
 	}
 	for _, result := range source {
 		index := indices[result.GetOperationIndex()]
-		switch typed := any(result).(type) {
-		case *sink.ReadResult:
-			typed.OperationIndex = uint32(index)
-		case *sink.WriteResult:
-			typed.OperationIndex = uint32(index)
-		case *sink.DeleteResult:
-			typed.OperationIndex = uint32(index)
-		}
+		result.OperationIndex = uint32(index)
 		dest[index] = result
 	}
 	return nil
 }
 
-func boundFailures(response *forward.ForwardResponse, maximum, count int) {
-	limit := min(512, max(1, maximum/max(1, count)-128))
-	failures := make([]*sink.Failure, 0, count)
-	for _, result := range response.GetRead().GetResults() {
-		failures = append(failures, result.GetFailure())
-	}
-	for _, result := range response.GetWrite().GetResults() {
-		failures = append(failures, result.GetFailure())
-	}
-	for _, result := range response.GetDelete().GetResults() {
-		failures = append(failures, result.GetFailure())
-	}
-	for _, failure := range failures {
+func boundDeleteFailures(results []*sink.DeleteResult, maximum int) {
+	limit := min(512, max(1, maximum/max(1, len(results))-128))
+	for _, result := range results {
+		failure := result.GetFailure()
 		if failure == nil || len(failure.Message) <= limit {
 			continue
 		}

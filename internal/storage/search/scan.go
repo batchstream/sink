@@ -109,55 +109,93 @@ func (s *Store) Scan(ctx context.Context, req storage.ScanRequest) (storage.Scan
 	opts.query.Del("track_total_hits")
 	opts.maxBytes = int64(storage.ScanBackendBytes(req.Request.MaxBytes))
 	pageSize := s.scanSizes.suggest(sizingKey, req.BatchSize)
-	page, pageSize, err := s.scanQuery(ctx, opts, body, pageSize)
+	var documents []storage.Document
+	emitted := 0
+	budget := storage.NewReadBudget(req.Request.MaxBytes)
+	previous := seek.Position
+	var position []byte
+	more := false
+	consume := func(hit json.RawMessage) error {
+		if more {
+			return nil
+		}
+		var metadata struct {
+			Sort json.RawMessage `json:"sort"`
+		}
+		if err := json.Unmarshal(hit, &metadata); err != nil {
+			return err
+		}
+		next, err := scanSortValues(metadata.Sort, count)
+		if err != nil {
+			return err
+		}
+		if bytes.Equal(previous, next) {
+			return errors.New("Scan sort is not unique; add a unique immutable tie-breaker field")
+		}
+		previous = next
+		if emitted == pageSize {
+			more = true
+			return nil
+		}
+		if err := budget.Reserve(len(hit)); err != nil {
+			if emitted == 0 {
+				return err
+			}
+			more = true
+			return nil
+		}
+		document := storage.Document{Encoding: storage.DocumentEncodingJSON, Payload: hit}
+		if req.Emit != nil {
+			if err := req.Emit(document); err != nil {
+				return err
+			}
+		} else {
+			documents = append(documents, document)
+		}
+		emitted++
+		position = next
+		return nil
+	}
+	var page scanPage
+	if req.Emit != nil {
+		hits := 0
+		opts.emitHit = func(hit json.RawMessage) error {
+			hits++
+			if hits > pageSize+1 {
+				return errors.New("search Scan exceeded its requested result count")
+			}
+			return consume(hit)
+		}
+		body["size"] = json.RawMessage(fmt.Sprint(pageSize + 1))
+		opts.payload, err = json.Marshal(body)
+		if err != nil {
+			return empty, err
+		}
+		page, err = s.performQuery(ctx, opts)
+	} else {
+		page, pageSize, err = s.scanQuery(ctx, opts, body, pageSize)
+	}
 	if err != nil {
 		return empty, err
 	}
 	if len(page.Hits.Hits) > pageSize+1 {
 		return empty, errors.New("search Scan exceeded its requested result count")
 	}
-	documents := make([]storage.Document, 0, req.BatchSize)
-	budget := storage.NewReadBudget(req.Request.MaxBytes)
-	previous := seek.Position
-	var position []byte
-	more := false
-	for _, hit := range page.Hits.Hits {
-		var metadata struct {
-			Sort json.RawMessage `json:"sort"`
-		}
-		if err := json.Unmarshal(hit, &metadata); err != nil {
-			return empty, err
-		}
-		next, err := scanSortValues(metadata.Sort, count)
-		if err != nil {
-			return empty, err
-		}
-		if bytes.Equal(previous, next) {
-			return empty, errors.New("Scan sort is not unique; add a unique immutable tie-breaker field")
-		}
-		previous = next
-		if len(documents) == pageSize {
-			more = true
-			break
-		}
-		if err := budget.Reserve(len(hit)); err != nil {
-			if len(documents) == 0 {
+	if req.Emit == nil {
+		for _, hit := range page.Hits.Hits {
+			if err := consume(hit); err != nil {
 				return empty, err
 			}
-			more = true
-			break
 		}
-		document := storage.Document{Encoding: storage.DocumentEncodingJSON, Payload: hit}
-		documents = append(documents, document)
-		position = next
 	}
+
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
 	if !more {
 		position = nil
-	} else if len(documents) < req.BatchSize {
-		s.scanSizes.remember(sizingKey, len(documents))
+	} else if emitted < req.BatchSize {
+		s.scanSizes.remember(sizingKey, emitted)
 	}
 	return seek.Page(documents, position)
 }

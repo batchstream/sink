@@ -7,13 +7,12 @@ import (
 
 const DefaultMaxReadBytes = 32 << 20
 
-// ReadBudget is shared across every store and repeated key in one read. Reserve
-// before copying a result so small key batches cannot allocate unbounded output.
+// ReadBudget bounds document copies within a local result, batch or scan page.
+// It does not cross the Gateway-to-Engine transport boundary.
 type ReadBudget struct {
 	mu        sync.Mutex
 	remaining int
 	maximum   int
-	observe   func(int)
 	unlimited bool
 }
 
@@ -22,13 +21,6 @@ func NewReadBudget(maxBytes int) *ReadBudget {
 		maxBytes = DefaultMaxReadBytes
 	}
 	budget := &ReadBudget{remaining: maxBytes, maximum: maxBytes}
-	return budget
-}
-
-// NewTrackedReadBudget accepts an explicit zero grant and reports successful charges.
-// observe must not call back into this budget.
-func NewTrackedReadBudget(maxBytes int, observe func(int)) *ReadBudget {
-	budget := &ReadBudget{remaining: max(0, maxBytes), maximum: max(0, maxBytes), observe: observe}
 	return budget
 }
 
@@ -55,8 +47,5 @@ func (b *ReadBudget) Reserve(size int) error {
 		return NewOperationError(ErrorCodeResourceExhausted, size >= 0 && size <= b.maximum-overhead, cause)
 	}
 	b.remaining -= size + overhead
-	if b.observe != nil {
-		b.observe(b.maximum - b.remaining)
-	}
 	return nil
 }

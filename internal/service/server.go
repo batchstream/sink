@@ -21,7 +21,6 @@ import (
 
 type Server struct {
 	boundStore string
-	sink.UnimplementedSinkServer
 
 	storage          storage.Storage
 	lua              *merge.LuaEngine
@@ -36,10 +35,10 @@ func (s *Server) Write(ctx context.Context, req *sink.WriteRequest) (*sink.Write
 	if err := protocol.CheckStore(req, s.boundStore); err != nil {
 		return nil, err
 	}
-	return s.write(ctx, req, contextBudgets(ctx, len(req.GetOperations())), nil)
+	return s.write(ctx, req, responseGroupsFor(ctx, len(req.GetOperations())), nil)
 }
 
-func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *requestBudgets, completion *writeCompletion) (*sink.WriteResponse, error) {
+func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *responseGroups, completion *writeCompletion) (*sink.WriteResponse, error) {
 	if req == nil || len(req.GetOperations()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "write request must contain operations")
 	}
@@ -137,7 +136,7 @@ func (s *Server) Delete(ctx context.Context, req *sink.DeleteRequest) (*sink.Del
 	return s.delete(ctx, req, nil)
 }
 
-func (s *Server) delete(ctx context.Context, req *sink.DeleteRequest, budgets *requestBudgets) (*sink.DeleteResponse, error) {
+func (s *Server) delete(ctx context.Context, req *sink.DeleteRequest, budgets *responseGroups) (*sink.DeleteResponse, error) {
 	if req == nil || len(req.GetOperations()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "delete request must contain operations")
 	}

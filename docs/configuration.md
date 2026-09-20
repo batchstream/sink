@@ -62,7 +62,7 @@ use duration strings such as `2ms`, `30s`, or `1m30s`. The `_bytes` field names
 describe what the limit measures; they do not require writing raw byte counts.
 
 This is a breaking YAML change. See the [migration guide](configuration-migration.md)
-for the complete old-to-new mapping. The gRPC and SDK contracts are unchanged.
+for the complete old-to-new mapping. The streaming gRPC and SDK contracts require coordinated upgrades.
 
 ## One Store per Engine or Worker
 
@@ -186,9 +186,9 @@ bounds a Lua invocation, and `consumer.processing_timeout` bounds a Worker proce
 round; none of these is a whole-RPC deadline.
 
 There is no `request.max_response_bytes` or `request.max_read_bytes` knob. Gateway
-uses `grpc.max_send_message_bytes` as the transport ceiling and reserves encoded
-result overhead before forwarding. Returned documents share the remaining budget
-across all Store groups of the original RPC. Oversized returned writes are rejected
+uses `grpc.max_send_message_bytes` as the per-message transport ceiling. Each
+streamed result is checked independently; no response allowance is transferred
+between Gateway and Engine. Oversized returned writes are rejected
 before their own commit. Intermediate snapshots and candidate outputs use process
 memory protection without independent quotas. Collected batches execute together.
 

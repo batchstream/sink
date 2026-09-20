@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"mime"
 	"net/http"
@@ -72,6 +73,13 @@ func (s *Store) pageOptions(req storage.NativeRequest) (requestOptions, map[stri
 
 func (s *Store) performQuery(ctx context.Context, opts requestOptions) (scanPage, error) {
 	var page scanPage
+	if opts.emitHit != nil {
+		opts.decode = func(reader io.Reader) error {
+			decoded, err := decodeSearchPage(reader, opts.emitHit)
+			page = decoded
+			return err
+		}
+	}
 	response, err := s.perform(ctx, opts)
 	if err != nil {
 		if errors.Is(err, errResponseTooLarge) {
@@ -83,8 +91,10 @@ func (s *Store) performQuery(ctx context.Context, opts requestOptions) (scanPage
 	if response.statusCode < 200 || response.statusCode >= 300 {
 		return page, responseError(s.driver, response)
 	}
-	if err := json.Unmarshal(response.body, &page); err != nil {
-		return page, fmt.Errorf("decode search query: %w", err)
+	if opts.decode == nil {
+		if err := json.Unmarshal(response.body, &page); err != nil {
+			return page, fmt.Errorf("decode search query: %w", err)
+		}
 	}
 	if page.ScrollID != "" || page.Hits == nil || page.Hits.Hits == nil || page.TimedOut == nil || *page.TimedOut || page.TerminatedEarly {
 		return page, errors.New("search query returned incomplete results, failed shards or an unexpected cursor")
@@ -155,6 +165,20 @@ func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.Qu
 	if err != nil {
 		return empty, storage.InvalidArgumentError(err)
 	}
+	emitted := 0
+	if req.Emit != nil {
+		opts.emitHit = func(hit json.RawMessage) error {
+			emitted++
+			if emitted > req.PageSize {
+				return errors.New("search query exceeded its requested result count")
+			}
+			if len(hit) > req.Request.MaxBytes && req.Request.MaxBytes > 0 {
+				return storage.ResourceExhaustedError(errResponseTooLarge)
+			}
+			document := storage.Document{Encoding: storage.DocumentEncodingJSON, Payload: hit}
+			return req.Emit(document)
+		}
+	}
 	page, err := s.performQuery(ctx, opts)
 	if err != nil {
 		return empty, err
@@ -167,6 +191,9 @@ func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.Qu
 		return empty, err
 	}
 	result := storage.QueryResponse{HasMore: hasMore}
+	if req.Emit != nil {
+		return result, nil
+	}
 	budget := storage.NewReadBudget(req.Request.MaxBytes)
 	for _, hit := range page.Hits.Hits {
 		if err := budget.Reserve(len(hit)); err != nil {

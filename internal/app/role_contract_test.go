@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -23,7 +24,10 @@ type deadlineReadStorage struct {
 }
 
 func (s *deadlineReadStorage) Read(ctx context.Context, req storage.ReadRequest) (storage.ReadResponse, error) {
-	s.seen <- ctx
+	select {
+	case s.seen <- ctx:
+	default:
+	}
 	select {
 	case <-s.release:
 		return s.Storage.Read(ctx, req)
@@ -61,7 +65,8 @@ func TestEngineOnlyAcceptsForwardingAndHonorsGatewayContext(t *testing.T) {
 	defer engineConn.Close()
 	direct := sink.NewSinkClient(engineConn)
 	empty := &sink.ReadRequest{}
-	if _, err := direct.Read(t.Context(), empty); status.Code(err) != codes.Unimplemented {
+	_, err = readRPC(t.Context(), direct, empty)
+	if status.Code(err) != codes.Unimplemented {
 		t.Fatalf("Engine exposes public RPC: %v", err)
 	}
 	component := "mode: gateway\ngrpc: {address: '127.0.0.1:0'}\nhealth: {address: '127.0.0.1:0'}\nrequest: {max_operations: 2000}\nforwarding:\n  routes: [{store: primary, target: '" + engine.listener.Addr().String() + "', tls: {insecure: true}}]"
@@ -91,7 +96,7 @@ func TestEngineOnlyAcceptsForwardingAndHonorsGatewayContext(t *testing.T) {
 	caller, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { _, err := client.Read(caller, request); done <- err }()
+	go func() { _, err := readRPC(caller, client, request); done <- err }()
 	var observed context.Context
 	select {
 	case observed = <-backend.seen:
@@ -114,8 +119,26 @@ func TestEngineOnlyAcceptsForwardingAndHonorsGatewayContext(t *testing.T) {
 	// More than 1000 operations in one Store is valid when Gateway permits it.
 	ctx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stop()
-	response, err := client.Read(ctx, request)
+	response, err := readRPC(ctx, client, request)
 	if err != nil || len(response.GetResults()) != 1500 {
 		t.Fatalf("Engine reintroduced an operation cap: count=%d err=%v", len(response.GetResults()), err)
+	}
+}
+
+func readRPC(ctx context.Context, client sink.SinkClient, req *sink.ReadRequest) (*sink.ReadResponse, error) {
+	stream, err := client.Read(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	response := &sink.ReadResponse{}
+	for {
+		frame, err := stream.Recv()
+		if err == io.EOF {
+			return response, nil
+		}
+		if err != nil {
+			return response, err
+		}
+		response.Results = append(response.Results, frame.Results...)
 	}
 }

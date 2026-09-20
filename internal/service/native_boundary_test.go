@@ -35,6 +35,14 @@ func (s *nativeBoundaryStore) Query(_ context.Context, req storage.QueryRequest)
 	s.query = req
 	s.request = req.Request
 	response := storage.QueryResponse{Documents: s.documents, HasMore: s.more}
+	if req.Emit != nil && s.failure == nil {
+		for _, doc := range response.Documents {
+			if err := req.Emit(doc); err != nil {
+				return response, err
+			}
+		}
+		response.Documents = nil
+	}
 	return response, s.failure
 }
 func (s *nativeBoundaryStore) Count(_ context.Context, req storage.CountRequest) (storage.CountResponse, error) {
@@ -48,6 +56,14 @@ func (s *nativeBoundaryStore) Scan(_ context.Context, req storage.ScanRequest) (
 	s.scan = req
 	s.request = req.Request
 	response := storage.ScanResponse{Documents: s.documents}
+	if req.Emit != nil && s.failure == nil {
+		for _, doc := range response.Documents {
+			if err := req.Emit(doc); err != nil {
+				return response, err
+			}
+		}
+		response.Documents = nil
+	}
 	return response, s.failure
 }
 

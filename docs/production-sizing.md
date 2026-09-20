@@ -59,12 +59,12 @@ using capacity measurements, including MongoDB allocator settings.
 
 ## Qualification before rollout
 
-1. Exercise the unchanged public SDK through Gateway, including asynchronous
+1. Exercise the matching streaming SDK through Gateway, including asynchronous
    acceptance and Worker delivery.
 2. Measure single-Store and cross-Store requests, large returned documents,
    conditional writes, slow dependencies and idle Store counts.
 3. Record throughput, P99, CPU, RSS, connections, queue age and failures. Include
-   budget-sensitive cross-Store requests, whose Store groups execute sequentially.
+   large cross-Store streams and slow receivers under bounded fanout.
 4. Verify replica discovery with persistent clients, graceful drain, cancellation,
    dependency recovery and no mutation replay after a lost response.
 5. Set replica limits and scaling thresholds against the workload's SLO and the

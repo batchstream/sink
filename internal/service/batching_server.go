@@ -34,8 +34,6 @@ type BatchingOptions struct {
 }
 
 type BatchingServer struct {
-	sink.UnimplementedSinkServer
-
 	server  *Server
 	reads   *requestBatcher[*sink.ReadRequest, *sink.ReadResponse]
 	writes  *requestBatcher[*sink.WriteRequest, *sink.WriteResponse]
@@ -263,7 +261,7 @@ func (s *BatchingServer) executeReads(ctx context.Context, calls []*batchCall[*s
 		return
 	}
 	operations := make([]*sink.ReadOperation, 0, totalReadOperations(calls))
-	budgets := &requestBudgets{}
+	budgets := &responseGroups{}
 	for _, call := range calls {
 		operations = append(operations, call.request.GetOperations()...)
 		budgets.addContext(call.ctx, len(call.request.GetOperations()))
@@ -327,22 +325,22 @@ func (s *BatchingServer) executeWrites(
 				continue
 			}
 			if parallel {
-				executions.Go(func() { s.executeWriteBatch(ctx, group) })
+				executions.Go(func() { s.executeWrite(ctx, group) })
 			} else {
-				s.executeWriteBatch(ctx, group)
+				s.executeWrite(ctx, group)
 			}
 		}
 		executions.Wait()
 	}
 }
 
-func (s *BatchingServer) executeWriteBatch(ctx context.Context, calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]) {
+func (s *BatchingServer) executeWrite(ctx context.Context, calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]) {
 	calls = liveMutationCalls(calls)
 	if len(calls) == 0 {
 		return
 	}
 	request := combinedWriteRequest(calls)
-	budgets := &requestBudgets{}
+	budgets := &responseGroups{}
 	for _, call := range calls {
 		budgets.addContext(call.ctx, len(call.request.GetOperations()))
 	}
@@ -400,7 +398,7 @@ func (s *BatchingServer) executeDeleteBatch(ctx context.Context, calls []*batchC
 		return
 	}
 	request := combinedDeleteRequest(calls)
-	budgets := &requestBudgets{}
+	budgets := &responseGroups{}
 	for _, call := range calls {
 		budgets.addContext(call.ctx, len(call.request.GetOperations()))
 	}

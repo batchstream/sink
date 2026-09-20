@@ -76,9 +76,9 @@ splitting. Record ordering, adapter grouping, completion modes and conflict
 retries still determine execution groups. The waiting queue retains its encoded
 byte and operation limits; dispatched work no longer counts toward those limits.
 
-The gRPC message ceiling still limits public responses. Each original RPC keeps
-its response allowance across Stores, batching and retries. A requested returned
-document must fit before its own write commits. This is a wire-format limit,
+The gRPC message ceiling limits each streamed result independently. Gateway
+and Engine do not exchange response allowances. A requested returned document
+must fit the Engine limit before its own write commits. This is a wire-format limit,
 separate from process memory protection. Lua sandbox and Kafka buffer limits also
 remain in effect.
 

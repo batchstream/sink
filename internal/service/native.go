@@ -10,7 +10,6 @@ import (
 
 	"github.com/liran/sink-go/uri"
 	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/forwarding"
 	"github.com/liran/sink/internal/protocol"
 	"github.com/liran/sink/internal/storage"
 	"google.golang.org/grpc/codes"
@@ -92,10 +91,7 @@ func nativeStatus(err error) error {
 }
 
 func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.ExecuteResponse, error) {
-	maximum := forwarding.FromContext(ctx).Limit(forwarding.Returns, s.maxReadBytes)
-	if maximum <= 0 {
-		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
-	}
+	maximum := s.maxReadBytes
 	if err := protocol.CheckStore(req, s.boundStore); err != nil {
 		return nil, err
 	}
@@ -139,18 +135,15 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 	return response, nil
 }
 
-func (s *Server) Scan(ctx context.Context, req *sink.ScanRequest) (*sink.ScanResponse, error) {
-	maximum := forwarding.FromContext(ctx).Limit(forwarding.Returns, s.maxReadBytes)
-	if maximum <= 0 {
-		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
-	}
+func (s *Server) scan(ctx context.Context, req *sink.ScanRequest, send func(*sink.ScanResponse) error) error {
+	maximum := s.maxReadBytes
 	if err := protocol.CheckStore(req, s.boundStore); err != nil {
-		return nil, err
+		return err
 	}
 	maximum = min(maximum, 4<<20)
 	request, err := nativeRequest(req.GetCommand(), maximum)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	batchSize := int(req.GetBatchSize())
 	if batchSize == 0 {
@@ -161,45 +154,50 @@ func (s *Server) Scan(ctx context.Context, req *sink.ScanRequest) (*sink.ScanRes
 		scan.Projection = &storage.Projection{Fields: projection.GetFields(), Exclude: projection.GetExclude()}
 	}
 	if err := scan.Projection.Validate(); err != nil {
-		return nil, nativeStatus(err)
+		return nativeStatus(err)
 	}
 	if batchSize > 1000 || len(scan.Cursor) > storage.MaxScanCursorBytes {
-		return nil, status.Error(codes.InvalidArgument, "scan batch or cursor exceeds its limit")
+		return status.Error(codes.InvalidArgument, "scan batch or cursor exceeds its limit")
 	}
 	backend, ok := s.storage.(storage.NativeStorage)
 	if !ok {
-		return nil, nativeStatus(storage.ErrNativeUnsupported)
+		return nativeStatus(storage.ErrNativeUnsupported)
 	}
 	if _, err := scan.Resume(); err != nil {
-		return nil, nativeStatus(err)
+		return nativeStatus(err)
 	}
 	// Leave room for cursor metadata and protobuf framing inside the page limit.
 	scan.Request.MaxBytes = maximum - min(maximum/4, storage.MaxScanCursorBytes) - 128
 	if scan.Request.MaxBytes <= 0 {
-		return nil, status.Error(codes.ResourceExhausted, "scan page budget is too small")
+		return status.Error(codes.ResourceExhausted, "scan page budget is too small")
+	}
+	count := 0
+	scan.Emit = func(document storage.Document) error {
+		count++
+		if count > batchSize {
+			return status.Error(codes.Internal, "backend exceeded scan page size")
+		}
+		encoded := &sink.Document{Encoding: sink.DocumentEncoding(document.Encoding), Payload: document.Payload}
+		frame := &sink.ScanResponse{Documents: []*sink.Document{encoded}}
+		if frame.SizeVT() > maximum {
+			return status.Error(codes.ResourceExhausted, "scan document exceeds message limit")
+		}
+		return send(frame)
 	}
 	result, err := backend.Scan(ctx, scan)
 	if err != nil {
-		return nil, nativeStatus(err)
+		return nativeStatus(err)
 	}
-	if len(result.Documents) > batchSize || (len(result.NextCursor) != 0 && len(result.Documents) == 0) {
-		return nil, status.Error(codes.Internal, "backend returned an invalid scan page")
+	if len(result.Documents) != 0 || (len(result.NextCursor) != 0 && count == 0) || len(result.NextCursor) > storage.MaxScanCursorBytes {
+		return status.Error(codes.Internal, "backend returned an invalid streaming scan page")
 	}
-	response := &sink.ScanResponse{NextCursor: result.NextCursor}
-	for _, document := range result.Documents {
-		encoded := &sink.Document{Encoding: sink.DocumentEncoding(document.Encoding), Payload: document.Payload}
-		response.Documents = append(response.Documents, encoded)
+	final := &sink.ScanResponse{Complete: true, NextCursor: result.NextCursor}
+	if final.SizeVT() > maximum {
+		return status.Error(codes.ResourceExhausted, "scan cursor exceeds message limit")
 	}
-	if response.SizeVT() > maximum {
-		return nil, status.Error(codes.ResourceExhausted, "scan response exceeds byte limit")
-	}
-	return response, nil
+	return send(final)
 }
 
 func (s *BatchingServer) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.ExecuteResponse, error) {
 	return s.server.Execute(ctx, req)
-}
-
-func (s *BatchingServer) Scan(ctx context.Context, req *sink.ScanRequest) (*sink.ScanResponse, error) {
-	return s.server.Scan(ctx, req)
 }

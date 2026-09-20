@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/go-logr/logr v1.4.4
 	github.com/iceisfun/golua v1.1.1
-	github.com/liran/sink-go v0.8.0
+	github.com/liran/sink-go v0.9.1-0.20260920094052-14251539240b
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10
 	github.com/prometheus/client_golang v1.24.1
 	github.com/twmb/franz-go v1.21.7
@@ -20,6 +20,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.46.0
 	go.opentelemetry.io/otel/sdk/log v0.22.0
 	golang.org/x/net v0.59.0
+	golang.org/x/sync v0.23.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
@@ -50,7 +51,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect

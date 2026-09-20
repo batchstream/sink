@@ -70,7 +70,9 @@ func TestReturningQuotaSettlesFinalCASOutcome(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				var server sink.SinkServer = core
+				var server interface {
+					Write(context.Context, *sink.WriteRequest) (*sink.WriteResponse, error)
+				} = core
 				if batching {
 					batchOpts := service.BatchingOptions{MaxWait: time.Millisecond}
 					batch, err := service.NewBatchingServer(core, batchOpts)

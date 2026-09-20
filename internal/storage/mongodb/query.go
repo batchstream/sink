@@ -104,19 +104,30 @@ func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.Qu
 		_ = cursor.Close(cleanup)
 	}()
 	result := storage.QueryResponse{}
+	count := 0
 	budget := storage.NewReadBudget(req.Request.MaxBytes)
 	for cursor.Next(ctx) {
 		// Lookahead proves HasMore but is never retained or returned to the
 		// caller, so a large following document must not reject this page.
-		if len(result.Documents) == req.PageSize {
+		if count == req.PageSize {
 			result.HasMore = true
 			break
+		}
+		if req.Emit != nil {
+			budget = storage.NewReadBudget(req.Request.MaxBytes)
 		}
 		if err := budget.Reserve(len(cursor.Current)); err != nil {
 			return empty, err
 		}
 		document := storage.Document{Encoding: storage.DocumentEncodingBSON, Payload: bytes.Clone(cursor.Current)}
-		result.Documents = append(result.Documents, document)
+		if req.Emit != nil {
+			if err := req.Emit(document); err != nil {
+				return empty, err
+			}
+		} else {
+			result.Documents = append(result.Documents, document)
+		}
+		count++
 	}
 	if err := cursor.Err(); err != nil {
 		return empty, storage.BackendError(err)

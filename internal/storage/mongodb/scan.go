@@ -155,12 +155,13 @@ func (s *Store) Scan(ctx context.Context, req storage.ScanRequest) (storage.Scan
 		defer cancel()
 		_ = cursor.Close(cleanup)
 	}()
-	documents := make([]storage.Document, 0, req.BatchSize)
+	var documents []storage.Document
+	count := 0
 	budget := storage.NewReadBudget(req.Request.MaxBytes)
 	var position []byte
 	more := false
 	for cursor.Next(ctx) {
-		if len(documents) == req.BatchSize {
+		if count == req.BatchSize {
 			more = true
 			break
 		}
@@ -192,14 +193,21 @@ func (s *Store) Scan(ctx context.Context, req storage.ScanRequest) (storage.Scan
 			}
 		}
 		if err := budget.Reserve(len(payload)); err != nil {
-			if len(documents) == 0 {
+			if count == 0 {
 				return empty, err
 			}
 			more = true
 			break
 		}
 		document := storage.Document{Encoding: storage.DocumentEncodingBSON, Payload: payload}
-		documents = append(documents, document)
+		if req.Emit != nil {
+			if err := req.Emit(document); err != nil {
+				return empty, err
+			}
+		} else {
+			documents = append(documents, document)
+		}
+		count++
 		position = next
 	}
 	if err := cursor.Err(); err != nil {

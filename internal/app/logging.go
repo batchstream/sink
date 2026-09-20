@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	forward "github.com/liran/sink/gen/forward"
+	"github.com/liran/sink/gen/forward"
 	sink "github.com/liran/sink/gen/sink"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -18,35 +18,37 @@ func logUnary(ctx context.Context, req any, info *grpc.UnaryServerInfo, next grp
 	response, err := next(ctx, req)
 	method := diagnosticMethod(info.FullMethod)
 	if method != "" {
-		code := status.Code(err)
-		observed := response
-		if forwarded, ok := observed.(*forward.ForwardResponse); ok {
-			if code == codes.OK {
-				code = codes.Code(forwarded.GetCode())
-			}
-			switch body := forwarded.GetResponse().(type) {
-			case *forward.ForwardResponse_Read:
-				observed = body.Read
-			case *forward.ForwardResponse_Write:
-				observed = body.Write
-			case *forward.ForwardResponse_Delete:
-				observed = body.Delete
-			case *forward.ForwardResponse_Execute:
-				observed = body.Execute
-			}
-		}
-		logRPC(method, code, observed, time.Since(started))
+		var summary rpcSummary
+		summary.observe(response)
+		summary.log(method, status.Code(err), time.Since(started))
 	}
 	return response, err
 }
 
 func logStream(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, next grpc.StreamHandler) error {
-	started := time.Now()
-	err := next(server, stream)
-	if method := diagnosticMethod(info.FullMethod); method != "" {
-		logRPC(method, status.Code(err), nil, time.Since(started))
+	method := diagnosticMethod(info.FullMethod)
+	if method == "" {
+		return next(server, stream)
 	}
+	started := time.Now()
+	observed := &diagnosticStream{ServerStream: stream}
+	err := next(server, observed)
+	observed.summary.log(method, status.Code(err), time.Since(started))
 	return err
+}
+
+// Keep counters only; streamed documents are released after SendMsg returns.
+type diagnosticStream struct {
+	grpc.ServerStream
+	summary rpcSummary
+}
+
+func (s *diagnosticStream) SendMsg(message any) error {
+	if err := s.ServerStream.SendMsg(message); err != nil {
+		return err
+	}
+	s.summary.observe(message)
+	return nil
 }
 
 func diagnosticMethod(full string) string {
@@ -55,23 +57,26 @@ func diagnosticMethod(full string) string {
 	}
 	method := full[strings.LastIndexByte(full, '/')+1:]
 	switch method {
-	case "Read", "Write", "Delete", "Execute", "Query", "Count", "Scan", "Forward", "ForwardStream":
+	case "Read", "Write", "Delete", "Execute", "Query", "Count", "Scan", "Forward":
 		return method
 	default:
 		return ""
 	}
 }
 
-func logRPC(method string, code codes.Code, response any, elapsed time.Duration) {
-	failed := 0
-	operations := 0
-	failureCode := ""
+type rpcSummary struct {
+	operations  int
+	failed      int
+	failureCode string
+}
+
+func (s *rpcSummary) observe(response any) {
 	observe := func(failure *sink.Failure) {
-		operations++
+		s.operations++
 		if failure != nil {
-			failed++
-			if failureCode == "" {
-				failureCode = failure.GetCode().String()
+			s.failed++
+			if s.failureCode == "" {
+				s.failureCode = failure.GetCode().String()
 			}
 		}
 	}
@@ -89,19 +94,34 @@ func logRPC(method string, code codes.Code, response any, elapsed time.Duration)
 			observe(item.GetFailure())
 		}
 	case *sink.ExecuteResponse:
-		operations = 1
+		s.operations++
 		if !result.GetSuccess() {
-			failed = 1
-			failureCode = "native_execution_failed"
+			s.failed++
+			if s.failureCode == "" {
+				s.failureCode = "native_execution_failed"
+			}
 		}
+	case *forward.ForwardResponse:
+		s.observe(result.GetResponse())
+	case *forward.ForwardResponse_Read:
+		s.observe(result.Read)
+	case *forward.ForwardResponse_Write:
+		s.observe(result.Write)
+	case *forward.ForwardResponse_Delete:
+		s.observe(result.Delete)
+	case *forward.ForwardResponse_Execute:
+		s.observe(result.Execute)
 	}
+}
+
+func (s *rpcSummary) log(method string, code codes.Code, elapsed time.Duration) {
 	level := slog.LevelDebug
-	if code != codes.OK || failed > 0 || elapsed > 5*time.Second {
+	if code != codes.OK || s.failed > 0 || elapsed > 5*time.Second {
 		level = slog.LevelWarn
 	}
 	if code == codes.Internal || code == codes.DataLoss {
 		level = slog.LevelError
 	}
 	slog.Log(context.Background(), level, "RPC completed", "component", "rpc", "event", "rpc_completed", "method", method,
-		"status", code.String(), "operations", operations, "failed", failed, "error_code", failureCode, "duration_ms", elapsed.Milliseconds())
+		"status", code.String(), "operations", s.operations, "failed", s.failed, "error_code", s.failureCode, "duration_ms", elapsed.Milliseconds())
 }

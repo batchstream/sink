@@ -51,10 +51,10 @@ func (app *Application) configureServer(sinkServer *service.Server, observed *si
 	if err != nil {
 		return err
 	}
-	if err := app.configureGRPC(app.batchingServer, observed); err != nil {
+	if err := app.configureGRPC(app.batchingServer.RPC(), observed); err != nil {
 		return err
 	}
-	opts := engine.Options{Memory: app.memory, MaxRequestBytes: loaded.GRPC.MaxReceiveMessageBytes, Metrics: observed, Service: app.batchingServer, Store: loaded.Storage.Name, MaxReadBytes: loaded.GRPC.MaxSendMessageBytes}
+	opts := engine.Options{Memory: app.memory, MaxRequestBytes: loaded.GRPC.MaxReceiveMessageBytes, Metrics: observed, Service: app.batchingServer.RPC(), Store: loaded.Storage.Name, MaxReadBytes: loaded.GRPC.MaxSendMessageBytes}
 	forwardingServer, err := engine.New(opts)
 	if err != nil {
 		return err

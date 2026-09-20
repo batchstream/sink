@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"reflect"
@@ -182,7 +183,7 @@ func writeRecords(
 		CompletionMode: completionMode,
 		Operations:     operations,
 	}
-	response, err := client.Write(ctx, request)
+	response, err := collectWrites(ctx, client, request)
 	if err != nil {
 		return fmt.Errorf("write records: %w", err)
 	}
@@ -203,7 +204,7 @@ func writeRecords(
 
 func readAndVerify(ctx context.Context, client sink.SinkClient, records []exampleRecord) error {
 	request := readRequest(records)
-	response, err := client.Read(ctx, request)
+	response, err := readRecords(ctx, client, request)
 	if err != nil {
 		return fmt.Errorf("read records: %w", err)
 	}
@@ -229,7 +230,7 @@ func waitForRecord(ctx context.Context, client sink.SinkClient, record exampleRe
 	records := []exampleRecord{record}
 	request := readRequest(records)
 	for {
-		response, err := client.Read(pollContext, request)
+		response, err := readRecords(pollContext, client, request)
 		if err != nil {
 			return fmt.Errorf("poll asynchronous record: %w", err)
 		}
@@ -278,7 +279,7 @@ func deleteRecords(ctx context.Context, client sink.SinkClient, records []exampl
 
 func verifyMissing(ctx context.Context, client sink.SinkClient, records []exampleRecord) error {
 	request := readRequest(records)
-	response, err := client.Read(ctx, request)
+	response, err := readRecords(ctx, client, request)
 	if err != nil {
 		return fmt.Errorf("read deleted records: %w", err)
 	}
@@ -351,4 +352,40 @@ func failureMessage(failure *sink.Failure) string {
 		return "no failure details"
 	}
 	return failure.GetMessage()
+}
+
+func readRecords(ctx context.Context, client sink.SinkClient, req *sink.ReadRequest) (*sink.ReadResponse, error) {
+	stream, err := client.Read(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	response := &sink.ReadResponse{}
+	for {
+		frame, err := stream.Recv()
+		if err == io.EOF {
+			return response, nil
+		}
+		if err != nil {
+			return response, err
+		}
+		response.Results = append(response.Results, frame.Results...)
+	}
+}
+
+func collectWrites(ctx context.Context, client sink.SinkClient, req *sink.WriteRequest) (*sink.WriteResponse, error) {
+	stream, err := client.Write(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	response := &sink.WriteResponse{}
+	for {
+		frame, err := stream.Recv()
+		if err == io.EOF {
+			return response, nil
+		}
+		if err != nil {
+			return response, err
+		}
+		response.Results = append(response.Results, frame.Results...)
+	}
 }

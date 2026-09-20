@@ -287,7 +287,7 @@ byte limits as Execute.
 
 ## Scan
 
-Scan is one unary RPC per page. `ScanRequest` contains the shared `Command`,
+Scan is one server-streaming RPC per page. Documents are followed by a completion frame; the cursor is usable only after successful EOF. `ScanRequest` contains the shared `Command`,
 `batch_size` (default 100, maximum 1000), an opaque bytes `cursor`, and optional
 `projection` using the same `fields` and `exclude` controls as Query.
 `ScanResponse` contains native `documents` and `next_cursor`. A byte-limited
@@ -443,7 +443,7 @@ execution begins do not advertise this pre-execution guarantee. Admitted work fo
 `DEADLINE_EXCEEDED` respectively. See [memory admission](design/demand-based-admission.md).
 
 Execute responses and returned Write documents share the gRPC send ceiling
-semantics; returned-document budgets are per original RPC even after batching.
+semantics; each returned Write result is checked independently even after batching.
 Count uses a separate backend response budget of min(the gRPC send ceiling,
 256 KiB), enforced by the adapter. This limits backend page sizes without per-allocation memory accounting.
 Output space is reserved before committing a returned write. A candidate that

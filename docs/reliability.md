@@ -220,35 +220,28 @@ Changing only a Sink config is refused to protect ordering.
 
 ## Capacity, isolation and health
 
-Each Engine or Worker owns process-wide execution limits and byte reservations
-for its bound Store. Engine publication has an independent admission pool.
-Gateway splits cross-Store calls and enforces its own forwarding limits. Reads and synchronous
-merges and folded conditional Put chains reserve snapshot/output space before
-execution. Coalesced conditional writes share a bounded snapshot/output working
-set and stream larger records through chunks. Each original RPC retains its
-own cumulative quotas across those chunks; successful records are not replayed
-when another chunk conflicts. Reads and returned-write response reservations
-remain per original RPC. Final failed writes release their returned-document
-reservation; successful CAS retries retain only the final document's charge.
-Read/Write/Delete also reserve up to 1 KiB of failure text plus a result envelope
-per operation before execution or publishing. Failure messages are valid UTF-8,
-limited to 1 KiB each, and further shortened according to the gRPC response ceiling
-per original RPC, retaining at least one byte to satisfy the client contract.
-Codes, retryability, and operation indexes remain intact.
-This error allowance is separate from the returned-document quota.
-Micro-batches split when their input, working-set, and response reservations
-exceed the process limit. Dispatched batches wait within their deadlines; direct
-synchronous calls use a bounded admission queue, and publication fails fast.
-Write/Delete dispatchers have bounded concurrency and preserve record dependencies
-across batches, allowing independent calls to pass a refresh wait.
-MongoDB group/write limits are shared across requests. Kafka producers have bounded byte buffers and fail fast
-when full. Size these budgets alongside per-method waiting queues,
-transport buffers, Go object/driver overhead, VM working sets, and replica count.
-The admission byte gauge is not process RSS.
+Gateway, Engine and Worker use process memory watermarks to admit new work.
+Admitted work follows its caller cancellation and existing execution boundaries;
+there are no forwarded memory grants or distributed usage ledgers. Engine method
+queues retain their existing operation and input-byte limits. Streaming calls
+submit one microbatch at a time and release delivered result documents before
+submitting the next. Worker processing is unchanged.
 
-Read budgets include repeated keys and all stores within one original RPC. Search reads split a response
-that exceeds their transport budget before treating an individual document as
-oversized. Lua output traversal bounds alias expansion, depth and node count
+Each Read or returned Write result must fit its local message ceiling. Returned
+write candidates are checked before their own commit. Scalar Delete bounds its
+aggregate result envelopes before dispatch. Failure messages remain valid UTF-8,
+retain their codes and retryability, and are shortened to fit their local response
+boundary. Gateway checks each forwarded frame and propagates gRPC status details.
+
+Write/Delete dispatchers preserve record dependencies across batches. Kafka
+producer buffers, backend transport bounds and Lua sandbox limits remain local.
+Capacity planning includes waiting queues, active microbatches, transport and
+driver buffers, VM working sets, concurrency and replica count. Logical message
+limits are not process RSS limits.
+
+Repeated read keys produce separate streamed results without sharing a cross-Store
+allowance. Search reads split an oversized backend response before treating an
+individual document as oversized. Lua output traversal bounds alias expansion, depth and node count
 before constructing Go output values. The current embedded Lua VM does not
 provide a strict execution heap quota. Reviewed scripts and container memory
 limits are still required; independent Engine/Worker and Store deployments limit

@@ -17,46 +17,39 @@ flowchart LR
     WorkerA --> DatabaseA
 ```
 
-Gateway exposes the existing seven public RPCs. Engine exposes the same RPCs for
-its one Store, plus a private versioned forwarding RPC. Worker has no application
+Gateway exposes the existing seven public RPCs. Engine exposes private versioned forwarding and health RPCs for its one Store. Worker has no application
 gRPC listener and calls the shared execution core directly. Asynchronous acceptance
 still means that Engine's Kafka producer received durable acknowledgement; Gateway
 never connects to Kafka or a database.
 
 ## Configuration
 
-An Engine uses `mode: engine` and one `storage` mapping with `name`, `driver`,
-and the existing driver/Kafka settings. Worker uses the same mapping with
-`mode: worker`. The globally unique Store name is the only configured identity;
-all Engine and Worker replicas of that Store use the same name.
+Engine uses `mode: engine`; Worker uses `mode: worker`. Both receive the same
+Store file through `--store-config`, holding `name`, `storage` and shared `kafka`
+policy. Component tuning remains in their own `--config` files.
 A Store must have its own database target. Distinct URI aliases do not establish
 that two targets are different. Deployment inventory must enforce this globally.
 Engine checks the expected Store name on every forwarded call.
 It rejects an entire mismatched batch before storage or publishing.
 
-Gateway uses `mode: gateway`, `grpc`, `health`, `prometheus`, `service.request`, and `gateway`:
+Gateway uses `mode: gateway`, `grpc`, `health`, `prometheus`, `request`, and `forwarding`:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `gateway.routes` | required | Inline Store routes; every entry is active; restart after changes |
-| `gateway.dns_refresh_interval` | `30s` | Refresh DNS even while existing connections are healthy |
-| `gateway.idle_timeout` | `5m` | Close channels that have no active calls and remain idle |
-| `gateway.max_connections` | `256` | Maximum cached gRPC channels, created lazily; a channel can have multiple backend connections |
-| `gateway.max_requests` | `128` | Maximum admitted public requests |
-| `gateway.max_requests_per_store` | `min(32, max_requests)` | Maximum active forwarded calls to one Store |
-| `gateway.max_bytes` | `256MiB` | Logical input/envelope/response reservations for admitted requests |
-| `gateway.max_fanout` | `8` | Maximum parallel Store calls per public batch |
+| `forwarding.routes` | required | Inline Store routes; every entry is active; restart after changes |
+| `forwarding.dns_refresh_interval` | `30s` | Refresh DNS even while existing connections are healthy |
+| `forwarding.idle_timeout` | `5m` | Close channels that have no active calls and remain idle |
+| `forwarding.max_connections` | `256` | Maximum cached gRPC channels, created lazily; a channel can have multiple backend connections |
+| `forwarding.max_fanout` | `8` | Maximum parallel Store calls per public batch |
 
 These are process limits, not RSS guarantees or recommended resource requests.
-Gateway reserves known input/result overhead; reads, returned documents and native
-replies additionally reserve their configured maximum response allowance. Plain
-puts, deletes and async acceptance do not reserve a full document response quota.
-Size limits do not include all Go, gRPC, TLS or OS allocation overhead.
+Gateway checks process memory watermarks before forwarding new work. The gRPC send ceiling determines response
+capacity. Clients control request deadlines; shutdown has its own bounded drain.
 
 Routes belong to the same Gateway configuration:
 
 ```yaml
-gateway:
+forwarding:
   routes:
     - store: primary
       target: dns:///primary-engine.example:443
@@ -72,7 +65,7 @@ inside the trusted service network. Store name checking does not provide
 client authentication or authorization.
 
 All configured routes are active. There is no route state flag or hot reload.
-Add, remove, or update entries in `gateway.routes`, then restart Gateway. During
+Add, remove, or update entries in `forwarding.routes`, then restart Gateway. During
 a rolling restart, each instance uses the configuration loaded at its own startup.
 Graceful shutdown drains accepted calls within the configured deadline; never
 replay a write automatically just because its connection closes.
@@ -99,21 +92,19 @@ request-wide declarations, operation counts and completion modes before dispatch
 Same-record operations remain together and retain their order. There is no
 cross-Store transaction or global write ordering.
 
-Reads and synchronous writes involving merge, conditional puts or returned
-documents process Store groups in first-occurrence order. Snapshot, merge-input,
-merge-output and returned-document budgets are independent. Each Engine receives
-remaining grants and returns charges; coalesced requests retain separate grants.
-CAS retries report their maximum charge per category. This conservative accounting
-can reject a boundary-size cross-Store request that the old executor accepted.
+Reads and synchronous writes requesting returned documents process Store groups in first-occurrence order. Only returned-document
+allowances cross the forwarding boundary. Each Engine receives the remaining
+response grant; coalesced requests retain their original RPC grants. Intermediate
+snapshots and merge outputs have no separate byte quota.
 Returned-document space is checked **before committing**, never truncated after
 successful writes. Native requests apply the smaller of Gateway and Engine limits.
 
-Unconditional puts without returned documents, deletes and async acceptance can
+Writes without returned documents, deletes and async acceptance can
 forward Store groups concurrently within `max_fanout`. The extra network hop and
 serial budget-sensitive groups have a latency cost; benchmark your workload.
 
 Gateway never automatically replays Write, Delete or Execute. Complete responses
-from healthy Stores are retained when another Store fails. A lost mutation reply
+from healthy Stores are retained when another Store fails. A lost Engine mutation reply
 is represented as a failed operation with `retryable=false`, since the effect may
 already exist. A missing budget settlement consumes the entire grant; it cannot
 be reused by another Store. A proven local rejection before dispatch consumes
@@ -143,10 +134,9 @@ not proxy named dependency health services; its default gRPC health is process h
 
 Gateway exports bounded method/code labels with `sink_gateway_requests_total`,
 `sink_gateway_request_duration_seconds`, `sink_gateway_engine_duration_seconds`,
-`sink_gateway_in_flight_requests`, `sink_gateway_in_flight_bytes`,
-`sink_gateway_rejected_total`, `sink_gateway_routes`,
+`sink_gateway_in_flight_requests`, `sink_gateway_routes`,
 and `sink_gateway_config_info`.
-Engine retains the existing `sink_grpc_server_*`, admission, batching and Lua
+Engine retains the existing `sink_grpc_server_*`, in-flight request, batching and Lua
 metrics, labeled by the original public method even over private forwarding.
 Worker retains the existing pending/oldest/last-poll/last-commit/retry/DLQ metrics.
 Broker consumer lag comes from the external Kafka scaler or exporter.
@@ -157,8 +147,8 @@ CPU, resource requests, replica floors and scale-to-zero are deployment settings
 Engine and Worker replica maxima and pool sizes must jointly fit their Store's
 backend capacity. Increasing Store A replicas creates no Store B database clients.
 Gateway remains a shared ingress: exhausting its CPU, memory or global admission
-capacity can affect multiple Stores. Per-Store forwarding limits contain individual
-backend pressure; Gateway still needs its own capacity planning and scaling.
+pressure can affect multiple Stores. Gateway needs its own capacity planning and scaling.
+All roles expose process [memory watermark metrics](observability.md#memory-capacity-and-keda).
 
 ## New-cluster deployment
 

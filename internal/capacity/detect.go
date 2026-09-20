@@ -10,10 +10,7 @@ import (
 	"strings"
 )
 
-const DefaultBurstPercent = 10
-
-// Detect leaves half of the effective memory limit for runtime, driver-owned
-// buffers, ingress, caches and GC. Managed bytes are deliberately not RSS.
+// Detect finds the effective process ceiling from Go, cgroups, or host memory.
 func Detect() (int64, string) {
 	return detect(os.DirFS("/"), debug.SetMemoryLimit(-1))
 }
@@ -100,9 +97,9 @@ func detect(files fs.FS, goLimit int64) (int64, string) {
 		}
 	}
 	if limit == math.MaxInt64 {
-		return 256 << 20, "fallback"
+		return 1 << 30, "fallback"
 	}
-	return max(1024, limit/2), source
+	return max(1024, limit), source
 }
 
 func containsController(value, controller string) bool {

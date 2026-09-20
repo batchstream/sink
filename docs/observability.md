@@ -41,7 +41,7 @@ Sink metrics:
 | `sink_batcher_queued_operations` | gauge | `store`, `method` | Operations currently waiting for dispatch. |
 | `sink_batcher_queued_bytes` | gauge | `store`, `method` | Encoded request bytes currently waiting for dispatch. |
 | `sink_batcher_rejected_total` | counter | `store`, `method`, `reason` | Requests rejected before dispatch, including queue exhaustion. |
-| `sink_write_phase_duration_seconds` | histogram | `store`, `phase` | Synchronous core write admission, parsing, storage read, Lua, and storage write latency by store; writes distinguish applied/visible. |
+| `sink_write_phase_duration_seconds` | histogram | `store`, `phase` | Synchronous core write parsing, storage read, Lua, and storage write latency by store; writes distinguish applied/visible. |
 | `sink_write_execution_rounds` | histogram | `store`, `phase` | Actual storage read/write calls per synchronous core write, including conflict retries, by store. |
 | `sink_write_slow_phases_total` | counter | `store`, `phase` | Phase observations exceeding 5 seconds, by store and phase. |
 | `sink_merge_conflicts_total` | counter | `store` | Revision conflicts retried by Lua merge operations. |
@@ -53,19 +53,7 @@ Sink metrics:
 | `sink_kafka_worker_mutations_total` | counter | `store`, `status` | Mutations applied or failed by workers. |
 | `sink_kafka_worker_retries_total` | counter | `store` | Retried Kafka mutations. |
 | `sink_kafka_worker_dead_letters_total` | counter | `store` | Mutations copied to the dead-letter topic. |
-| `sink_in_flight_requests` | gauge | none | Executing core calls in this process. |
-| `sink_in_flight_bytes` | gauge | none | Request/output reservations; not RSS. |
-| `sink_admission_rejected_total` | counter | none | Process execution admission rejections. |
-| `sink_admission_pool_requests` | gauge | `store`, `pool` | Executing requests in the independent `execution` or `publish` pool. |
-| `sink_admission_pool_bytes` | gauge | `store`, `pool` | Bytes reserved in each independent pool. The legacy in-flight gauges report their sum. |
-| `sink_admission_pool_rejected_total` | counter | `store`, `pool`, `reason` | Rejections from request/scan slots (`requests`), global bytes (`bytes`), an older byte waiter (`fairness`), a full direct/Scan waiting queue (`queue`), admission wait expiry (`wait_timeout`), or write reservation growth (`resize`). |
-| `sink_execution_queued_requests` | gauge | `store` | Direct synchronous RPCs waiting for admission, separate from batching and Scan queues. |
-| `sink_execution_queued_bytes` | gauge | `store` | Input and bookkeeping bytes charged to the direct admission queue. |
-| `sink_execution_admission_wait_duration_seconds` | histogram | `store` | Direct RPC queue time until admission, rejection or cancellation. |
-| `sink_scan_queued_requests` | gauge | `store` | Scan pages waiting for execution admission. |
-| `sink_scan_queued_bytes` | gauge | `store` | Conservative reservation bytes charged to the separate Scan waiting queue. |
-| `sink_scan_admission_wait_duration_seconds` | histogram | `store` | Time queued Scan pages waited before admission, rejection or cancellation. |
-| `sink_execution_store_bytes` | gauge | `store` | Execution bytes reserved by this process, attributed to its bound Store. |
+| `sink_in_flight_requests` | gauge | none | Admitted Engine RPCs still queued or executing. |
 | `sink_kafka_worker_last_poll_timestamp_seconds` | gauge | `store` | Last completed poll, not an idle-worker heartbeat. |
 | `sink_kafka_worker_last_commit_timestamp_seconds` | gauge | `store` | Last successful offset commit. |
 | `sink_kafka_worker_pending_records` | gauge | `store` | Unresolved records from the last fetch; excludes unpolled backlog. |
@@ -76,13 +64,12 @@ Sink metrics:
 | `sink_kafka_worker_delivery_seconds` | histogram | `store` | Oldest fetched-record age at source commit, including quarantined outcomes. |
 | `sink_kafka_worker_quarantined_total` | counter | `store` | Acknowledged DLQ publications, including replayed quarantine attempts. |
 
-Engine and Worker Store labels use the single `storage.name` captured at startup.
+Engine and Worker Store labels use the single Store file `name` captured at startup.
 Unknown or malformed request identities use bounded fallback labels instead of
 creating arbitrary time series. Gateway forwarding metrics use the configured
 route Store names; the Gateway splits cross-Store RPCs before Engine execution.
 Kafka observations use the bound Store, including malformed or misrouted messages
 sent to that Worker's DLQ. Admission pool metrics attribute reservations to the
-bound Store. The `sink_in_flight_*` and `sink_admission_rejected_total` metrics
 remain process totals across pools. Build info and standard Go/process collectors
 also remain process-wide.
 
@@ -123,7 +110,7 @@ outcome or completion mode; it supports per-store distributions. The legacy
 queue histogram still observes only the oldest request in each dispatched batch.
 
 The write phase histogram uses the same seven finite latency buckets and only
-six phase values: `admission`, `parse`, `storage_read`, `lua`,
+five phase values: `parse`, `storage_read`, `lua`,
 `storage_write_applied`, and `storage_write_visible`. Non-write phases combine
 applied and visible modes. Async acceptance uses the existing Kafka metrics and
 is excluded from these synchronous write diagnostics. Overall latency remains
@@ -149,12 +136,12 @@ writes, round counts, conflict counters, and backend statistics before
 attributing a slow batch to refresh. Several short phases or retries can also
 produce a slow overall RPC without incrementing the slow-phase counter.
 
-The series budget for these write diagnostics is **123 × S + 168 per Pod**, where
+The series budget for these write diagnostics is **112 × S + 146 per Pod**, where
 S is the configured store count (one per Engine or Worker). This includes both fixed fallback labels for write phases/rounds,
 all possible phase/outcome combinations, `+Inf`, `_sum`, and `_count`. The
 breakdown is 30 queue-histogram series and 9 queue-exit counters per configured
-store, plus 60 phase-histogram series, 18 round-histogram series, and 6 slow-phase
-counters per store/fallback. Queues exist only for configured stores. For six single-Store Engine Pods, the upper bound is **1,746 series** for these diagnostics.
+store, plus 50 phase-histogram series, 18 round-histogram series, and 5 slow-phase
+counters per store/fallback. Queues exist only for configured stores. For six single-Store Engine Pods, the upper bound is **1,548 series** for these diagnostics.
 Series are created on observation. Other metrics and historical Pod churn are
 outside this budget. A regression test exports both Prometheus text and
 OpenMetrics with 1, 3, and 16 label values to enforce the collector budget; it also checks that
@@ -176,49 +163,30 @@ See the [configuration reference](configuration.md) for listener settings.
 
 ## Memory capacity and KEDA
 
-The CLI's shared allocator replaces speculative execution/forwarding admission.
-Use these metrics for the new policy; legacy execution/Scan/publishing and
-Gateway reservation gauges describe the old allocator and must not drive new
-capacity decisions. Existing RPC, backend, Kafka and batch queue metrics remain
-useful. Every memory series has bounded `role` and `store` labels (Gateway's
-store is empty).
+Each process exports its watermark guard with bounded `role` and `store` labels
+(Gateway's Store label is empty). Allocation/lease, burst reserve, opaque driver
+allowance and waiting-allocation metrics have been removed.
 
 | Metric | Type | Additional labels / meaning |
 | --- | --- | --- |
-| `sink_memory_capacity_bytes` | gauge | `pool=normal,burst`; sum is configured or detected managed capacity |
-| `sink_memory_used_bytes` | gauge | `pool=normal,burst`; held input, result, copies and driver capacity, not RSS |
-| `sink_memory_opaque_reserved_bytes` | gauge | Temporary driver allowance included in used bytes; do not add it again |
-| `sink_memory_waiting_bytes` | gauge | `phase=request,response`; additional requested allocation bytes |
-| `sink_memory_waiting_requests` | gauge | `phase`; waiting acquisitions, not a concurrency limit |
-| `sink_memory_oldest_wait_seconds` | gauge | `phase`; zero when idle |
-| `sink_memory_burst_borrowers` | gauge | Zero or one completion owner |
-| `sink_memory_admitted_total` | counter | `phase`; successful acquisitions |
-| `sink_memory_rejected_total` | counter | `phase`, `reason=busy,oversize,wait_timeout` |
-| `sink_memory_wait_seconds` | histogram | `phase`, `outcome=admitted,canceled`; timed-out waits count as canceled |
-| `sink_memory_capacity_source_info` | gauge | `source=configured,gomemlimit,cgroup,host,fallback` |
+| `sink_memory_limit_bytes` | gauge | Effective process ceiling |
+| `sink_memory_used_bytes` | gauge | `source=rss,go_runtime`; observed process usage |
+| `sink_memory_watermark_bytes` | gauge | `watermark=high,low`; reject and recovery thresholds |
+| `sink_memory_pressure` | gauge | 1 while new work is blocked; otherwise 0 |
+| `sink_memory_admitted_total` | counter | Requests admitted at Gateway/Engine entry |
+| `sink_memory_rejected_total` | counter | Requests rejected before execution |
+| `sink_memory_limit_source_info` | gauge | `source=configured,gomemlimit,cgroup,host,fallback` |
 
-Waiting and rejection series include idle zeros. Request admission fails
-immediately if full, so request wait gauges normally stay zero. Response wait
-bytes represent outstanding demand; retries can contribute repeated acquisition
-attempts to counters. Oversized allocations are permanent capacity failures and
-should not trigger autoscaling through a rejection-rate metric.
+Worker uses the pressure gauge and Kafka lag; its poll pause is not a rejected RPC.
+Usage is sampled at most once per 100 ms. It includes resident memory retained by
+the runtime and does not return to zero when requests finish. The fallback Go
+runtime measurement excludes some native allocations. See [memory policy](design/demand-based-admission.md).
 
-The [KEDA example](../examples/autoscaling/memory-keda.yaml) uses two signals:
-held plus pending bytes divided by ordinary fleet capacity, and the recent
-fraction of temporary request refusals. Both use `metricType: Value` because they
-are fleet ratios. Scope every selector to exactly one Deployment, role and, for
-Engines/Workers, Store. Do not combine Gateway and Engine capacity or use raw
-monotonic counters as scaling values. Keep Worker Kafka lag triggers as well.
+The [KEDA example](../examples/autoscaling/memory-keda.yaml) uses observed usage
+divided by the fleet's high watermarks, plus the recent fraction of refused RPCs.
+Both use `metricType: Value` for fleet ratios. Scope selectors to one Deployment,
+role and Store. Keep Worker Kafka lag triggers. Missing scrapes are scaler errors,
+not zero pressure; retain nonzero replica floors and monitor target health.
 
-Replace example job/namespace names with the actual scrape labels. The capacity
-query rejects incomplete scrapes rather than interpreting missing capacity as
-idle; `ignoreNullValues: "false"` makes missing data a scaler error. Maintain
-nonzero synchronous replica floors and monitor Prometheus target health.
-See KEDA's [Prometheus scaler](https://keda.sh/docs/2.18/scalers/prometheus/) and
-[metric types](https://keda.sh/docs/2.18/reference/scaledobject-spec/).
-
-Monitor `process_resident_memory_bytes` and Go heap metrics alongside these
-series. Managed ownership is not GC reclamation or RSS: ingress decoding,
-Kafka buffering, Lua and runtime objects require the automatic sizing headroom.
-A high opaque-reservation share identifies MongoDB wire protection rather than
-large logical response quotas.
+Monitor `process_resident_memory_bytes` and Go heap metrics alongside these signals.
+Watermarks reduce overload but do not reserve memory for already admitted work.

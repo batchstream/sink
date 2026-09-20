@@ -28,11 +28,12 @@ type deadLetterReport struct {
 
 func runDeadLetterCommand(args []string, stdout io.Writer, stderr io.Writer) error {
 	if len(args) == 0 || (args[0] != "inspect" && args[0] != "replay") {
-		return errors.New("usage: sink dlq inspect|replay --config FILE --store NAME --partition N --offset N --count N")
+		return errors.New("usage: sink dlq inspect|replay --config FILE --store-config FILE --store NAME --partition N --offset N --count N")
 	}
 	flags := flag.NewFlagSet("dlq "+args[0], flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	configPath := flags.String("config", "", "server configuration")
+	storePath := flags.String("store-config", "", "shared Store configuration")
 	store := flags.String("store", "", "configured store")
 	partition := flags.Int("partition", -1, "exact dead-letter partition")
 	offset := flags.Int64("offset", -1, "first dead-letter offset")
@@ -43,7 +44,7 @@ func runDeadLetterCommand(args []string, stdout io.Writer, stderr io.Writer) err
 	if flags.NArg() != 0 || *configPath == "" || *store == "" || *partition < 0 || *partition > 1<<31-1 || *offset < 0 || *count < 1 || *count > 100 {
 		return errors.New("config, store, partition, offset, and a count between 1 and 100 are required")
 	}
-	loaded, err := config.Load(*configPath)
+	loaded, err := config.Load(*configPath, *storePath)
 	if err != nil {
 		return err
 	}
@@ -53,7 +54,7 @@ func runDeadLetterCommand(args []string, stdout io.Writer, stderr io.Writer) err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	selection := queuekafka.DeadLetterRange{Brokers: selected.Kafka.Brokers, Topic: selected.Kafka.DeadLetter.Topic,
+	selection := queuekafka.DeadLetterRange{Brokers: selected.Kafka.Brokers, Topic: selected.Kafka.DeadLetter.Name,
 		Partition: int32(*partition), Offset: *offset, Count: *count}
 	records, err := queuekafka.ReadDeadLetters(ctx, selection)
 	if err != nil {
@@ -66,7 +67,7 @@ func runDeadLetterCommand(args []string, stdout io.Writer, stderr io.Writer) err
 			return err
 		}
 		opts := queuekafka.PublisherOptions{Brokers: selected.Kafka.Brokers, Topic: selected.Kafka.Topic.Name,
-			MaxRecordBytes: selected.Kafka.Topic.MaxRecordBytes, MaxBufferedBytes: selected.Kafka.Producer.MaxBufferedBytes}
+			MaxRecordBytes: selected.Kafka.MaxRecordBytes, MaxBufferedBytes: selected.Kafka.Producer.MaxBufferedBytes}
 
 		publisher, err := queuekafka.NewPublisher(opts)
 		if err != nil {

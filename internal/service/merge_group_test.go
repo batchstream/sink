@@ -140,11 +140,11 @@ func TestMergeFoldingBoundsConflictAttemptsAndOutput(t *testing.T) {
 			want := sink.FailureCode_FAILURE_CODE_CONFLICT
 			wantWrites := int64(2)
 			if scenario == "output" {
-				want = sink.FailureCode_FAILURE_CODE_RESOURCE_EXHAUSTED
-				wantWrites = 0
+				want = sink.FailureCode_FAILURE_CODE_UNSPECIFIED
+				wantWrites = 1
 			}
 			for _, result := range response.Results {
-				if result.GetFailure().GetCode() != want || result.Status == sink.WriteStatus_WRITE_STATUS_APPLIED {
+				if result.GetFailure().GetCode() != want || (scenario == "conflict" && result.Status == sink.WriteStatus_WRITE_STATUS_APPLIED) || (scenario == "output" && result.Status != sink.WriteStatus_WRITE_STATUS_APPLIED) {
 					t.Fatalf("bounded result = %v, want %v", result, want)
 				}
 			}

@@ -9,12 +9,6 @@ import (
 
 const maxFailureMessageBytes = 1024
 
-// Reserve error text as well as result envelopes before parsing or executing.
-// This also covers failures derived from stored documents, not just RPC input.
-func failureResponseBytes(operations int) int {
-	return operations * (maxFailureMessageBytes + 128)
-}
-
 func failureMessageLimit(operations, maximum int) int {
 	// Even tiny document quotas must retain a nonempty protocol diagnostic.
 	return min(maxFailureMessageBytes, max(1, maximum/max(1, operations)-128))

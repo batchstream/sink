@@ -92,7 +92,7 @@ func nativeStatus(err error) error {
 }
 
 func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.ExecuteResponse, error) {
-	maximum := forwarding.FromContext(ctx).Limit(forwarding.Outputs, s.maxReadBytes)
+	maximum := forwarding.FromContext(ctx).Limit(forwarding.Returns, s.maxReadBytes)
 	if maximum <= 0 {
 		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
 	}
@@ -107,13 +107,6 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 	if !ok {
 		return nil, nativeStatus(storage.ErrNativeUnsupported)
 	}
-	admission := admissionRequest{encodedBytes: nativeExecutionBytes(req.GetCommand(), request), stores: []string{protocol.CommandStore(req.GetCommand())}}
-	admission.inputBytes = req.SizeVT()
-	ctx, release, err := s.admitRequest(ctx, admission)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
 	result, err := backend.Execute(ctx, request)
 	if err != nil {
 		return nil, nativeStatus(err)
@@ -147,17 +140,13 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 }
 
 func (s *Server) Scan(ctx context.Context, req *sink.ScanRequest) (*sink.ScanResponse, error) {
-	maximum := forwarding.FromContext(ctx).Limit(forwarding.Outputs, s.maxReadBytes)
+	maximum := forwarding.FromContext(ctx).Limit(forwarding.Returns, s.maxReadBytes)
 	if maximum <= 0 {
 		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
 	}
 	if err := protocol.CheckStore(req, s.boundStore); err != nil {
 		return nil, err
 	}
-	// Admission and backend execution share one page deadline, even when the
-	// caller did not provide one. Admission has an additional, shorter bound.
-	ctx, cancel := context.WithTimeout(ctx, s.requestTimeout)
-	defer cancel()
 	maximum = min(maximum, 4<<20)
 	request, err := nativeRequest(req.GetCommand(), maximum)
 	if err != nil {
@@ -181,17 +170,6 @@ func (s *Server) Scan(ctx context.Context, req *sink.ScanRequest) (*sink.ScanRes
 	if !ok {
 		return nil, nativeStatus(storage.ErrNativeUnsupported)
 	}
-	encodedBytes := nativeExecutionBytes(req.GetCommand(), request) + req.SizeVT() - req.GetCommand().SizeVT()
-	mediaType, _, _ := mime.ParseMediaType(request.ContentType)
-	if mediaType != "application/bson" {
-		encodedBytes += 2 * (storage.ScanBackendBytes(maximum) - maximum)
-	}
-	admission := admissionRequest{encodedBytes: encodedBytes, inputBytes: req.SizeVT(), stores: []string{protocol.CommandStore(req.GetCommand())}, scan: true, wait: true}
-	ctx, release, err := s.admitRequest(ctx, admission)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
 	if _, err := scan.Resume(); err != nil {
 		return nil, nativeStatus(err)
 	}
@@ -216,17 +194,6 @@ func (s *Server) Scan(ctx context.Context, req *sink.ScanRequest) (*sink.ScanRes
 		return nil, status.Error(codes.ResourceExhausted, "scan response exceeds byte limit")
 	}
 	return response, nil
-}
-
-func nativeExecutionBytes(req *sink.Command, request storage.NativeRequest) int {
-	bytes := req.SizeVT() + 16 + 2*request.MaxBytes
-	mediaType, _, _ := mime.ParseMediaType(request.ContentType)
-	if mediaType == "application/bson" {
-		// The driver receives a complete wire message before Sink can enforce
-		// its smaller document/page limit. Account for its 48 MiB wire ceiling.
-		bytes += 48 << 20
-	}
-	return bytes
 }
 
 func (s *BatchingServer) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.ExecuteResponse, error) {

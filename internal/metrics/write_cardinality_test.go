@@ -35,7 +35,7 @@ func TestWriteDiagnosticsSeriesBudget(t *testing.T) {
 			names = append(names, "_multiple", "_unconfigured")
 			for _, store := range names {
 				for _, mode := range []sink.CompletionMode{sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE} {
-					for _, phase := range []string{"admission", "parse", "storage_read", "lua", "storage_write"} {
+					for _, phase := range []string{"parse", "storage_read", "lua", "storage_write"} {
 						observation := sinkmetrics.WritePhaseObservation{Store: store, Completion: mode, Phase: phase, Duration: 12 * time.Second}
 						observed.ObserveWritePhase(observation)
 					}
@@ -74,9 +74,9 @@ func TestWriteDiagnosticsSeriesBudget(t *testing.T) {
 				wanted := map[string]int{
 					"sink_batcher_request_queue_duration_seconds": 30 * stores,
 					"sink_batcher_request_queue_exits_total":      9 * stores,
-					"sink_write_phase_duration_seconds":           60 * (stores + 2),
+					"sink_write_phase_duration_seconds":           50 * (stores + 2),
 					"sink_write_execution_rounds":                 18 * (stores + 2),
-					"sink_write_slow_phases_total":                6 * (stores + 2),
+					"sink_write_slow_phases_total":                5 * (stores + 2),
 				}
 				total := 0
 				for name, count := range counts {
@@ -85,7 +85,7 @@ func TestWriteDiagnosticsSeriesBudget(t *testing.T) {
 						t.Errorf("%s: %s has %d series, budget %d", accept, name, count, wanted[name])
 					}
 				}
-				if len(counts) != len(wanted) || total != 123*stores+168 || strings.Contains(body, "unbounded-") {
+				if len(counts) != len(wanted) || total != 112*stores+146 || strings.Contains(body, "unbounded-") {
 					t.Fatalf("%s: unexpected series cardinality: %v, total %d", accept, counts, total)
 				}
 				t.Logf("%s: %d configured stores, %d added series per Pod", accept, stores, total)

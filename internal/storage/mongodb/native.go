@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/liran/sink-go/uri"
-	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/storage"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -113,11 +112,6 @@ func (s *Store) validateNativeCommand(req storage.NativeRequest, scan bool) (str
 
 func (s *Store) Execute(ctx context.Context, req storage.NativeRequest) (storage.NativeResponse, error) {
 	var empty storage.NativeResponse
-	wire, err := acquireWireMemory(ctx)
-	if err != nil {
-		return empty, storage.ResourceExhaustedError(err)
-	}
-	defer capacity.Close(wire)
 	database, command, err := s.validateNativeCommand(req, false)
 	if err != nil {
 		return empty, storage.InvalidArgumentError(err)
@@ -143,7 +137,7 @@ func (s *Store) Execute(ctx context.Context, req storage.NativeRequest) (storage
 		}
 		return empty, storage.BackendError(err)
 	}
-	budget := storage.NewResponseBudget(ctx, req.MaxBytes)
+	budget := storage.NewReadBudget(req.MaxBytes)
 	if budgetErr := budget.Reserve(len(raw)); budgetErr != nil {
 		return empty, budgetErr
 	}
@@ -192,10 +186,8 @@ func (s *Store) scanDocuments(ctx context.Context, req storage.ScanRequest, send
 	}()
 	batch := make([]storage.Document, 0, req.BatchSize)
 	// Count consumes each page synchronously; these documents never become RPC
-	// output. Reuse a working-set lease after the visitor discards a page.
-	lease := capacity.FromContext(ctx).NewLease()
-	defer capacity.Close(lease)
-	budget := storage.WithMemoryBudget(ctx, storage.NewReadBudget(req.Request.MaxBytes), lease)
+	// output. Discard each page before reading the next.
+	budget := storage.NewReadBudget(req.Request.MaxBytes)
 	for cursor.Next(ctx) {
 		if err := budget.Reserve(len(cursor.Current)); err != nil {
 			if len(batch) == 0 {
@@ -204,11 +196,8 @@ func (s *Store) scanDocuments(ctx context.Context, req storage.ScanRequest, send
 			if err := send(batch); err != nil {
 				return err
 			}
-			if lease != nil {
-				lease.Shrink(lease.Bytes())
-			}
 			batch = make([]storage.Document, 0, req.BatchSize)
-			budget = storage.WithMemoryBudget(ctx, storage.NewReadBudget(req.Request.MaxBytes), lease)
+			budget = storage.NewReadBudget(req.Request.MaxBytes)
 			if err := budget.Reserve(len(cursor.Current)); err != nil {
 				return err
 			}
@@ -219,11 +208,8 @@ func (s *Store) scanDocuments(ctx context.Context, req storage.ScanRequest, send
 			if err := send(batch); err != nil {
 				return err
 			}
-			if lease != nil {
-				lease.Shrink(lease.Bytes())
-			}
 			batch = make([]storage.Document, 0, req.BatchSize)
-			budget = storage.WithMemoryBudget(ctx, storage.NewReadBudget(req.Request.MaxBytes), lease)
+			budget = storage.NewReadBudget(req.Request.MaxBytes)
 		}
 	}
 	if err := cursor.Err(); err != nil {

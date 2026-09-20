@@ -110,7 +110,7 @@ request mixes, and latency targets.
 
 ## Store name identity follow-up
 
-The configured identity is now only `storage.name` (Gateway routes use `store`).
+The configured identity is now only Store file `name` (Gateway routes use `store`).
 Local race tests cover duplicate route names, configuration changes taking effect
 only after restart, and rejection of old forwarding versions
 or mismatched envelope/operation Stores before writes. The public protobuf is

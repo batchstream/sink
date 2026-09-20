@@ -8,11 +8,11 @@ is always active; every single-store `Read` uses this path. `Write` and
 mutations. Read, write, and delete have independent queues within each store.
 A slow batch therefore does not block another method or another store.
 
-`service.batching` configures batch and queue limits; batching cannot be disabled.
-Remove the former `service.batching.enabled` field from existing configurations.
+`batching` configures batch and queue limits; batching cannot be disabled.
+Remove the former `batching.enabled` field from existing configurations.
 The strict configuration parser rejects it as an unknown field for either value.
 
-The first queued request starts `service.batching.max_wait`.
+The first queued request starts `batching.max_wait`.
 Collection stops when that timer expires or adding another request would cross
 the operation or encoded-byte target. A single valid RPC larger than a batch
 target still runs alone. Automatic mutation batches combine only RPCs sharing
@@ -26,7 +26,7 @@ Puts and Merges fold within a group; repeated Reads and Deletes execute once per
 full address. Executions use their live callers' deadlines and cancellation signals.
 
 Write/Delete dispatchers can collect and execute later batches while an earlier
-batch waits for refresh. Active batches acquire from the shared memory pool;
+batch waits for refresh. New RPCs pass the process memory watermark check;
 there is no separate request concurrency cap. Record
 dependencies cover both active and queued RPCs: an RPC touching several records
 waits for every predecessor, while unrelated RPCs may pass it. Ordering does not
@@ -45,9 +45,6 @@ caller touching it has finished its remaining operations for that address,
 even if their RPCs still contain other unfinished documents. Caller cancellation
 alone does not release an executing document. Backend bulk calls still return
 together; Sink cannot acknowledge an item whose backend result is not yet known.
-Producer references retain input until execution finishes. Each caller retains
-its output through transport completion, so early completion cannot release
-still-owned memory.
 
 Gateway splits cross-Store requests before forwarding them. Engine accepts only its
 bound Store and never bypasses that check through the batching layer. Budget-sensitive
@@ -60,20 +57,16 @@ new single-store request that would cross its queue's limit fails with gRPC
 `RESOURCE_EXHAUSTED` and is not applied. Requests canceled before dispatch are
 omitted. Once a batch is dispatched, other live callers in that batch continue
 even if one caller cancels. Once all callers cancel, execution is cancelled too.
-Execution is capped by the server request timeout even without caller deadlines.
-Dispatched micro-batches acquire known working allocations from the shared
-`memory` pool. Response growth has priority over new arrivals and may borrow its
-completion reserve. Request entry fails if ordinary capacity is unavailable;
-already admitted queue entries retain their input charge. Async publication
-uses the same memory pool; Kafka producer buffers keep their separate bounds.
-
-Each original RPC retains its snapshot/input/output/returned-document quotas
-across chunks, retries and shared-key folding. A full read working set defers
-records without consuming caller quota; conditional write chunks retain earlier
-successful results. Returned documents acquire capacity before their commit.
-Batch splitting uses known request sizes and actual working allocations, rather
-than maximum legal responses per caller. Graceful shutdown drains gRPC calls
-before stopping batch dispatchers. See [memory admission](design/demand-based-admission.md).
+Execution follows the callers' deadlines and cancellation; there is no default
+whole-request timeout.
+Admitted batches continue through memory pressure. The entire collected batch
+executes without independent snapshot/output byte quotas or memory-based splitting.
+Record dependencies and adapter/completion grouping still apply. Public response
+allowances remain per original RPC; returned documents must fit the gRPC ceiling
+before their own commit. Kafka producer buffers and Lua sandbox limits remain.
+Queue limits count waiting work only, excluding dispatched batches. Graceful
+shutdown drains gRPC calls before stopping batch dispatchers.
+See [memory admission](design/demand-based-admission.md).
 
 Batching happens only among requests for the same store reaching the same Sink
 process. More pods increase aggregate queue and storage concurrency, but they
@@ -82,3 +75,24 @@ scheduling, and serialization overhead and are therefore more efficient when
 the caller already has several records available.
 
 See the [configuration reference](configuration.md) for all settings.
+
+## Default selection
+
+`batching.max_operations` defaults to **32**, with a **2 ms** collection wait.
+These are a starting point for small documents and modest concurrency, based on
+the [historical Kubernetes measurements](https://github.com/batchstream/sink/blob/ec7264f25690088aac767a027d61b17753d08d99/docs/production-sizing.md#observed-small-document-ceilings)
+and their [raw results](https://github.com/batchstream/sink/blob/ec7264f25690088aac767a027d61b17753d08d99/benchmarks/kubernetes/results/eks-arm64.csv).
+At 128 clients, the 32-operation target improved both throughput and P99 over
+128 for MongoDB and OpenSearch. At 512 clients, 128 performed better. These
+measurements used the earlier shared-server architecture and fixed CPU/memory
+budgets; they do not establish a universal optimum for the current Engine.
+
+The batch target is independent of Gateway's **1,000-operation** public RPC
+limit and each method's **10,000-operation** waiting queue. A valid explicit
+RPC with more than 32 operations executes alone; it is not rejected or split
+into different public requests by this default change.
+
+Memory watermarks default to 80% for rejection and 70% for recovery. They are
+operational starting points, not benchmark-derived optima. Queue, byte,
+backend-concurrency and Kafka-consumer defaults also require workload-specific
+validation. Historical response caps and GC settings are not universal defaults.

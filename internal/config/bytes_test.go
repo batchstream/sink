@@ -51,7 +51,7 @@ func TestByteSizeRejectsAmbiguousLossyAndOverflowValues(t *testing.T) {
 		"9223372036854775808B", "8388608TiB", "9223372036854775808",
 	} {
 		t.Run(input, func(t *testing.T) {
-			_, err := Decode(strings.NewReader(minimalStorage + "grpc:\n  max_receive_message_bytes: " + input + "\n"))
+			_, err := Decode(strings.NewReader("mode: engine\ngrpc:\n  max_receive_message_bytes: "+input+"\n"), strings.NewReader(minimalStorage))
 			if err == nil || !strings.Contains(err.Error(), "byte size") {
 				t.Fatalf("expected actionable byte size error, got %v", err)
 			}
@@ -60,59 +60,24 @@ func TestByteSizeRejectsAmbiguousLossyAndOverflowValues(t *testing.T) {
 }
 
 func TestAllByteLimitsAcceptHumanReadableUnits(t *testing.T) {
-	input := minimalStorage + `  kafka:
-    topic:
-      max_record_bytes: 900KiB
-    producer:
-      max_buffered_bytes: 64MiB
-grpc:
-  max_receive_message_bytes: 64MiB
-  max_send_message_bytes: 64MiB
-service:
-  request:
-    max_read_bytes: 16MiB
-  execution:
-    max_bytes: 256MiB
-    scan:
-      max_bytes: 128MiB
-  publish:
-    max_bytes: 256MiB
-  batching:
-    max_bytes: 16MiB
-    queue:
-      max_bytes: 128MiB
-  merge:
-    lua:
-      max_source_bytes: 64KiB
-      max_result_bytes: 16MiB
+	input := `mode: engine
+memory: {max_bytes: 256MiB}
+producer: {max_buffered_bytes: 64MiB}
+batching: {max_bytes: 16MiB, queue: {max_bytes: 128MiB}}
+execution:
+ merge:
+  lua: {max_source_bytes: 64KiB, max_result_bytes: 16MiB}
 `
-	human, err := Decode(strings.NewReader(input))
+	human, err := Decode(strings.NewReader(input), strings.NewReader(kafkaStore))
 	if err != nil {
 		t.Fatal(err)
 	}
-	numeric := strings.NewReplacer("64MiB", "67108864", "900KiB", "921600", "16MiB", "16777216", "256MiB", "268435456", "128MiB", "134217728", "64KiB", "65536").Replace(input)
-	bytes, err := Decode(strings.NewReader(numeric))
+	numeric := strings.NewReplacer("64MiB", "67108864", "16MiB", "16777216", "256MiB", "268435456", "128MiB", "134217728", "64KiB", "65536").Replace(input)
+	bytes, err := Decode(strings.NewReader(numeric), strings.NewReader(kafkaStore))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(human, bytes) {
-		t.Fatal("human-readable limits changed resolved configuration values")
-	}
-}
-
-func TestHumanReadableSizesStillEnforceResourceLimits(t *testing.T) {
-	for _, section := range []string{
-		"request:\n    max_read_bytes: 33MiB",
-		"execution:\n    max_bytes: 17GiB",
-		"execution:\n    scan:\n      max_bytes: 257MiB",
-		"publish:\n    max_bytes: 17GiB",
-		"batching:\n    queue:\n      max_bytes: 63MiB",
-		"merge:\n    lua:\n      max_source_bytes: 0B",
-		"request:\n    max_operations: 1KiB",
-	} {
-		_, err := Decode(strings.NewReader(minimalStorage + "service:\n  " + section + "\n"))
-		if err == nil {
-			t.Fatalf("invalid resource limit accepted: %s", section)
-		}
+		t.Fatal("byte units changed configuration")
 	}
 }

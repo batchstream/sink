@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/storage"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -35,11 +35,9 @@ type apiResponse struct {
 	statusCode int
 	body       []byte
 	headers    http.Header
-	memory     *capacity.Lease
 }
 
 func (r *apiResponse) close() {
-	capacity.Close(r.memory)
 	r.body = nil
 }
 
@@ -140,20 +138,17 @@ func (s *Store) performOnce(ctx context.Context, opts requestOptions, endpoint *
 	if opts.maxBytes > 0 {
 		maximum = min(maximum, opts.maxBytes)
 	}
-	lease := capacity.FromContext(ctx).NewLease()
-	body, err := capacity.ReadAll(ctx, httpResponse.Body, maximum+1, lease)
+	body, err := io.ReadAll(io.LimitReader(httpResponse.Body, maximum+1))
 	if err != nil {
-		capacity.Close(lease)
 		if status.Code(err) == codes.ResourceExhausted {
 			return empty, storage.ResourceExhaustedError(err)
 		}
 		return empty, storage.BackendError(err)
 	}
 	if int64(len(body)) > maximum {
-		capacity.Close(lease)
 		return empty, fmt.Errorf("%w: %s maximum is %d bytes", errResponseTooLarge, s.driver, maximum)
 	}
-	response := apiResponse{statusCode: httpResponse.StatusCode, body: body, headers: httpResponse.Header.Clone(), memory: lease}
+	response := apiResponse{statusCode: httpResponse.StatusCode, body: body, headers: httpResponse.Header.Clone()}
 	return response, nil
 }
 

@@ -6,10 +6,10 @@ import (
 	"time"
 )
 
-const loggingBase = "mode: engine\nstorage:\n  name: primary\n  driver: mongodb\n  mongodb:\n    uri: mongodb://localhost:27017\n"
+const loggingBase = "mode: engine\n"
 
 func TestLoggingDefaults(t *testing.T) {
-	loaded, err := Decode(strings.NewReader(loggingBase))
+	loaded, err := Decode(strings.NewReader(loggingBase), strings.NewReader(minimalStorage))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestLoggingRejectsInvalidSettings(t *testing.T) {
 	}
 	for _, fragment := range cases {
 		t.Run(fragment, func(t *testing.T) {
-			_, err := Decode(strings.NewReader(loggingBase + "logging:\n  " + fragment + "\n"))
+			_, err := Decode(strings.NewReader(loggingBase+"logging:\n  "+fragment+"\n"), strings.NewReader(minimalStorage))
 			if err == nil {
 				t.Fatal("accepted invalid logging configuration")
 			}
@@ -61,7 +61,7 @@ func TestLoggingExplicitOptions(t *testing.T) {
     export_timeout: 4s
     shutdown_timeout: 6s
 `
-	loaded, err := Decode(strings.NewReader(yaml))
+	loaded, err := Decode(strings.NewReader(yaml), strings.NewReader(minimalStorage))
 	if err != nil {
 		t.Fatal(err)
 	}

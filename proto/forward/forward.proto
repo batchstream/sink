@@ -13,11 +13,11 @@ service Engine {
   rpc ForwardStream(ForwardRequest) returns (stream ResponseFrame);
 }
 
-// Independent logical document budgets, including per-record envelope charges.
+// Public response allowance, including per-record envelope charges.
+// Intermediate allocations are owned by each process memory pool.
 message Budget {
-  uint64 snapshots = 1;
-  uint64 inputs = 2;
-  uint64 outputs = 3;
+  reserved 1, 2, 3;
+  reserved "snapshots", "inputs", "outputs";
   uint64 returns = 4;
 }
 

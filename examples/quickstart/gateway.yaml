@@ -1,25 +1,30 @@
 mode: gateway
 grpc:
   address: ":8080"
+  max_receive_message_bytes: 64MiB
+  max_send_message_bytes: 64MiB
+memory:
+  # max_bytes: 1GiB # Optional process ceiling; bounded by detected limits.
+  high_watermark_percent: 80 # Reject new work at this process memory usage.
+  low_watermark_percent: 70 # Resume new work after usage falls to this level.
+request:
+  max_operations: 1000 # Entire client request across all Stores.
+forwarding:
+  routes:
+    - store: primary
+      target: dns:///engine:8080
+      tls:
+        insecure: true # Example trusted plaintext network.
+        server_name: ""
+  dns_refresh_interval: 30s
+  idle_timeout: 5m
+  max_connections: 256
+  max_fanout: 8
+
 health:
   address: ":8081"
 prometheus:
   enabled: true
   address: ":9090"
-gateway:
-  routes: # Store routes are loaded only at startup; restart after changes.
-    - store: primary
-      target: dns:///engine:8080
-      tls:
-        insecure: true # Local Compose network; use TLS termination in production.
-  dns_refresh_interval: 30s
-  idle_timeout: 5m
-  max_connections: 256
-  max_requests: 128
-  max_bytes: 256MiB
-  max_fanout: 8
-service:
-  request:
-    timeout: 30s
-    max_operations: 1000
-    max_read_bytes: 32MiB
+shutdown_timeout: 15s
+logging: {level: warn}

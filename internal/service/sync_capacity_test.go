@@ -27,15 +27,11 @@ func TestSynchronousSmallMergesShareBoundedWorkingSet(t *testing.T) {
 	if backend.reads.Load() != 1 || backend.writes.Load() != 1 {
 		t.Fatalf("small records split by hypothetical document size: reads=%d writes=%d", backend.reads.Load(), backend.writes.Load())
 	}
-	if server.server.inFlightBytes != 0 || server.server.inFlightRequests != 0 {
-		t.Fatal("working capacity leaked")
-	}
 }
 
-func TestReturnedPutsShareKnownDocumentReservation(t *testing.T) {
+func TestReturnedPutsKeepCollectedBatch(t *testing.T) {
 	backend := &syncCapacityStorage{Storage: memory.New()}
 	server := completionServer(t, backend)
-	server.server.maxInFlightBytes = 128 << 20
 	calls := make([]*batchCall[*sink.WriteRequest, *sink.WriteResponse], 128)
 	for index := range calls {
 		operation := completionPut(fmt.Sprintf("returned-%d", index), index)
@@ -50,12 +46,9 @@ func TestReturnedPutsShareKnownDocumentReservation(t *testing.T) {
 			t.Fatalf("returned Put %d lost its document: %v, %v", index, result.response, result.err)
 		}
 	}
-	if backend.writes.Load() != 1 || server.server.inFlightBytes != 0 {
-		t.Fatalf("known small results fragmented a batch: writes=%d retained=%d", backend.writes.Load(), server.server.inFlightBytes)
-	}
 }
 
-func TestSynchronousMergeStreamsLargeSnapshotsAndOutputs(t *testing.T) {
+func TestSynchronousMergeProcessesCollectedSnapshotsAndOutputs(t *testing.T) {
 	for _, scenario := range []string{"snapshots", "outputs", "conflicts", "returns"} {
 		t.Run(scenario, func(t *testing.T) {
 			memoryStore := memory.New()
@@ -65,6 +58,7 @@ func TestSynchronousMergeStreamsLargeSnapshotsAndOutputs(t *testing.T) {
 			}
 			server := completionServer(t, backend)
 			server.server.maxReadBytes = 1024
+
 			var calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]
 			for index := range 8 {
 				key := fmt.Sprintf("record-%d", index)
@@ -106,17 +100,18 @@ func TestSynchronousMergeStreamsLargeSnapshotsAndOutputs(t *testing.T) {
 					t.Fatalf("%s attempted %d times, want %d", key, backend.attempts[key], want)
 				}
 			}
-			if backend.maxWriteBytes > server.server.maxReadBytes {
-				t.Fatalf("output chunk grew beyond working set: %d", backend.maxWriteBytes)
+			if backend.maxWriteBytes <= server.server.maxReadBytes {
+				t.Fatalf("batch was split by the response byte limit: %d", backend.maxWriteBytes)
 			}
 		})
 	}
 }
 
-func TestSynchronousChunksKeepCallerQuotaAndSharedRecordIsolation(t *testing.T) {
+func TestSynchronousMergesProcessEntireRequestAndSharedRecord(t *testing.T) {
 	backend := memory.New()
 	server := completionServer(t, backend)
 	server.server.maxReadBytes = 400
+
 	for _, key := range []string{"a", "b"} {
 		address, err := protocol.ParseAddress(completionAddress(key))
 		if err != nil {
@@ -130,13 +125,13 @@ func TestSynchronousChunksKeepCallerQuotaAndSharedRecordIsolation(t *testing.T) 
 	second := completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, completionMerge("b", 1))
 	calls := []*batchCall[*sink.WriteRequest, *sink.WriteResponse]{first, second}
 	server.executeWrites(t.Context(), calls)
-	oversized := awaitCompletion(t, first.result)
+	firstResult := awaitCompletion(t, first.result)
 	healthy := awaitCompletion(t, second.result)
-	if oversized.err != nil || healthy.err != nil {
-		t.Fatalf("chunk errors: %v, %v", oversized.err, healthy.err)
+	if firstResult.err != nil || healthy.err != nil {
+		t.Fatalf("chunk errors: %v, %v", firstResult.err, healthy.err)
 	}
-	if oversized.response.Results[0].Status != sink.WriteStatus_WRITE_STATUS_APPLIED || oversized.response.Results[1].GetFailure().GetCode() != sink.FailureCode_FAILURE_CODE_RESOURCE_EXHAUSTED {
-		t.Fatalf("original caller quota reset across chunks: %v", oversized.response)
+	if firstResult.response.Results[0].Status != sink.WriteStatus_WRITE_STATUS_APPLIED || firstResult.response.Results[1].Status != sink.WriteStatus_WRITE_STATUS_APPLIED {
+		t.Fatalf("request was limited by an intermediate quota: %v", firstResult.response)
 	}
 	if healthy.response.Results[0].Status != sink.WriteStatus_WRITE_STATUS_APPLIED {
 		t.Fatal(healthy.response)
@@ -148,8 +143,8 @@ func TestSynchronousChunksKeepCallerQuotaAndSharedRecordIsolation(t *testing.T) 
 	operation := storage.ReadOperation{Address: address}
 	request := storage.ReadRequest{Operations: []storage.ReadOperation{operation}}
 	read, err := backend.Read(t.Context(), request)
-	if err != nil || string(read.Results[0].Document.Payload) != `{"value":1}` {
-		t.Fatalf("failed caller changed shared record: %v, %v", read, err)
+	if err != nil || string(read.Results[0].Document.Payload) != `{"value":101}` {
+		t.Fatalf("folded chain lost a caller: %v, %v", read, err)
 	}
 }
 

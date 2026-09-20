@@ -4,6 +4,7 @@ import (
 	"github.com/liran/sink/internal/storage/memory"
 
 	"context"
+	"slices"
 	"strconv"
 	"sync"
 	"testing"
@@ -30,6 +31,7 @@ func TestBatcherOldBatchCannotReleaseNewOwnerOfCompletedDocument(t *testing.T) {
 		return []recordIdentity{key}
 	}
 	execute := func(ctx context.Context, calls []*batchCall[int, int]) {
+		slices.SortFunc(calls, func(a, b *batchCall[int, int]) int { return a.request - b.request })
 		for _, call := range calls {
 			switch call.request {
 			case 2:

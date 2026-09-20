@@ -17,12 +17,12 @@ flowchart TD
     B --> Q[Gateway routes each Store group to its Engine]
     Q --> C{Requested completion_mode}
     C -->|WAIT_UNTIL_APPLIED / WAIT_UNTIL_VISIBLE| D[Engine in-memory batching]
-    D --> E[Write core: validation, admission control, execution]
+    D --> E[Write core: validation and execution]
     E --> F[Bound Store storage adapter]
     F --> G[MongoDB or Elasticsearch / OpenSearch]
     G --> H[Backend acknowledges; VISIBLE also waits for search visibility]
     H --> I[Client receives APPLIED]
-    C -->|RETURN_AFTER_ACCEPTED| J[Write core: validation, admission control, publish original operation]
+    C -->|RETURN_AFTER_ACCEPTED| J[Write core: validation and publish original operation]
     J --> K[Kafka topic for this store acknowledges acceptance]
     K --> L[Client receives ACCEPTED]
     K --> M[Worker consumes the operation]
@@ -85,15 +85,15 @@ also take time.
 Gateway splits RPCs that span multiple Stores into single-Store groups and
 reassembles their results. Each Engine executes only its own Store group.
 
-**Step 3: The write core parses operations and checks execution capacity.**
+**Step 3: The write core parses the admitted operations.**
 
-The core validates addresses, document encodings and payloads, and write
-actions. It limits in-flight requests and execution bytes for this Engine. Direct
-synchronous requests wait in a bounded admission queue; full queues and requests
-that cannot fit receive `RESOURCE_EXHAUSTED`. Dispatched micro-batches also wait
-within their deadlines.
-Coalesced RPCs retain separate read/output budgets, and execution groups split
-at RPC boundaries when their combined reservations exceed the byte limit.
+Gateway and Engine check process memory watermarks before admitting new work.
+The core validates addresses, document encodings, payloads and write actions.
+Engine's method queues bound waiting operations and encoded input bytes. Dispatched
+batches run as collected, without snapshot/output byte quotas or per-allocation
+reservations. Each original RPC retains its returned-document allowance derived
+from the gRPC send limit. Caller cancellation still stops work when no live caller
+remains; memory pressure alone never cancels an admitted batch.
 
 In this example, Upsert means "write this complete document without requiring
 that the record already exist or be absent." It does not execute Lua or
@@ -105,7 +105,7 @@ The address maps as follows:
 
 | Request field | Meaning in this example |
 | --- | --- |
-| URI Store `primary` | Select the Gateway route for `primary`; its Engine is bound to `storage.name = primary` |
+| URI Store `primary` | Select the Gateway route for `primary`; its Engine is bound to Store file `name: primary` |
 | URI segment `catalog` | MongoDB database `catalog` |
 | URI segment `products` | MongoDB collection `products` |
 | `key = product-42` | MongoDB `_id`, using the string `product-42` |
@@ -263,7 +263,7 @@ another writer has not changed the version since it was read. MongoDB uses
 Sink's internal revision field; search backends use `_seq_no` and
 `_primary_term`. On a definite revision conflict, Sink currently allows
 **3 attempts by default, including the initial attempt**, controlled by
-`service.merge.max_attempts`. Exhaustion produces a retryable `CONFLICT`.
+`execution.merge.max_attempts`. Exhaustion produces a retryable `CONFLICT`.
 A network timeout or lost acknowledgement is not a definite revision
 conflict and does not establish that the previous attempt had no effect.
 
@@ -331,8 +331,7 @@ refresh wait. The two modes can execute concurrently for disjoint addresses
 when capacity permits. A mode change on the same address preserves batch
 collection order by completing the preceding run first. Write/Delete queues
 track these record dependencies across batches as well: later independent RPCs
-can execute while an earlier batch waits for refresh. Execution remains bounded
-by the Engine process capacity limits.
+can execute while an earlier batch waits for refresh. New arrivals remain subject to process memory admission.
 Completed document chains release their queued successors even if the same
 execution still contains other unfinished documents. Conditional/Lua failures
 from speculative state are not final until the chain commits or definitively
@@ -340,7 +339,7 @@ fails. A shared backend bulk still has to return before its results are known.
 
 The Engine's automatic batching across RPCs is always active. Explicit batches,
 operation folding in the core, adapter bulk operations, Kafka consumption
-batches, core admission checks, and backend concurrency limits also apply.
+batches, process memory admission, and backend concurrency limits also apply.
 
 Ordering guarantees have a scope. Within one request, operations for the
 same full address follow input order. With stable partition routing, Kafka
@@ -389,7 +388,7 @@ Use these entry points to keep this guide aligned with future changes:
 | SDK batch splitting and Write RPCs | [sink-go client.go at the reviewed revision](https://github.com/liran/sink-go/blob/a658b054cea20c71f753ce21a5754885fc254318/client.go) |
 | Gateway, Engine, and Worker component wiring | `New` in [app.go](../internal/app/app.go) |
 | Synchronous batching and completion-mode separation | [batching_server.go](../internal/service/batching_server.go), [mutation_batches.go](../internal/service/mutation_batches.go) |
-| Request dispatch, admission control, and Put/Merge execution | `Write` in [server.go](../internal/service/server.go), [admission.go](../internal/service/admission.go), [write.go](../internal/service/write.go) |
+| Request dispatch, admission control, and Put/Merge execution | `Write` in [server.go](../internal/service/server.go), [memory guard](../internal/capacity/guard.go), [write.go](../internal/service/write.go) |
 | Write folding for one document | [write_group.go](../internal/service/write_group.go), [folding contract](merge-folding.md) |
 | Publishing original intent to Kafka | [publish.go](../internal/service/publish.go), [publisher.go](../internal/queue/kafka/publisher.go) |
 | Consumption, retries, DLQ, and offset commits | [worker.go](../internal/queue/kafka/worker.go), [processor.go](../internal/worker/processor.go) |

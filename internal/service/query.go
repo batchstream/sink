@@ -14,7 +14,7 @@ import (
 const maxCountResponseBytes = 256 << 10
 
 func (s *Server) Query(ctx context.Context, req *sink.QueryRequest) (*sink.QueryResponse, error) {
-	maximum := forwarding.FromContext(ctx).Limit(forwarding.Outputs, s.maxReadBytes)
+	maximum := forwarding.FromContext(ctx).Limit(forwarding.Returns, s.maxReadBytes)
 	if maximum <= 0 {
 		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
 	}
@@ -48,14 +48,6 @@ func (s *Server) Query(ctx context.Context, req *sink.QueryRequest) (*sink.Query
 	if !ok {
 		return nil, nativeStatus(storage.ErrNativeUnsupported)
 	}
-	encodedBytes := nativeExecutionBytes(req.GetCommand(), request) + req.SizeVT() - req.GetCommand().SizeVT()
-	admission := admissionRequest{encodedBytes: encodedBytes, stores: []string{protocol.CommandStore(req.GetCommand())}}
-	admission.inputBytes = req.SizeVT()
-	ctx, release, err := s.admitRequest(ctx, admission)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
 	result, err := backend.Query(ctx, query)
 	if err != nil {
 		return nil, nativeStatus(err)
@@ -75,7 +67,7 @@ func (s *Server) Query(ctx context.Context, req *sink.QueryRequest) (*sink.Query
 }
 
 func (s *Server) Count(ctx context.Context, req *sink.CountRequest) (*sink.CountResponse, error) {
-	maximum := forwarding.FromContext(ctx).Limit(forwarding.Outputs, s.maxReadBytes)
+	maximum := forwarding.FromContext(ctx).Limit(forwarding.Returns, s.maxReadBytes)
 	if maximum <= 0 {
 		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
 	}
@@ -83,7 +75,7 @@ func (s *Server) Count(ctx context.Context, req *sink.CountRequest) (*sink.Count
 		return nil, err
 	}
 	// Count retains only totals and bounded backend metadata. Enforce the
-	// smaller buffer in the adapter as well as reserving it at admission.
+	// smaller buffer in the adapter for this bounded scalar response.
 	request, err := nativeRequest(req.GetCommand(), min(maximum, maxCountResponseBytes))
 	if err != nil {
 		return nil, err
@@ -92,13 +84,6 @@ func (s *Server) Count(ctx context.Context, req *sink.CountRequest) (*sink.Count
 	if !ok {
 		return nil, nativeStatus(storage.ErrNativeUnsupported)
 	}
-	admission := admissionRequest{encodedBytes: nativeExecutionBytes(req.GetCommand(), request), stores: []string{protocol.CommandStore(req.GetCommand())}}
-	admission.inputBytes = req.SizeVT()
-	ctx, release, err := s.admitRequest(ctx, admission)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
 	countRequest := storage.CountRequest{Request: request}
 	count, err := backend.Count(ctx, countRequest)
 	if err != nil {

@@ -128,7 +128,17 @@ func TestNewBatchingServerValidatesLimits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewBatchingServer() error = %v", err)
 	}
+	// The smaller automatic batch target must not narrow the public RPC limit.
+	request := &sink.ReadRequest{Operations: make([]*sink.ReadOperation, 1000)}
+	for index := range request.Operations {
+		operation := &sink.ReadOperation{Address: protoAddress(fmt.Sprintf("record-%d", index))}
+		request.Operations[index] = operation
+	}
+	response, readErr := valid.Read(t.Context(), request)
 	valid.Close()
+	if readErr != nil || len(response.GetResults()) != 1000 {
+		t.Fatalf("default batching rejected a valid explicit RPC: %v", readErr)
+	}
 
 	tests := []struct {
 		name    string
@@ -147,10 +157,10 @@ func TestNewBatchingServerValidatesLimits(t *testing.T) {
 			},
 		},
 		{
-			name:   "queue cannot hold one service request",
+			name:   "queue cannot hold one automatic batch",
 			server: core,
 			options: service.BatchingOptions{
-				MaxQueuedOperations: 999,
+				MaxQueuedOperations: 31,
 			},
 		},
 		{

@@ -7,64 +7,94 @@ import (
 	"io"
 	"math"
 	"os"
-	"reflect"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/liran/sink-go/uri"
 	"github.com/liran/sink/internal/capacity"
 	"gopkg.in/yaml.v3"
 )
 
 const MaxFileBytes = 4 << 20
 
-// Load reads one strict YAML document. It never connects to storage or Kafka.
-func Load(path string) (Config, error) {
+// Load reads separate strict component and Store YAML documents. It never connects to storage or Kafka.
+func Load(componentPath, storePath string) (Config, error) {
 	var empty Config
-	file, err := os.Open(path)
+	component, err := os.Open(componentPath)
 	if err != nil {
-		return empty, fmt.Errorf("read config file %q: %w", path, err)
+		return empty, fmt.Errorf("read component config %q: %w", componentPath, err)
 	}
-	defer file.Close()
-	loaded, err := Decode(file)
-	if err != nil {
-		return empty, fmt.Errorf("config file %q: %w", path, err)
+	defer component.Close()
+	var store io.Reader
+	if storePath != "" {
+		file, err := os.Open(storePath)
+		if err != nil {
+			return empty, fmt.Errorf("read Store config %q: %w", storePath, err)
+		}
+		defer file.Close()
+		store = file
 	}
-	return loaded, nil
+	return Decode(component, store)
 }
 
-// Decode resolves defaults and validates the complete configuration before it
-// becomes available to the application. Explicit zero limits are invalid.
-func Decode(reader io.Reader) (Config, error) {
+// Decode validates separate standard YAML documents before opening dependencies.
+// Store is required for Engine/Worker and forbidden for Gateway.
+func Decode(component io.Reader, store io.Reader) (Config, error) {
 	var empty Config
-	data, err := io.ReadAll(io.LimitReader(reader, MaxFileBytes+1))
-	if err != nil {
-		return empty, fmt.Errorf("read configuration: %w", err)
-	}
-	if len(data) > MaxFileBytes {
-		return empty, errors.New("configuration exceeds 4 MiB")
-	}
 	var file configFile
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&file); err != nil {
-		return empty, fmt.Errorf("decode configuration: %w", err)
+	if err := decodeDocument(component, &file); err != nil {
+		return empty, fmt.Errorf("component config: %w", err)
 	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err != nil {
-			return empty, fmt.Errorf("decode configuration: %w", err)
+	if file.Mode != ModeGateway && file.Mode != ModeEngine && file.Mode != ModeWorker {
+		return empty, errors.New("mode is required and must be gateway, engine, or worker")
+	}
+	if file.Mode == ModeGateway && store != nil {
+		return empty, errors.New("gateway must not use --store-config")
+	}
+	if file.Mode != ModeGateway && store == nil {
+		return empty, errors.New("engine and worker require --store-config")
+	}
+	var shared storeFile
+	if store != nil {
+		if err := decodeDocument(store, &shared); err != nil {
+			return empty, fmt.Errorf("store config: %w", err)
 		}
-		return empty, errors.New("multiple YAML documents are not supported")
 	}
-	loaded, err := resolve(file)
+	loaded, err := resolve(file, shared)
 	if err != nil {
 		return empty, err
 	}
 	return loaded, nil
 }
 
-func resolve(file configFile) (Config, error) {
+func decodeDocument(reader io.Reader, target any) error {
+	if reader == nil {
+		return errors.New("configuration reader is required")
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, MaxFileBytes+1))
+	if err != nil {
+		return fmt.Errorf("read configuration: %w", err)
+	}
+	if len(data) > MaxFileBytes {
+		return errors.New("configuration exceeds 4 MiB")
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(target); err != nil {
+		return fmt.Errorf("decode configuration: %w", err)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return fmt.Errorf("decode configuration: %w", err)
+		}
+		return errors.New("multiple YAML documents are not supported")
+	}
+	return nil
+}
+
+func resolve(file configFile, shared storeFile) (Config, error) {
 	var loaded Config
 	loaded.Mode = file.Mode
 	if loaded.Mode != ModeWorker && loaded.Mode != ModeEngine && loaded.Mode != ModeGateway {
@@ -78,52 +108,74 @@ func resolve(file configFile) (Config, error) {
 			v.reject(errors.New("memory.max_bytes must be at least 1KiB"))
 		}
 	}
-	loaded.Memory.BurstPercent = v.bounded("memory.burst_percent", file.Memory.BurstPercent, capacity.DefaultBurstPercent, 99)
-	loaded.Memory.WaitTimeout = v.duration("memory.wait_timeout", file.Memory.WaitTimeout, 2*time.Second)
-	loaded.GRPC.Address = valueOrDefault(file.GRPC.Address, ":8080")
-	loaded.GRPC.MaxReceiveMessageBytes = v.bytes("grpc.max_receive_message_bytes", file.GRPC.MaxReceiveMessageBytes, 64<<20, math.MaxInt)
-	loaded.GRPC.MaxSendMessageBytes = v.bytes("grpc.max_send_message_bytes", file.GRPC.MaxSendMessageBytes, 64<<20, math.MaxInt)
+	loaded.Memory.HighWatermarkPercent = v.bounded("memory.high_watermark_percent", file.Memory.HighWatermarkPercent, capacity.DefaultHighPercent, 99)
+	loaded.Memory.LowWatermarkPercent = v.bounded("memory.low_watermark_percent", file.Memory.LowWatermarkPercent, capacity.DefaultLowPercent, 99)
+	if loaded.Memory.LowWatermarkPercent >= loaded.Memory.HighWatermarkPercent {
+		v.reject(errors.New("memory.low_watermark_percent must be lower than high_watermark_percent"))
+	}
+	grpcFile := gRPCFile{}
+	if file.GRPC != nil {
+		grpcFile = *file.GRPC
+	}
+	loaded.GRPC.Address = valueOrDefault(grpcFile.Address, ":8080")
+	loaded.GRPC.MaxReceiveMessageBytes = v.bytes("grpc.max_receive_message_bytes", grpcFile.MaxReceiveMessageBytes, 64<<20, math.MaxInt)
+	loaded.GRPC.MaxSendMessageBytes = v.bytes("grpc.max_send_message_bytes", grpcFile.MaxSendMessageBytes, 64<<20, math.MaxInt)
 	loaded.Prometheus.Enabled = file.Prometheus.Enabled
 	loaded.Health.Address = valueOrDefault(file.Health.Address, ":8081")
 	loaded.Prometheus.Address = valueOrDefault(file.Prometheus.Address, ":9090")
 	loaded.ShutdownTimeout = v.duration("shutdown_timeout", file.ShutdownTimeout, 15*time.Second)
-	loaded.Service = resolveService(file.Service, loaded.GRPC, &v)
+	loaded.Service = resolveService(file, loaded.GRPC, &v)
 	if v.err != nil {
 		return loaded, v.err
 	}
 	if loaded.Mode == ModeGateway {
-		for _, section := range []any{file.Service.Execution, file.Service.Publish, file.Service.Batching, file.Service.Merge} {
-			if !reflect.ValueOf(section).IsZero() {
-				return loaded, errors.New("gateway only accepts service.request; execution, publish, batching and merge belong to Engine/Worker")
-			}
-		}
-		if file.Storage != nil {
-			return loaded, errors.New("gateway must not configure storage")
+		if file.Execution != nil || file.Producer != nil || file.Consumer != nil || file.Batching != nil {
+			return loaded, errors.New("gateway must not configure execution, producer, consumer or batching")
 		}
 		if file.Gateway == nil {
-			return loaded, errors.New("gateway configuration is required")
+			return loaded, errors.New("forwarding configuration is required")
 		}
 		loaded.Gateway = resolveGateway(*file.Gateway, &v)
 		return loaded, v.err
 	}
-	if file.Gateway != nil {
-		return loaded, errors.New("gateway configuration requires gateway mode")
+	if file.Request != nil || file.Gateway != nil {
+		return loaded, errors.New("request and forwarding require gateway mode")
 	}
-	if file.Storage == nil {
-		return loaded, errors.New("engine and worker require singular storage with name")
+	if loaded.Mode == ModeEngine && file.Consumer != nil {
+		return loaded, errors.New("consumer requires worker mode")
 	}
-	name := file.Storage.Name
+	if loaded.Mode == ModeWorker && (file.Producer != nil || file.Batching != nil || file.GRPC != nil) {
+		return loaded, errors.New("worker must not configure producer, batching or grpc")
+	}
+	name := shared.Name
 	if name == "" || len(name) > 256 || !utf8.ValidString(name) || strings.TrimSpace(name) != name || strings.ContainsAny(name, "\x00\r\n\t") {
-		return loaded, errors.New("storage.name must be a nonempty valid identity of at most 256 bytes")
+		return loaded, errors.New("store name must be a nonempty valid identity of at most 256 bytes")
 	}
-	configured, err := resolveStorage("storage", *file.Storage)
+	configured, err := resolveStorage("storage", shared.Storage)
 	if err != nil {
 		return loaded, err
+	}
+	configured.Name = name
+	if !uri.ValidStore(name) {
+		return loaded, errors.New("store name must be a canonical lowercase identity")
+	}
+	configured.Kafka = resolveKafka("kafka", shared.Kafka, &v)
+	configured.Kafka.Producer = resolveProducer(file.Producer, &v)
+	configured.Kafka.Consumer = resolveConsumer(file.Consumer, &v)
+	if file.Producer != nil && !configured.Kafka.Enabled {
+		v.reject(errors.New("producer requires Kafka enabled in Store config"))
+	}
+	if loaded.Mode == ModeEngine && configured.Kafka.MaxRecordBytes > configured.Kafka.Producer.MaxBufferedBytes {
+		v.reject(errors.New("producer.max_buffered_bytes must cover kafka.max_record_bytes"))
+	}
+	if v.err != nil {
+		return loaded, v.err
 	}
 	loaded.Storage = configured
 	if err := validateKafkaResources(loaded); err != nil {
 		return loaded, err
 	}
+
 	return loaded, nil
 }
 

@@ -37,7 +37,6 @@ func TestWriteObservationsCountOnlyRetriedDocuments(t *testing.T) {
 		`sink_write_phase_duration_seconds_count{phase="storage_read",store="primary"} 2`,
 		`sink_write_phase_duration_seconds_count{phase="storage_write_applied",store="primary"} 2`,
 		`sink_write_phase_duration_seconds_count{phase="lua",store="primary"} 3`,
-		`sink_write_phase_duration_seconds_count{phase="admission",store="primary"} 1`,
 		`sink_write_execution_rounds_sum{phase="storage_read",store="primary"} 2`,
 		`sink_write_execution_rounds_count{phase="storage_write",store="primary"} 1`,
 	}
@@ -177,8 +176,6 @@ func TestBatchedWritesKeepQueueAndPhaseMetricsSeparateByStore(t *testing.T) {
 			fmt.Sprintf(`sink_batcher_queued_bytes{method="Write",store="%s"} 0`, store),
 			fmt.Sprintf(`sink_write_phase_duration_seconds_count{phase="storage_write_applied",store="%s"} %d`, store, count),
 			fmt.Sprintf(`sink_write_execution_rounds_sum{phase="storage_write",store="%s"} %d`, store, count),
-			fmt.Sprintf(`sink_admission_pool_requests{pool="execution",store="%s"} 0`, store),
-			fmt.Sprintf(`sink_admission_pool_bytes{pool="execution",store="%s"} 0`, store),
 		}
 		for _, line := range wanted {
 			if !strings.Contains(body, line) {

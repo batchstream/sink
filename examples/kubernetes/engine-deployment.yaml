@@ -42,7 +42,7 @@ spec:
       containers:
         - name: sink
           image: ghcr.io/batchstream/sink:REPLACE_WITH_TESTED_RELEASE
-          args: ["--config", "/etc/sink/sink.yaml"]
+          args: ["--config", "/etc/sink/sink.yaml", "--store-config", "/etc/sink/store.yaml"]
           resources:
             requests:
               cpu: "2"

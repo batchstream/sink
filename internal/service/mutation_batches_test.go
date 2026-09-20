@@ -78,7 +78,7 @@ func completionServer(t *testing.T, backend storage.Storage) *BatchingServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	coreOpts := Options{BoundStore: "primary", Storage: backend, Lua: lua, RequestTimeout: 5 * time.Second}
+	coreOpts := Options{BoundStore: "primary", Storage: backend, Lua: lua}
 	core, err := New(coreOpts)
 	if err != nil {
 		t.Fatal(err)
@@ -336,34 +336,6 @@ func TestCompletionWavesKeepFullRecordAddressesSeparate(t *testing.T) {
 			}
 			if waves := planMutationWaves[*sink.WriteOperation](calls); len(waves) != want {
 				t.Fatalf("%s: %d waves, want %d", difference, len(waves), want)
-			}
-		})
-	}
-}
-
-func TestMixedCompletionFitsSingleRequestAndByteBudgets(t *testing.T) {
-	for _, limit := range []string{"global_requests", "store_requests", "bytes"} {
-		t.Run(limit, func(t *testing.T) {
-			backend := &completionStorage{Storage: memory.New(), events: make(chan completionEvent, 10)}
-			server := completionServer(t, backend)
-			switch limit {
-			case "global_requests":
-				server.server.maxInFlightRequests = 1
-			case "store_requests":
-				server.server.maxInFlightRequests = 1
-			case "bytes":
-				server.server.maxInFlightBytes = 3 * server.server.maxReadBytes
-			}
-			visible := completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE, completionMerge("visible", 1))
-			applied := completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, completionMerge("applied", 1))
-			calls := []*batchCall[*sink.WriteRequest, *sink.WriteResponse]{visible, applied}
-			server.executeWrites(t.Context(), calls)
-			assertCompletionWrites(t, calls)
-			if first := awaitCompletion(t, backend.events); first.visible {
-				t.Fatal("limited execution did not run the applied group first")
-			}
-			if server.server.inFlightRequests != 0 || server.server.inFlightBytes != 0 {
-				t.Fatal("group admission leaked capacity")
 			}
 		})
 	}

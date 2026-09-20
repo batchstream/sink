@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/logging"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
 	"github.com/liran/sink/internal/queue"
@@ -36,6 +37,7 @@ type Handler interface {
 }
 
 type WorkerOptions struct {
+	Memory            *capacity.Guard
 	Topics            *TopicManager
 	Brokers           []string
 	Store             string
@@ -55,6 +57,8 @@ type WorkerOptions struct {
 }
 
 type Worker struct {
+	memory            *capacity.Guard
+	topic             string
 	topics            *TopicManager
 	client            *kgo.Client
 	handler           Handler
@@ -126,7 +130,7 @@ func NewWorker(opts WorkerOptions) (*Worker, error) {
 	if opts.ShutdownTimeout == 0 {
 		opts.ShutdownTimeout = 5 * time.Second
 	}
-	worker := &Worker{
+	worker := &Worker{memory: opts.Memory, topic: opts.Topic,
 		topics:            opts.Topics,
 		handler:           opts.Handler,
 		store:             opts.Store,
@@ -187,6 +191,13 @@ func (w *Worker) Run(ctx context.Context) error {
 	}
 	fetchBackoff := w.retryBackoff
 	for {
+		if w.memory.Blocked() {
+			w.client.PauseFetchTopics(w.topic)
+			if err := w.memory.Wait(ctx); err != nil {
+				return nil
+			}
+			w.client.ResumeFetchTopics(w.topic)
+		}
 		fetches := w.client.PollRecords(ctx, w.maxPollRecords)
 		if ctx.Err() != nil {
 			w.client.AllowRebalance()

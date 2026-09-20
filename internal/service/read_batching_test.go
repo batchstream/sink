@@ -109,16 +109,13 @@ func TestReadMicrobatchSharesBoundedWorkingSet(t *testing.T) {
 	if backend.reads.Load() != 1 {
 		t.Fatalf("128 small RPCs used %d backend reads, want 1", backend.reads.Load())
 	}
-	if server.server.inFlightBytes != 0 || server.server.inFlightRequests != 0 {
-		t.Fatal("read admission leaked")
-	}
 }
 
-func TestReadMicrobatchBoundsLargeSnapshotsAndRepeatedOutputs(t *testing.T) {
+func TestReadMicrobatchUsesCollectedBatchForLargeSnapshotsAndRepeatedOutputs(t *testing.T) {
 	for _, shared := range []bool{false, true} {
 		t.Run(fmt.Sprint(shared), func(t *testing.T) {
 			memoryStore := memory.New()
-			backend := &readCapacityStorage{Storage: memoryStore, maximum: 512}
+			backend := &readCapacityStorage{Storage: memoryStore}
 			server := completionServer(t, backend)
 			server.server.maxReadBytes = 512
 			calls := make([]*batchCall[*sink.ReadRequest, *sink.ReadResponse], 12)
@@ -139,7 +136,7 @@ func TestReadMicrobatchBoundsLargeSnapshotsAndRepeatedOutputs(t *testing.T) {
 				}
 				responses = append(responses, result.response)
 			}
-			if backend.reads.Load() != int64(len(calls)) {
+			if backend.reads.Load() != 1 {
 				t.Fatalf("unexpected reads for large records: %d", backend.reads.Load())
 			}
 			responses[0].Results[0].Document.Payload[0] = '!'
@@ -150,13 +147,13 @@ func TestReadMicrobatchBoundsLargeSnapshotsAndRepeatedOutputs(t *testing.T) {
 	}
 }
 
-func TestReadMicrobatchRetainsCallerLimitsAndOrderAcrossShrinking(t *testing.T) {
+func TestReadMicrobatchRetainsCallerResponseLimitsAndOrder(t *testing.T) {
 	memoryStore := memory.New()
 	for _, key := range []string{"a", "b", "c"} {
 		seedReadCapacity(t, memoryStore, key, 100)
 	}
 	seedReadCapacity(t, memoryStore, "oversized", 700)
-	backend := &readCapacityStorage{Storage: memoryStore, maximum: 512}
+	backend := &readCapacityStorage{Storage: memoryStore}
 	server := completionServer(t, backend)
 	server.server.maxReadBytes = 512
 	calls := []*batchCall[*sink.ReadRequest, *sink.ReadResponse]{
@@ -186,72 +183,6 @@ func TestReadMicrobatchRetainsCallerLimitsAndOrderAcrossShrinking(t *testing.T) 
 			} else if operation.Status != sink.ReadStatus_READ_STATUS_FOUND {
 				t.Fatal(operation)
 			}
-		}
-	}
-}
-
-func TestReadMicrobatchKeepsCompletedCallWhenLaterReadFails(t *testing.T) {
-	memoryStore := memory.New()
-	for _, key := range []string{"a", "b"} {
-		seedReadCapacity(t, memoryStore, key, 300)
-	}
-	backend := &readCapacityStorage{Storage: memoryStore, maximum: 512, failAt: 2}
-	server := completionServer(t, backend)
-	server.server.maxReadBytes = 512
-	first := readCapacityCall(t.Context(), "a")
-	second := readCapacityCall(t.Context(), "b")
-	calls := []*batchCall[*sink.ReadRequest, *sink.ReadResponse]{first, second}
-	server.executeReads(t.Context(), calls)
-	completed := awaitCompletion(t, first.result)
-	failed := awaitCompletion(t, second.result)
-	if completed.err != nil || completed.response.Results[0].Status != sink.ReadStatus_READ_STATUS_FOUND {
-		t.Fatal(completed)
-	}
-	if status.Code(failed.err) != codes.Unavailable {
-		t.Fatal(failed.err)
-	}
-}
-
-func TestReadBatchConcurrencyUsesStoreLimit(t *testing.T) {
-	backend := &readCapacityStorage{Storage: memory.New(), started: make(chan struct{}, 3), gate: make(chan struct{})}
-	core := completionServer(t, backend).server
-	core.maxInFlightRequests = 2
-	opts := BatchingOptions{MaxOperations: 1, MaxWait: time.Millisecond}
-	server, err := NewBatchingServer(core, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer server.Close()
-	defer close(backend.gate)
-	results := make(chan error, 3)
-	for index := range 3 {
-		call := readCapacityCall(t.Context(), fmt.Sprint(index))
-		go func() { _, err := server.Read(t.Context(), call.request); results <- err }()
-		if index < 2 {
-			awaitCompletion(t, backend.started)
-		}
-	}
-	waitForQueuedCalls(t, server.reads, 1)
-	if backend.peak.Load() != 2 {
-		t.Fatalf("read concurrency = %d", backend.peak.Load())
-	}
-	select {
-	case <-backend.started:
-		t.Fatal("third read exceeded the store limit")
-	default:
-	}
-	// Canceling all RPCs is separately covered; here release the I/O gate and
-	// verify queued requests can use the newly available capacity.
-	backend.gate <- struct{}{}
-	if err := awaitCompletion(t, results); err != nil {
-		t.Fatal(err)
-	}
-	awaitCompletion(t, backend.started)
-	backend.gate <- struct{}{}
-	backend.gate <- struct{}{}
-	for range 2 {
-		if err := awaitCompletion(t, results); err != nil {
-			t.Fatal(err)
 		}
 	}
 }

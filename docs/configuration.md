@@ -1,22 +1,23 @@
 # Runtime configuration
 
-Use the [Gateway / Engine / Worker guide](store-isolation.md) for the topology and routing configuration. Engine and Worker each require one `storage` object; Gateway accepts routes only.
-
-Sink reads all server runtime parameters from one YAML file. Pass its path when
-starting the binary:
+Use the [Gateway / Engine / Worker guide](store-isolation.md) for topology.
+Each process reads a role configuration. Engine and Worker also read the same
+Store configuration through an explicit command-line argument:
 
 ```shell
-sink --config /etc/sink/config.yaml
+sink --config configs/gateway.yaml
+sink --config configs/engine.yaml --store-config configs/stores/primary.yaml
+sink --config configs/worker.yaml --store-config configs/stores/primary.yaml
 ```
 
-The `--config` option is required for every Gateway, Engine, and Worker runtime.
-`sink version` does not load a configuration file. `sink lua test` does not
-require one, but accepts `--config` to apply the same `service.merge.lua` resource
-limits without opening any configured backend. Environment variables such as
-`SINK_MODE` and `SINK_MONGODB_URI` are not read by the server.
-
-Use `sink config check --config FILE` to validate the schema and limits without
-connecting to dependencies or printing configured values.
+Both files use standard YAML. There is no include syntax, merging, or field override
+between them. Paths passed on the command line are relative to the working directory.
+`--config` is required. `--store-config` is required for Engine/Worker and rejected
+for Gateway. `sink config check` accepts the same arguments and validates both files
+offline without opening dependencies or printing configured values. `sink version`
+requires neither file. `sink lua test` can optionally load the pair to use
+`execution.merge.lua` limits. Environment variables such as `SINK_MODE` and
+`SINK_MONGODB_URI` are not read by the server.
 
 Configuration is loaded once during startup. Unknown fields, malformed YAML,
 multiple YAML documents, invalid Store names, invalid positive-integer
@@ -24,29 +25,26 @@ values, and incompatible option combinations prevent the process from
 starting. Backend connections are lazy and dependency recovery is independent
 within each Engine or Worker. Kafka publication/consumption remains unavailable
 until topic policy has been reconciled and verified. Other Store processes are
-independent. All configuration, including `gateway.routes`, is loaded only at
+independent. All configuration, including `forwarding.routes`, is loaded only at
 startup. Restart after changes. Configuration files are limited to 4 MiB.
 
 ## Configuration layout
 
-| Section | Responsibility |
+| File / section | Responsibility |
 | --- | --- |
-| `mode`, `shutdown_timeout` | Process role and shutdown |
-| `grpc`, `health`, `prometheus` | Transport and observability listeners |
-| `logging` | Default warn-level stderr logs and optional direct OTLP export; see [logging reference](logging.md) |
-| `storage` | Engine/Worker Store identity, backend and Kafka path |
-| `gateway` | Inline Store routes, forwarding capacity, connection cache and discovery |
-| `service.request` | Request deadline, operation count, and returned document budget |
-| `service.execution` | Storage execution capacity, with Scan sublimits |
-| `service.publish` | Independent Kafka publication capacity |
-| `service.batching` | Collection targets and waiting queue capacity |
-| `service.merge` | Conflict attempts and Lua execution limits |
+| Role: `mode`, `shutdown_timeout` | Process role and graceful shutdown |
+| Role: `grpc`, `health`, `prometheus`, `logging` | Listeners and observability; Worker has no `grpc` |
+| Role: `memory` | Process memory ceiling and admission watermarks |
+| Gateway: `request.max_operations` | One public batch across all Stores |
+| Gateway: `forwarding` | Store routes, discovery and fanout |
+| Engine: `batching`, `producer` | Collection queues and Kafka publishing buffer |
+| Worker: `consumer` | Group, polling, processing rounds and retries |
+| Engine/Worker: `execution` | Merge conflict retries and Lua sandbox |
+| Store: `name`, `storage`, `kafka` | Shared identity, database connection and Topic/DLQ policy |
 
-Kafka settings are grouped into `topic`, `producer`, `consumer`, and
-`dead_letter`. Time values use Go duration strings (`100ms`, `30s`, `72h`);
-numeric time values and old field names are rejected. Defaults are resolved once
-before the application opens resources. Omitted values use defaults; explicit
-zero or negative limits fail validation.
+Request validation belongs to Gateway. Engine has no `request` section and accepts
+only the private forwarding protocol and gRPC health. SDKs address Gateway.
+Unknown fields and sections belonging to a different role are rejected.
 
 ### Human-readable values
 
@@ -68,62 +66,40 @@ for the complete old-to-new mapping. The gRPC and SDK contracts are unchanged.
 
 ## One Store per Engine or Worker
 
-Each Engine/Worker process binds to exactly one globally unique `storage.name`.
-Choose MongoDB, Elasticsearch, or OpenSearch for that Store. Different Stores must
-own different database targets; replicas of the same Store share its identity.
-A request's Store must match the process binding before any side effect.
+Each Engine/Worker process binds to the `name` in its Store file. Replicas of one
+Store reuse the same file; independent Stores must own different database targets.
+The Store file holds shared connection and delivery policy:
 
 ```yaml
-mode: engine
-grpc:
-  address: ":8080"
-health:
-  address: ":8081"
-prometheus:
-  enabled: false
-  address: ":9090"
+name: catalog
 storage:
-  name: catalog
   driver: mongodb
   mongodb:
     uri: mongodb://mongodb:27017
     metadata_field: __sink
-  kafka:
-    enabled: true
-    brokers: [kafka:9092]
-    topic:
-      name: catalog-mutations
-      partitions: 4
-      replication_factor: 2
-      retention: 72h
-    dead_letter:
-      topic: catalog-mutations.dlq
-service:
-  request:
-    timeout: 30s
-    max_operations: 1000
-shutdown_timeout: 15s
+    max_concurrent_writes: 64
+    max_concurrent_groups: 16
+kafka:
+  enabled: true
+  brokers: [kafka:9092]
+  partitions: 4
+  replication_factor: 2
+  min_insync_replicas: 1
+  topic:
+    name: catalog-mutations
+  dead_letter:
+    name: catalog-mutations.dlq
 ```
 
 Kafka is optional for Engine. Without it, synchronous calls remain available and
-asynchronous mutations return per-operation `UNAVAILABLE`. Worker requires Kafka
-and `storage.kafka.consumer.group_id`. Deploy Worker separately with the same
-Store name, backend, topic and topic policy.
+asynchronous mutations return `UNAVAILABLE`. Worker requires Kafka plus a
+`consumer.group_id` in its own role file. Group, retry and poll tuning never enter
+the shared Store file. Engine's `producer` buffer tuning is also role-local.
 
-Gateway handles cross-Store batches and preserves original result order, including
-mixed asynchronous batches whose Stores have different publishing availability.
-It does not load database or Kafka settings.
-
-Use the annotated example for the role you are configuring:
-
-- [Gateway](../configs/gateway.yaml): public request limits, forwarding, and connection discovery.
-- [Engine](../configs/engine.yaml): one Store's backend, execution, batching, Lua, and optional Kafka publication.
-- [Worker](../configs/worker.yaml): one Store's backend, consumption, execution, and Lua; no RPC listener or RPC batching.
-
-Each component file loads directly without uncommenting another role's settings.
-Engine and Worker include a small commented search-driver alternative to MongoDB.
-Together the component examples cover all supported configuration fields.
-Use the [quickstart](../examples/quickstart/README.md) to run all three components.
+See the complete annotated [Gateway](../configs/gateway.yaml),
+[Engine](../configs/engine.yaml), [Worker](../configs/worker.yaml) and
+[Store](../configs/stores/primary.yaml) examples, or run the
+[quickstart](../examples/quickstart/README.md).
 
 ## Address routing
 
@@ -136,7 +112,7 @@ SDK examples, connection discovery, replica changes and deployment boundaries.
 
 ## Synchronous request batching
 
-`service.batching` sets the collection targets and the per-method
+`batching` sets the collection targets and the per-method
 `queue` limits. Batching is always active. See [batching behavior](batching.md)
 for queue admission, ordering, execution budgets, and completion boundaries.
 
@@ -163,8 +139,8 @@ use the lowercase spelling shown below. Storage names are also case-sensitive.
 | `health.address` | string | No | `:8081` | Any valid TCP listen address; empty uses the default | Always-on HTTP listener for `/livez` and `/readyz` in every role. |
 | `prometheus.enabled` | boolean | No | `false` | `true`, `false` | Start the separate metrics listener; health endpoints are unaffected. |
 | `prometheus.address` | string | No | `:9090` | Any valid TCP listen address; empty uses the default | Listen address for `/metrics`, used only when enabled. |
-| `storage` | object | Engine/Worker | none | Exactly one storage object | The process-bound Store; forbidden in Gateway. |
-| `storage.name` | string | Yes | none | Nonempty UTF-8 identity, at most 256 bytes | Globally unique Store name selected by `address.store`; all replicas of that Store use the same name. |
+| `storage` | object | Store file | none | Exactly one storage object | Shared backend configuration. |
+| `name` | string | Yes | none | Nonempty UTF-8 identity, at most 256 bytes | Globally unique Store name selected by `address.store`; all replicas of that Store use the same name. |
 | `storage.driver` | enum string | Yes | none | `mongodb`, `elasticsearch`, `opensearch` | Adapter used by this storage instance. See [Storage driver values](#storage-driver-values). |
 | `storage.mongodb.uri` | string | Conditionally | none | Valid MongoDB connection string | Required when the entry's driver is `mongodb`. |
 | `storage.mongodb.metadata_field` | string | No | `__sink` | Any valid MongoDB field except `_id`; cannot contain `.`, `$`, or a null byte | Reserved top-level field where Sink stores internal metadata such as the record revision; removed from documents returned to clients. |
@@ -174,84 +150,87 @@ use the lowercase spelling shown below. Storage names are also case-sensitive.
 | `storage.search.username` | string | Conditionally | empty | Any username accepted by the search service | Basic-auth username. Must be configured together with `password`. |
 | `storage.search.password` | string | Conditionally | empty | Any password accepted by the search service | Basic-auth password. Must be configured together with `username`. |
 | `storage.search.api_key` | string | No | empty | Any API key accepted by the search service | API key used instead of basic authentication. |
-| `service.request.max_operations` | positive integer | No | `1000` | Integer greater than `0` | Maximum operation count accepted in one Read, Write, or Delete batch request. |
-| `service.merge.max_attempts` | positive integer | No | `3` | Integer greater than `0` | Maximum revision-conflict attempts for Merge and folded conditional Put chains. |
-| `service.batching.max_wait` | duration string | No | `2ms` | Positive Go duration within the bounds below | Maximum collection delay measured from the first request in a batch. |
-| `service.batching.max_operations` | positive integer | No | `service.request.max_operations` | Integer from `1` through `service.request.max_operations` | Operation target for one automatically formed batch. |
-| `service.batching.max_bytes` | byte size | No | `16MiB` | Size greater than `0B` | Encoded-byte target for one automatically formed batch; one larger valid RPC still runs alone. |
-| `service.batching.queue.max_operations` | positive integer | No | max(`10000`, `service.request.max_operations`) | Integer at least `service.request.max_operations` and `service.batching.max_operations` | Maximum operations waiting in each method queue. |
-| `service.batching.queue.max_bytes` | byte size | No | max(`128MiB`, `grpc.max_receive_message_bytes`) | Size at least `grpc.max_receive_message_bytes` and `service.batching.max_bytes` | Maximum encoded request bytes waiting in each method queue. |
-| `service.merge.lua.timeout` | duration string | No | `100ms` | Positive Go duration within the bounds below | Maximum wall-clock duration of one Lua execution. |
-| `service.merge.lua.max_source_bytes` | byte size | No | `64KiB` | Size greater than `0B` | Maximum Lua source size per merge operation. |
-| `service.merge.lua.max_result_bytes` | byte size | No | `16MiB` | Size greater than `0B` | Maximum input/current document and encoded result bytes; expanded output is also bounded before conversion. |
-| `service.merge.lua.max_cached_programs` | positive integer | No | `256` | Integer greater than `0` | Maximum compiled Lua programs retained in the process-local LRU cache. |
-| `service.merge.lua.max_instructions` | positive integer | No | `1000000` | Integer greater than `0` | Maximum VM instruction checkpoints per execution. |
-| `storage.kafka` | object | No | absent | A store-specific Kafka configuration | Holds the asynchronous delivery and Topic-management policy. Kafka remains disabled unless `enabled` is `true`. |
-| `storage.kafka.enabled` | boolean | No | `false` | `true`, `false` | Enables Kafka publication, consumption, and startup Topic reconciliation for this store. |
-| `storage.kafka.brokers` | list of strings | Conditionally | none | One or more Kafka bootstrap addresses | Required when Kafka is enabled. Each store may use a different Kafka cluster. |
-| `storage.kafka.topic.name` | string | Conditionally | none | Any valid Kafka topic name | Required when Kafka is enabled. The server publishes only mutations whose `address.store` selects this store. |
-| `storage.kafka.consumer.group_id` | string | Conditionally | empty | Any valid Kafka consumer group ID | Required in `worker` mode; optional and unused in `engine` mode. |
-| `storage.kafka.dead_letter.topic` | string | No | `<storage.kafka.topic.name>.dlq` | Non-empty Kafka topic different from the source topic | Destination for malformed, cross-store, and permanent failures. Temporary failures remain in the source Topic. |
-| `storage.kafka.topic.partitions` | positive integer | No | `4` | Integer from `1` through `2147483647` | Required partition count for both Topics. Any mismatch gates this store; changes require an explicit drained migration. |
-| `storage.kafka.topic.replication_factor` | positive integer | No | `2` | Integer from `1` through `32767`, not exceeding available brokers | Required replica count for every partition of both Topics. Sink submits and waits for partition reassignment when it differs. |
-| `storage.kafka.topic.retention` | duration string | No | `72h` (3 days) | Positive Go duration within the bounds below | Source Topic retention, at least `1ms`. DLQ retention is configured separately. |
-| `storage.kafka.consumer.max_poll_records` | positive integer | No | `500` | Integer greater than `0` | Maximum number of this store's mutations handled in one consumer fetch batch. |
-| `storage.kafka.consumer.retry.max_attempts` | positive integer | No | `10` | Integer greater than `0` | Maximum attempts per processing round. Temporary failures are retained and retried in later rounds. |
-| `storage.kafka.consumer.retry.backoff` | duration string | No | `100ms` | Positive Go duration within the bounds below | Initial worker retry backoff before jitter for this store. |
-| `storage.kafka.consumer.retry.max_backoff` | duration string | No | `10s` | Positive Go duration within the bounds below | Maximum worker retry backoff before jitter; at least `consumer.retry.backoff` and at most half the Go duration range for safe doubling. |
+| `request.max_operations` | positive integer | No | `1000` | Integer greater than `0` | Maximum operation count accepted in one Read, Write, or Delete batch request. |
+| `execution.merge.max_attempts` | positive integer | No | `3` | Integer greater than `0` | Maximum revision-conflict attempts for Merge and folded conditional Put chains. |
+| `batching.max_wait` | duration string | No | `2ms` | Positive Go duration within the bounds below | Maximum collection delay measured from the first request in a batch. |
+| `batching.max_operations` | positive integer | No | `32` | Positive integer | Operation target for one automatically formed batch; a larger valid RPC still executes alone. See [default selection](batching.md#default-selection). |
+| `batching.max_bytes` | byte size | No | `16MiB` | Size greater than `0B` | Encoded-byte target for one automatically formed batch; one larger valid RPC still runs alone. |
+| `batching.queue.max_operations` | positive integer | No | max(`10000`, `batching.max_operations`) | Integer at least `batching.max_operations` | Maximum operations waiting in each method queue. |
+| `batching.queue.max_bytes` | byte size | No | max(`128MiB`, `grpc.max_receive_message_bytes`) | Size at least `grpc.max_receive_message_bytes` and `batching.max_bytes` | Maximum encoded request bytes waiting in each method queue. |
+| `execution.merge.lua.timeout` | duration string | No | `100ms` | Positive Go duration within the bounds below | Maximum wall-clock duration of one Lua execution. |
+| `execution.merge.lua.max_source_bytes` | byte size | No | `64KiB` | Size greater than `0B` | Maximum Lua source size per merge operation. |
+| `execution.merge.lua.max_result_bytes` | byte size | No | `16MiB` | Size greater than `0B` | Maximum input/current document and encoded result bytes; expanded output is also bounded before conversion. |
+| `execution.merge.lua.max_cached_programs` | positive integer | No | `256` | Integer greater than `0` | Maximum compiled Lua programs retained in the process-local LRU cache. |
+| `execution.merge.lua.max_instructions` | positive integer | No | `1000000` | Integer greater than `0` | Maximum VM instruction checkpoints per execution. |
+| `kafka` | object | No | absent | A store-specific Kafka configuration | Holds the asynchronous delivery and Topic-management policy. Kafka remains disabled unless `enabled` is `true`. |
+| `kafka.enabled` | boolean | No | `false` | `true`, `false` | Enables Kafka publication, consumption, and startup Topic reconciliation for this store. |
+| `kafka.brokers` | list of strings | Conditionally | none | One or more Kafka bootstrap addresses | Required when Kafka is enabled. Each store may use a different Kafka cluster. |
+| `kafka.topic.name` | string | Conditionally | none | Any valid Kafka topic name | Required when Kafka is enabled. The server publishes only mutations whose `address.store` selects this store. |
+| `consumer.group_id` | string | Conditionally | empty | Any valid Kafka consumer group ID | Required in `worker` mode; optional and unused in `engine` mode. |
+| `kafka.dead_letter.name` | string | No | `<kafka.topic.name>.dlq` | Non-empty Kafka topic different from the source topic | Destination for malformed, cross-store, and permanent failures. Temporary failures remain in the source Topic. |
+| `kafka.partitions` | positive integer | No | `4` | Integer from `1` through `2147483647` | Required partition count for both Topics. Any mismatch gates this store; changes require an explicit drained migration. |
+| `kafka.replication_factor` | positive integer | No | `2` | Integer from `1` through `32767`, not exceeding available brokers | Required replica count for every partition of both Topics. Sink submits and waits for partition reassignment when it differs. |
+| `kafka.topic.retention` | duration string | No | `72h` (3 days) | Positive Go duration within the bounds below | Source Topic retention, at least `1ms`. DLQ retention is configured separately. |
+| `consumer.max_poll_records` | positive integer | No | `500` | Integer greater than `0` | Maximum number of this store's mutations handled in one consumer fetch batch. |
+| `consumer.retry.max_attempts` | positive integer | No | `10` | Integer greater than `0` | Maximum attempts per processing round. Temporary failures are retained and retried in later rounds. |
+| `consumer.retry.backoff` | duration string | No | `100ms` | Positive Go duration within the bounds below | Initial worker retry backoff before jitter for this store. |
+| `consumer.retry.max_backoff` | duration string | No | `10s` | Positive Go duration within the bounds below | Maximum worker retry backoff before jitter; at least `consumer.retry.backoff` and at most half the Go duration range for safe doubling. |
 | `shutdown_timeout` | duration string | No | `15s` | Positive Go duration within the bounds below | Maximum graceful-shutdown time for gRPC and MongoDB disconnect operations. |
 
 ### Reliability limits
+
+There is no server-wide business request timeout and no default SDK Scan deadline.
+Callers choose deadlines or wait until completion, cancellation or process shutdown.
+`execution.merge.lua.timeout`
+bounds a Lua invocation, and `consumer.processing_timeout` bounds a Worker processing
+round; none of these is a whole-RPC deadline.
+
+There is no `request.max_response_bytes` or `request.max_read_bytes` knob. Gateway
+uses `grpc.max_send_message_bytes` as the transport ceiling and reserves encoded
+result overhead before forwarding. Returned documents share the remaining budget
+across all Store groups of the original RPC. Oversized returned writes are rejected
+before their own commit. Intermediate snapshots and candidate outputs use process
+memory protection without independent quotas. Collected batches execute together.
 
 All settings in this table are optional. Counts and bytes are positive integers; time values are positive duration strings such as `30s` or `2ms`. Limits are process-local; replica
 counts multiply capacity. Configure the same Kafka policy on servers and workers.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `service.request.timeout` | `30s` | Unary request timeout including batching queue wait and each Scan page; at most 300 seconds. A shorter caller deadline wins. |
-| `memory.max_bytes` | automatic | Shared managed capacity for this process; omit to use half the smallest detected Go/cgroup/host memory limit, or 256 MiB fallback. Explicit values must be at least 1 KiB. Not an RSS cap. |
-| `memory.burst_percent` | `10` | Completion reserve as a percentage of total capacity, from 1 to 99. New requests cannot enter through this reserve. |
-| `memory.wait_timeout` | `2s` | Maximum response/working-set growth wait. Caller deadlines take precedence. New requests fail immediately when ordinary capacity is unavailable. |
-| `service.request.max_read_bytes` | min(`32MiB`, half gRPC send limit) | Per-original-RPC Read or returned-Write documents, conditional write snapshot/output per attempt, and native Execute response. Scan pages use the smaller of this limit and 4 MiB. Cannot exceed half the gRPC send limit. |
-| `storage.kafka.dead_letter.retention` | `720h` | Independent DLQ retention, 30 days; at least `1ms` and bounded by Go duration range. |
-| `storage.kafka.topic.min_insync_replicas` | min(`2`, replication factor) | Minimum ISR, at most replication factor. Publishers require all ISR acknowledgements. |
-| `storage.kafka.topic.max_record_bytes` | `900KiB` | Encoded mutation envelope plus key, including expanded Lua source; at most 64 MiB and no larger than the producer buffer. Topic/producer batch limits include an extra 16 KiB for framing and DLQ headers. Broker/replica fetch limits must also support increases. |
-| `storage.kafka.producer.max_buffered_bytes` | `64MiB` | Producer buffer capacity, at most 1 GiB. Full buffers return retryable resource exhaustion. |
-| `storage.kafka.consumer.processing_timeout` | `20s` | Backend work per fetched batch, at most 20 seconds, followed by at most 5 seconds of offset/DLQ settlement. |
+| `memory.max_bytes` | automatic | Optional process ceiling, at least 1 KiB; clamped to detected Go/cgroup/host limits. Fallback is 1 GiB. Startup also checks the minimum required working memory. |
+| `memory.high_watermark_percent` | `80` | Reject new requests or pause Worker polling at this percentage of the effective ceiling; integer from 1 to 99. |
+| `memory.low_watermark_percent` | `70` | Resume admission at or below this percentage; positive integer strictly below the high watermark. |
+| `kafka.dead_letter.retention` | `720h` | Independent DLQ retention, 30 days; at least `1ms` and bounded by Go duration range. |
+| `kafka.min_insync_replicas` | `1` | Minimum ISR for both Topics, at most replication factor. Publishers require all current ISR acknowledgements; the default permits writes with one in-sync replica during broker maintenance. |
+| `kafka.max_record_bytes` | `900KiB` | Encoded mutation envelope plus key, including expanded Lua source; at most 64 MiB; Engine producer buffer must cover it. Topic/producer batch limits include an extra 16 KiB for framing and DLQ headers. Broker/replica fetch limits must also support increases. |
+| `producer.max_buffered_bytes` | `64MiB` | Producer buffer capacity, at most 1 GiB. Full buffers return retryable resource exhaustion. |
+| `consumer.processing_timeout` | `20s` | Backend work per fetched batch, at most 20 seconds, followed by at most 5 seconds of offset/DLQ settlement. |
 
-All request classes share the same process pool. Input, small completion
-envelopes and forwarding scratch space acquire ordinary capacity. Document
-copies and response encoding acquire capacity using known sizes; increasing the
-legal maximum response does not increase the price of every small request.
-Responses have priority over new arrivals. A selected completion owner may use
-the reserve; waits remain bounded even when a response cannot make progress.
-There is no separate request concurrency cap in this version.
+`kafka.partitions`, `replication_factor`, `min_insync_replicas`, and
+`max_record_bytes` apply to both the source and dead-letter Topics. Sink explicitly
+reconciles this shared policy rather than relying on broker defaults. `kafka.topic`
+and `kafka.dead_letter` each contain only `name` and `retention`, which are independent.
 
-The default reserve was chosen from the [reproducible saturation experiment](https://github.com/batchstream/sink-production-suite/blob/main/benchmarks/memory-admission/README.md).
-Override it for your measured workload. Automatic capacity detection runs once
-at startup, leaving half the effective limit for unmanaged runtime/driver/GC
-memory. The source is exported in `sink_memory_capacity_source_info`.
+All roles use the same watermark settings. Linux measures process RSS; other
+platforms fall back to Go runtime memory. Sampling is cached for 100 ms. Existing
+requests continue after the high watermark is reached; Worker finishes its current
+poll before pausing. There is no separate request concurrency cap.
 
-MongoDB reads and native commands keep a temporary 48 MiB driver wire allowance
-only around database work; actual document copies are accounted separately.
-Search bodies acquire actual backing-array capacity as they grow. Lua VM heaps,
-Kafka buffers, ingress decoding and GC still require process headroom.
-Returned-document capacity is acquired before the corresponding commit. Scope
-ownership follows batching and gRPC buffers beyond handler return and cancellation.
-See [memory admission](design/demand-based-admission.md) and
-[metrics/KEDA migration](observability.md#memory-capacity-and-keda).
+Before opening dependencies, Sink estimates minimum working memory from transport,
+Lua, driver and Kafka settings. Startup panics if the high-watermark portion of the
+effective ceiling cannot cover it. The panic lists the required components and
+available ceiling. This catches undersized configurations; it does not guarantee
+against OOM under concurrent load. See the [sizing formula and runtime behavior](design/demand-based-admission.md)
+and [metrics/KEDA migration](observability.md#memory-capacity-and-keda).
 
-Legacy `gateway.max_bytes`, `gateway.max_requests`,
-`gateway.max_requests_per_store`, `service.execution` and `service.publish`
-admission fields remain accepted and validated, but no longer control CLI
-admission. Replace their sizing with `memory`. Batch queue bounds, logical RPC
-limits, backend limits and deadlines remain active. Engine and Worker still
-scale separately, and Gateway connection/fanout bounds still apply.
+The former `service` sections, snapshot/output quotas, `memory.burst_percent`,
+`memory.wait_timeout` and Gateway count/byte admission fields are rejected.
+Use `memory` for process pressure and `batching.queue` for Engine waiting queues.
 
 MongoDB group concurrency is shared across concurrent calls. Sink sets
 `w=majority` and `journal=true` on its client, overriding weaker URI concerns;
 server selection is bounded to five seconds. Verify the deployment supports
-these settings before upgrading. The service deadline bounds the whole request.
+these settings before upgrading. The caller context controls the overall request lifetime.
 
 A response budget can yield partial results: an individual oversized document
 is a permanent resource failure; exhaustion caused by other records in the same original RPC
@@ -263,7 +242,7 @@ mutation results must not be retried without business idempotence.
 | Value | Behavior |
 | --- | --- |
 | `gateway` | Routes public RPCs to per-Store Engines; see [isolated configuration](store-isolation.md). |
-| `engine` | Opens the gRPC listener for exactly one `storage`, validates Store name, executes synchronously and publishes async mutations. |
+| `engine` | Exposes private forwarding and health, validates the bound Store, executes and publishes async mutations. |
 | `worker` | Requires exactly one Kafka-enabled Store, consumes and applies its mutations locally without opening the gRPC listener. |
 
 ### Storage driver values

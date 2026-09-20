@@ -50,7 +50,7 @@ func (m *Metrics) ObserveWritePhase(observation WritePhaseObservation) {
 	}
 	phase := observation.Phase
 	switch phase {
-	case "admission", "parse", "storage_read", "lua":
+	case "parse", "storage_read", "lua":
 	case "storage_write":
 		if observation.Completion == sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE {
 			phase = "storage_write_visible"

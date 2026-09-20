@@ -38,7 +38,7 @@ func EnsureTopics(ctx context.Context, opts TopicOptions) error {
 		opts.DeadLetterRetention = 30 * 24 * time.Hour
 	}
 	if opts.MinInSyncReplicas == 0 {
-		opts.MinInSyncReplicas = min(2, opts.ReplicationFactor)
+		opts.MinInSyncReplicas = 1
 	}
 	if opts.MaxRecordBytes == 0 {
 		opts.MaxRecordBytes = defaultMaxRecordBytes

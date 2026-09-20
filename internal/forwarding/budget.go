@@ -9,7 +9,7 @@ import (
 	"github.com/liran/sink/internal/storage"
 )
 
-const Version = 4
+const Version = 6
 
 // EnvelopeBytes is reserved in the private transport in addition to the public message cap.
 const EnvelopeBytes = 4096
@@ -17,10 +17,7 @@ const EnvelopeBytes = 4096
 type Kind int
 
 const (
-	Snapshots Kind = iota
-	Inputs
-	Outputs
-	Returns
+	Returns Kind = iota
 	kinds
 )
 
@@ -36,9 +33,12 @@ const trackerKey contextKey = 1
 
 func NewTracker(grant *forward.Budget, maximum int) *Tracker {
 	t := &Tracker{}
-	raw := [...]uint64{grant.GetSnapshots(), grant.GetInputs(), grant.GetOutputs(), grant.GetReturns()}
+	raw := [...]uint64{grant.GetReturns()}
 	for i, size := range raw {
-		t.limits[i] = int(min(size, uint64(maximum)))
+		t.limits[i] = int(min(size, uint64(int(^uint(0)>>1))))
+		if Kind(i) == Returns {
+			t.limits[i] = min(t.limits[i], maximum)
+		}
 	}
 	return t
 }
@@ -74,11 +74,11 @@ func (t *Tracker) Fresh(kind Kind, maximum int) *storage.ReadBudget {
 func (t *Tracker) Usage() *forward.Budget {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	usage := &forward.Budget{Snapshots: uint64(t.used[Snapshots]), Inputs: uint64(t.used[Inputs]), Outputs: uint64(t.used[Outputs]), Returns: uint64(t.used[Returns])}
+	usage := &forward.Budget{Returns: uint64(t.used[Returns])}
 	return usage
 }
 func FullBudget(maximum int) *forward.Budget {
 	size := uint64(maximum)
-	budget := &forward.Budget{Snapshots: size, Inputs: size, Outputs: size, Returns: size}
+	budget := &forward.Budget{Returns: size}
 	return budget
 }

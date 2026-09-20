@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/storage"
 )
 
@@ -114,12 +113,11 @@ func (s *Store) Scan(ctx context.Context, req storage.ScanRequest) (storage.Scan
 	if err != nil {
 		return empty, err
 	}
-	defer capacity.Close(page.memory)
 	if len(page.Hits.Hits) > pageSize+1 {
 		return empty, errors.New("search Scan exceeded its requested result count")
 	}
 	documents := make([]storage.Document, 0, req.BatchSize)
-	budget := storage.NewResponseBudget(ctx, req.Request.MaxBytes)
+	budget := storage.NewReadBudget(req.Request.MaxBytes)
 	previous := seek.Position
 	var position []byte
 	more := false

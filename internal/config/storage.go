@@ -1,20 +1,17 @@
 package config
 
 import (
-	"github.com/liran/sink-go/uri"
-
 	"fmt"
 	"strings"
 )
 
 func resolveStorage(prefix string, file storageFile) (Storage, error) {
 	var loaded Storage
-	loaded.Name = strings.TrimSpace(file.Name)
-	if !uri.ValidStore(loaded.Name) {
-		return loaded, fmt.Errorf("%s.name must be a canonical lowercase Store name", prefix)
-	}
 	v := validator{}
 	loaded.Driver = Driver(strings.TrimSpace(string(file.Driver)))
+	if loaded.Driver != DriverMongoDB && file.MongoDB != (mongoDBFile{}) {
+		return loaded, fmt.Errorf("%s.mongodb requires the mongodb driver", prefix)
+	}
 	switch loaded.Driver {
 	case DriverMongoDB:
 		mongo := &loaded.MongoDB
@@ -57,6 +54,5 @@ func resolveStorage(prefix string, file storageFile) (Storage, error) {
 	default:
 		return loaded, fmt.Errorf("%s.driver must be mongodb, elasticsearch, or opensearch", prefix)
 	}
-	loaded.Kafka = resolveKafka(prefix+".kafka", file.Kafka, &v)
 	return loaded, v.err
 }

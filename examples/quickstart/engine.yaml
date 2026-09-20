@@ -1,59 +1,35 @@
 mode: engine
-
 grpc:
   address: ":8080"
   max_receive_message_bytes: 64MiB
   max_send_message_bytes: 64MiB
+memory:
+  # max_bytes: 1GiB # Optional process ceiling; bounded by detected limits.
+  high_watermark_percent: 80 # Reject new work at this process memory usage.
+  low_watermark_percent: 70 # Resume new work after usage falls to this level.
+batching:
+  max_wait: 2ms # Collection delay, not an execution timeout.
+  max_operations: 32 # Measured small-document starting point; not the public RPC limit.
+  max_bytes: 16MiB
+  queue:
+    max_operations: 10000
+    max_bytes: 128MiB
+producer:
+  max_buffered_bytes: 64MiB
+execution:
+  merge:
+    max_attempts: 3 # Revision-conflict attempts.
+    lua:
+      timeout: 100ms # Per-script execution protection, not an RPC deadline.
+      max_source_bytes: 64KiB
+      max_result_bytes: 16MiB # Per-document current/input/result bound.
+      max_cached_programs: 256
+      max_instructions: 1000000
 
 health:
   address: ":8081"
 prometheus:
   enabled: true
   address: ":9090"
-
-storage:
-  name: primary
-  driver: mongodb
-  mongodb:
-    uri: mongodb://mongo:27017/?replicaSet=rs0
-    max_concurrent_writes: 64
-    max_concurrent_groups: 16
-  kafka:
-    enabled: true
-    brokers:
-      - kafka:19092
-    topic:
-      name: sink-mutations
-      partitions: 4
-      replication_factor: 1
-      retention: 72h
-    consumer:
-      group_id: sink-quickstart
-      max_poll_records: 500
-      retry:
-        max_attempts: 10
-        backoff: 100ms
-        max_backoff: 10s
-
-    dead_letter:
-      topic: sink-mutations.dlq
-service:
-  request:
-    max_operations: 1000
-  batching:
-    max_wait: 2ms
-    max_operations: 1000
-    max_bytes: 16MiB
-    queue:
-      max_operations: 10_000
-      max_bytes: 128MiB
-  merge:
-    max_attempts: 3
-    lua:
-      timeout: 100ms
-      max_source_bytes: 64KiB
-      max_result_bytes: 16MiB
-      max_cached_programs: 256
-      max_instructions: 1_000_000
-
 shutdown_timeout: 15s
+logging: {level: warn}

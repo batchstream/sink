@@ -1,55 +1,37 @@
-# Gateway: route public RPCs to per-Store Engines; no database or Kafka configuration.
-# Values are defaults unless marked as examples or derived defaults.
-# Capacities are per process, not cluster-wide or hard RSS limits.
+# Gateway runtime configuration. Unknown and wrong-role fields are rejected.
 # Byte sizes accept KiB/MiB/GiB or integer bytes; durations accept ms/s/m/h.
-# Positive limits cannot be disabled with 0. Unknown fields are rejected.
-# Validate offline: sink config check --config configs/gateway.yaml
-# Restart Gateway after changing any settings, including Store routes.
-mode: gateway # Required process role.
+# Validate: sink config check --config configs/gateway.yaml
+mode: gateway
 
-memory:
-  # max_bytes: 256MiB # Omit to detect from runtime/container memory limits.
-  burst_percent: 10 # Reserved for completion; never used for new request admission.
-  wait_timeout: 2s # Capacity growth wait; a shorter caller deadline wins.
-
-# Public RPC and gRPC health listener.
 grpc:
-  address: ":8080" # TCP listen address.
-  max_receive_message_bytes: 64MiB # Maximum encoded inbound gRPC message.
-  max_send_message_bytes: 64MiB # Maximum encoded outbound gRPC message.
+  address: ":8080"
+  max_receive_message_bytes: 64MiB
+  max_send_message_bytes: 64MiB
+memory:
+  # max_bytes: 1GiB # Optional process ceiling; bounded by detected limits.
+  high_watermark_percent: 80 # Reject new work at this process memory usage.
+  low_watermark_percent: 70 # Resume new work after usage falls to this level.
+request:
+  max_operations: 1000 # Entire client request across all Stores.
+forwarding:
+  routes:
+    - store: primary
+      target: dns:///engine-primary:8080
+      tls:
+        insecure: true # Example trusted plaintext network.
+        server_name: ""
+  dns_refresh_interval: 30s
+  idle_timeout: 5m
+  max_connections: 256
+  max_fanout: 8
 
-# Dedicated health listener; always available independently of Prometheus.
 health:
-  address: ":8081" # Listen address for /livez and /readyz; default :8081.
-
-# Separate optional Prometheus listener.
+  address: ":8081"
 prometheus:
-  enabled: false # Start /metrics on its own port; does not affect health; default false.
-  address: ":9090" # Metrics-only listen address, used only when enabled; default :9090.
+  enabled: false
+  address: ":9090"
+shutdown_timeout: 15s
 
-# Per-public-request limits, retained across all forwarded Store groups.
-service:
-  # Per-original-request limits, including requests split/coalesced by Gateway/Engine.
-  request:
-    timeout: 30s # Overall unary/page deadline including waits; <=300s; caller may shorten.
-    max_read_bytes: 32MiB # Read/returned-write/native document budget; <=half gRPC send limit.
-    max_operations: 1000 # Maximum operations in one Read, Write, or Delete request.
-
-gateway: # Stateless routing, bounded forwarding, and lazy downstream connections.
-  routes: # Store routes are loaded only at startup; restart after changes.
-    - store: primary # Must match the Engine/Worker storage.name and public request Store.
-      target: dns:///engine-primary:8080 # Required gRPC target for this Store's Engines.
-      tls: # Downstream transport; identity checks do not replace authentication.
-        insecure: true # Example: trusted plaintext network. Default false requires a TLS endpoint/proxy.
-        server_name: "" # Optional TLS name override; leave empty when insecure is true.
-  dns_refresh_interval: 30s # Refresh DNS-backed Engine replica addresses.
-  idle_timeout: 5m # Evict unused downstream channels after this idle duration.
-  max_connections: 256 # Cached endpoint channels and discovery views; <=10000; active calls protected.
-  max_fanout: 8 # Concurrent Store groups per RPC; <=128; budget-sensitive groups serialize.
-
-shutdown_timeout: 15s # Grace period for draining public RPCs and closing connections.
-
-# Internal diagnostics; restart the process after changes. See ../docs/logging.md.
 logging:
   level: warn # Minimum severity for all components: debug, info, warn, error; default warn.
   console: # Standard error output; no log files.

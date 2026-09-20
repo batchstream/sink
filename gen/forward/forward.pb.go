@@ -23,12 +23,10 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Independent logical document budgets, including per-record envelope charges.
+// Public response allowance, including per-record envelope charges.
+// Intermediate allocations are owned by each process memory pool.
 type Budget struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Snapshots     uint64                 `protobuf:"varint,1,opt,name=snapshots,proto3" json:"snapshots,omitempty"`
-	Inputs        uint64                 `protobuf:"varint,2,opt,name=inputs,proto3" json:"inputs,omitempty"`
-	Outputs       uint64                 `protobuf:"varint,3,opt,name=outputs,proto3" json:"outputs,omitempty"`
 	Returns       uint64                 `protobuf:"varint,4,opt,name=returns,proto3" json:"returns,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -62,27 +60,6 @@ func (x *Budget) ProtoReflect() protoreflect.Message {
 // Deprecated: Use Budget.ProtoReflect.Descriptor instead.
 func (*Budget) Descriptor() ([]byte, []int) {
 	return file_forward_forward_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *Budget) GetSnapshots() uint64 {
-	if x != nil {
-		return x.Snapshots
-	}
-	return 0
-}
-
-func (x *Budget) GetInputs() uint64 {
-	if x != nil {
-		return x.Inputs
-	}
-	return 0
-}
-
-func (x *Budget) GetOutputs() uint64 {
-	if x != nil {
-		return x.Outputs
-	}
-	return 0
 }
 
 func (x *Budget) GetReturns() uint64 {
@@ -554,12 +531,9 @@ var File_forward_forward_proto protoreflect.FileDescriptor
 
 const file_forward_forward_proto_rawDesc = "" +
 	"\n" +
-	"\x15forward/forward.proto\x12\x0fsink.forward.v1\x1a\x0fsink/sink.proto\x1a\x19google/protobuf/any.proto\"r\n" +
-	"\x06Budget\x12\x1c\n" +
-	"\tsnapshots\x18\x01 \x01(\x04R\tsnapshots\x12\x16\n" +
-	"\x06inputs\x18\x02 \x01(\x04R\x06inputs\x12\x18\n" +
-	"\aoutputs\x18\x03 \x01(\x04R\aoutputs\x12\x18\n" +
-	"\areturns\x18\x04 \x01(\x04R\areturns\"\xc6\x03\n" +
+	"\x15forward/forward.proto\x12\x0fsink.forward.v1\x1a\x0fsink/sink.proto\x1a\x19google/protobuf/any.proto\"P\n" +
+	"\x06Budget\x12\x18\n" +
+	"\areturns\x18\x04 \x01(\x04R\areturnsJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03J\x04\b\x03\x10\x04R\tsnapshotsR\x06inputsR\aoutputs\"\xc6\x03\n" +
 	"\x0eForwardRequest\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x14\n" +
 	"\x05store\x18\x02 \x01(\tR\x05store\x12-\n" +

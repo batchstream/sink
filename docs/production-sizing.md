@@ -10,19 +10,18 @@ capacity measurements with the [rollout drain budget](rolling-upgrades.md).
 
 ## Process budgets
 
-All roles use the `memory` pool: automatic detection leaves half the effective
-runtime/container limit for non-managed memory, with 10% of managed capacity
-reserved for completion. Override `memory.max_bytes` and `memory.burst_percent`
-only with workload measurements. No request execution concurrency cap is added.
-Batch queues, Gateway fanout/connections, backend pools, Kafka buffers and Lua
-limits remain separately bounded. See the [reserve experiment](https://github.com/batchstream/sink-production-suite/blob/main/benchmarks/memory-admission/README.md)
+All roles use process memory watermarks: reject/pause at 80% and resume at 70%
+of the effective Go/container/host ceiling. Startup panics if estimated minimum
+working memory exceeds the high-watermark allowance. See the [sizing formula](design/demand-based-admission.md)
 and [memory/KEDA signals](observability.md#memory-capacity-and-keda).
+This is overload control, not an OOM guarantee. There is no separate execution
+concurrency cap. Batch queues, Gateway fanout/connections, backend pools, Kafka
+buffers and Lua limits remain separately bounded.
 
 A 2 CPU / 4 GiB allocation alone does not determine safe RPC concurrency. A small
 Put, a returned-document Merge, and a BSON Scan have different memory and CPU
 costs. Size against the actual request mix and backend latency. Leave memory for
-transport, Kafka buffers, Lua VMs, driver buffers and garbage collection outside
-configured document budgets. Configure Go memory settings within the container
+transport, Kafka buffers, Lua VMs, driver buffers and garbage collection within the process budget. Configure Go memory settings within the container
 limit and measure rather than reusing settings from old architecture benchmarks.
 
 ## Database connection budget
@@ -40,8 +39,7 @@ can affect multiple Stores, so it needs independent capacity planning.
 
 Each search Store owns its HTTP connection pool and retains at most 128 idle
 connections across all endpoints, with a 90-second idle timeout. This avoids
-reopening most connections after concurrent bursts. Active requests acquire
-managed memory capacity; 128 is an idle-cache limit, not a limit on active
+reopening most connections after concurrent bursts. Active requests pass process memory admission; 128 is an idle-cache limit, not a limit on active
 connections. Shutdown releases the Store's idle connections after work drains.
 
 ## Scaling signals

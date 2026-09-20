@@ -26,10 +26,6 @@ func (app *Application) configureGRPC(server sink.SinkServer, observed *sinkmetr
 		return fmt.Errorf("listen for gRPC: %w", err)
 	}
 	serverOptions := make([]grpc.ServerOption, 0, 4)
-	memoryStats := &protocol.MemoryStats{Pool: app.memory, Timeout: app.config.Service.Request.Timeout}
-	if app.memory != nil {
-		serverOptions = append(serverOptions, grpc.StatsHandler(memoryStats))
-	}
 	overhead := 0
 	if app.config.Mode == config.ModeEngine {
 		overhead = forwarding.EnvelopeBytes
@@ -41,9 +37,6 @@ func (app *Application) configureGRPC(server sink.SinkServer, observed *sinkmetr
 	interceptors := make([]grpc.UnaryServerInterceptor, 0, 2)
 	interceptors = append(interceptors, logUnary)
 	streamInterceptors := []grpc.StreamServerInterceptor{logStream}
-	if app.memory != nil {
-		interceptors = append(interceptors, protocol.MemoryInterceptor)
-	}
 	if app.gateway != nil {
 		interceptors = append(interceptors, app.gateway.UnaryInterceptor())
 	}
@@ -69,7 +62,9 @@ func (app *Application) configureGRPC(server sink.SinkServer, observed *sinkmetr
 	serverOptions = append(serverOptions, grpc.ChainUnaryInterceptor(interceptors...))
 	serverOptions = append(serverOptions, grpc.ChainStreamInterceptor(streamInterceptors...))
 	grpcServer := grpc.NewServer(serverOptions...)
-	sink.RegisterSinkServer(grpcServer, server)
+	if app.config.Mode == config.ModeGateway {
+		sink.RegisterSinkServer(grpcServer, server)
+	}
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	for _, configured := range app.healthChecks {

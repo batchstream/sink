@@ -11,8 +11,6 @@ import (
 	"github.com/liran/sink/internal/protocol"
 
 	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/capacity"
-	"github.com/liran/sink/internal/forwarding"
 	"github.com/liran/sink/internal/merge"
 	"github.com/liran/sink/internal/storage"
 	"google.golang.org/grpc/codes"
@@ -58,7 +56,6 @@ type writeExecutionOptions struct {
 	observation      *writeObservation
 	budgets          *requestBudgets
 	WaitUntilVisible bool
-	memory           *writeMemoryReservation
 }
 
 func (o writeExecutionOptions) complete(group writeGroup, results []*sink.WriteResult) {
@@ -369,94 +366,31 @@ func (s *Server) executeWriteAttempt(
 	results []*sink.WriteResult,
 	opts writeExecutionOptions,
 ) ([]writeGroup, error) {
-	attempt := writeAttempt{
-		options:   opts,
-		results:   results,
-		snapshots: opts.budgets.fresh(forwarding.Snapshots, s.maxReadBytes),
-		inputs:    opts.budgets.fresh(forwarding.Inputs, s.maxReadBytes),
-		outputs:   opts.budgets.fresh(forwarding.Outputs, s.maxReadBytes),
-		output:    storage.NewReadBudget(s.maxReadBytes),
+	attempt := writeAttempt{options: opts, results: results}
+	if err := contextError(ctx); err != nil {
+		return nil, err
 	}
-	next := make([]writeGroup, 0)
-	pending := groups
-	limit := len(groups)
-	for len(pending) > 0 {
-		if err := contextError(ctx); err != nil {
-			return nil, err
-		}
-		if err := opts.memory.reservation.resize(opts.memory.estimate.bytes); err != nil {
-			// These groups have not written in this attempt. Previous successful
-			// chunks keep their results; only the remaining operations may retry.
-			for _, group := range pending {
-				for _, operation := range group.operations {
-					setWriteFailure(results[operation.index], sink.FailureCode_FAILURE_CODE_RESOURCE_EXHAUSTED, err, true)
-				}
-				opts.complete(group, results)
-			}
-			return next, nil
-		}
-		count := min(limit, len(pending))
-		batch := pending[:count]
-		read, err := s.readWriteSnapshots(ctx, batch, &attempt)
-		if err != nil {
-			return nil, err
-		}
-		attempt.snapshotBytes = 0
-		for _, snapshot := range read.Results {
-			attempt.snapshotBytes += len(snapshot.Document.Payload) + 128
-		}
-		outcome, err := s.applyWriteSnapshots(ctx, batch, read.Results, &attempt)
-		clear(read.Results)
-		if err != nil {
-			return nil, err
-		}
-		next = append(next, outcome.conflicts...)
-		pending = pending[count:]
-		if len(outcome.deferred) > 0 {
-			// Subsequent reads use the observed chunk size instead of repeatedly
-			// fetching a large tail that cannot fit in the retained working set.
-			limit = max(1, count-len(outcome.deferred))
-			pending = append(outcome.deferred, pending...)
-		}
+	read, err := s.readWriteSnapshots(ctx, groups, &attempt)
+	if err != nil {
+		return nil, err
 	}
-	return next, nil
+	defer clear(read.Results)
+	return s.applyWriteSnapshots(ctx, groups, read.Results, &attempt)
 }
 
 type writeAttempt struct {
-	options               writeExecutionOptions
-	results               []*sink.WriteResult
-	snapshots             []*storage.ReadBudget
-	inputs                []*storage.ReadBudget
-	outputs               []*storage.ReadBudget
-	output                *storage.ReadBudget
-	snapshotBytes         int
-	pendingCandidateBytes int
-	finalCommit           bool
-}
-
-type writeChunkOutcome struct {
-	conflicts []writeGroup
-	deferred  []writeGroup
+	options writeExecutionOptions
+	results []*sink.WriteResult
 }
 
 func (s *Server) readWriteSnapshots(ctx context.Context, groups []writeGroup, attempt *writeAttempt) (storage.ReadResponse, error) {
-	working := storage.NewReadBudget(s.maxReadBytes)
+	budget := storage.NewUnboundedReadBudget()
 	readOperations := make([]storage.ReadOperation, 0, len(groups))
 	for _, group := range groups {
-		operation := group.operations[0]
-		owners := make([]int, 0, len(group.operations))
-		for _, member := range group.operations {
-			owners = append(owners, attempt.options.budgets.owner(member.index))
-		}
-		budget := sharedSnapshotBudget(owners, attempt.snapshots)
-		if attempt.options.budgets.callerCount() > 1 {
-			budget = storage.NewWorkingSetReadBudget(budget, working)
-		}
-		budget = storage.WithMemoryBudget(ctx, budget, attempt.options.memory.reservation.managed)
-		readOperation := storage.ReadOperation{Address: operation.address, Budget: budget}
+		readOperation := storage.ReadOperation{Address: group.operations[0].address, Budget: budget}
 		readOperations = append(readOperations, readOperation)
 	}
-	readRequest := storage.ReadRequest{Operations: readOperations, Budget: storage.NewReadBudget(s.maxReadBytes)}
+	readRequest := storage.ReadRequest{Operations: readOperations, Budget: budget}
 	started := time.Now()
 	readResponse, err := s.storage.Read(ctx, readRequest)
 	attempt.options.observation.phase("storage_read", started)
@@ -469,82 +403,27 @@ func (s *Server) readWriteSnapshots(ctx context.Context, groups []writeGroup, at
 	return readResponse, nil
 }
 
-func (s *Server) applyWriteSnapshots(ctx context.Context, groups []writeGroup, snapshots []storage.ReadResult, attempt *writeAttempt) (writeChunkOutcome, error) {
-	var outcome writeChunkOutcome
+func (s *Server) applyWriteSnapshots(ctx context.Context, groups []writeGroup, snapshots []storage.ReadResult, attempt *writeAttempt) ([]writeGroup, error) {
 	opts := attempt.options
 	results := attempt.results
 	candidates := make([]writeGroupCandidate, 0, len(groups))
-	outputBytes := 0
 	for index, stored := range snapshots {
 		group := groups[index]
-		if errors.Is(stored.Err, storage.ErrReadWorkingSetFull) {
-			outcome.deferred = append(outcome.deferred, group)
-			continue
-		}
 		input := writeGroupPreparation{group: group, stored: stored, results: results}
-		var candidate writeGroupCandidate
-		var include bool
-		if opts.budgets == nil {
-			candidate, include = s.prepareWriteGroup(ctx, input)
-		} else {
-			preparation := batchedWritePreparation{writeGroupPreparation: input, budgets: opts.budgets, inputs: attempt.inputs, outputs: attempt.outputs}
-			candidate, include = s.prepareBatchedWriteGroup(ctx, preparation)
-		}
+		candidate, include := s.prepareWriteGroup(ctx, input)
 		if include {
-			candidateBytes := len(candidate.operation.Document.Payload) + 128
-			growthErr := capacity.Grow(ctx, opts.memory.reservation.managed, 3*candidateBytes)
-			if growthErr != nil {
-				failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: storage.ResourceExhaustedError(growthErr)}
-				applyWriteGroupResult(group, results, failure)
-				opts.complete(group, results)
-				continue
-			}
 			if err := opts.returns.reserve(group, candidate.operation.Document); err != nil {
-				if opts.memory.reservation.managed != nil {
-					opts.memory.reservation.managed.Shrink(3 * int64(candidateBytes))
-				}
 				failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: err}
 				applyWriteGroupResult(group, results, failure)
 				opts.complete(group, results)
 				continue
 			}
-			if opts.budgets == nil {
-				if err := attempt.output.Reserve(len(candidate.operation.Document.Payload)); err != nil {
-					if opts.memory.reservation.managed != nil {
-						opts.memory.reservation.managed.Shrink(3 * int64(candidateBytes))
-					}
-					failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: err}
-					applyWriteGroupResult(group, results, failure)
-					opts.complete(group, results)
-					continue
-				}
-			}
-			if opts.budgets.callerCount() > 1 && len(candidates) > 0 && candidateBytes > s.maxReadBytes-outputBytes {
-				attempt.pendingCandidateBytes = candidateBytes
-				conflicts, err := s.commitWriteCandidates(ctx, candidates, attempt)
-				attempt.pendingCandidateBytes = 0
-				if err != nil {
-					return outcome, err
-				}
-				outcome.conflicts = append(outcome.conflicts, conflicts...)
-				if opts.memory.reservation.managed != nil {
-					opts.memory.reservation.managed.Shrink(3 * int64(outputBytes))
-				}
-				clear(candidates)
-				candidates = candidates[:0]
-				outputBytes = 0
-			}
 			candidates = append(candidates, candidate)
-			outputBytes += candidateBytes
 		} else {
 			opts.complete(group, results)
 		}
 	}
-	attempt.finalCommit = true
-	conflicts, err := s.commitWriteCandidates(ctx, candidates, attempt)
-	attempt.finalCommit = false
-	outcome.conflicts = append(outcome.conflicts, conflicts...)
-	return outcome, err
+	return s.commitWriteCandidates(ctx, candidates, attempt)
 }
 
 func (s *Server) commitWriteCandidates(ctx context.Context, candidates []writeGroupCandidate, attempt *writeAttempt) ([]writeGroup, error) {
@@ -554,27 +433,6 @@ func (s *Server) commitWriteCandidates(ctx context.Context, candidates []writeGr
 	if err := contextError(ctx); err != nil {
 		return nil, err
 	}
-	if attempt.finalCommit || attempt.options.memory.reservation.managed != nil {
-		candidateBytes := 0
-		for _, candidate := range candidates {
-			candidateBytes += len(candidate.operation.Document.Payload) + 128
-		}
-		// All candidates in this chunk are now known. Keep the still-live
-		// snapshot slice, output and copy allowance; return unused capacity
-		// throughout the storage call, including refresh=wait_for latency.
-		if err := attempt.options.memory.retain(attempt.snapshotBytes, candidateBytes+attempt.pendingCandidateBytes); err != nil {
-			if attempt.options.memory.reservation.managed == nil {
-				return nil, err
-			}
-			for _, candidate := range candidates {
-				failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: storage.ResourceExhaustedError(err)}
-				applyWriteGroupResult(candidate.group, attempt.results, failure)
-				attempt.options.complete(candidate.group, attempt.results)
-			}
-			return nil, nil
-		}
-	}
-
 	writeOperations := make([]storage.WriteOperation, 0, len(candidates))
 	for _, candidate := range candidates {
 		writeOperations = append(writeOperations, candidate.operation)

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 
-	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/forwarding"
 	"github.com/liran/sink/internal/storage"
 )
@@ -13,10 +12,7 @@ import (
 type requestBudgets struct {
 	owners   []int
 	count    int
-	producer *capacity.Scope
 	trackers []*forwarding.Tracker
-	scopes   []*capacity.Scope
-	contexts []context.Context
 }
 
 func (b *requestBudgets) callerCount() int {
@@ -48,26 +44,6 @@ func (b *requestBudgets) add(count int) {
 	b.count++
 }
 
-func sharedSnapshotBudget(owners []int, budgets []*storage.ReadBudget) *storage.ReadBudget {
-	if len(owners) == 1 {
-		return budgets[owners[0]]
-	}
-	if len(budgets) == 1 && len(owners) > 0 {
-		return budgets[0]
-	}
-	// Repeated operations do not add callers or need separate snapshot charges.
-	maximum := min(len(owners), len(budgets))
-	shared := make([]*storage.ReadBudget, 0, maximum)
-	seen := make(map[int]bool, maximum)
-	for _, owner := range owners {
-		if !seen[owner] {
-			shared = append(shared, budgets[owner])
-			seen[owner] = true
-		}
-	}
-	return storage.NewSharedReadBudget(shared)
-}
-
 func (b *requestBudgets) tracker(owner int) *forwarding.Tracker {
 	if b == nil || owner >= len(b.trackers) {
 		return nil
@@ -77,40 +53,12 @@ func (b *requestBudgets) tracker(owner int) *forwarding.Tracker {
 func (b *requestBudgets) addContext(ctx context.Context, count int) {
 	b.add(count)
 	b.trackers = append(b.trackers, forwarding.FromContext(ctx))
-	b.scopes = append(b.scopes, capacity.FromContext(ctx))
-	b.contexts = append(b.contexts, ctx)
 }
 func contextBudgets(ctx context.Context, count int) *requestBudgets {
-	if forwarding.FromContext(ctx) == nil && capacity.FromContext(ctx) == nil {
+	if forwarding.FromContext(ctx) == nil {
 		return nil
 	}
 	budgets := &requestBudgets{}
 	budgets.addContext(ctx, count)
 	return budgets
-}
-
-func (b *requestBudgets) output(owner, bytes int) error {
-	if b == nil || owner >= len(b.scopes) {
-		return nil
-	}
-	return b.scopes[owner].OutputFrom(b.contexts[owner], b.producer, bytes)
-}
-
-func (b *requestBudgets) releaseOutput(owner, bytes int) {
-	if b == nil || owner >= len(b.scopes) {
-		return
-	}
-	b.scopes[owner].ReleaseOutputFrom(b.producer, bytes)
-}
-
-func (b *requestBudgets) ownsInput() bool {
-	if b == nil || len(b.scopes) != b.count {
-		return false
-	}
-	for _, scope := range b.scopes {
-		if scope == nil {
-			return false
-		}
-	}
-	return true
 }

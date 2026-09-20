@@ -17,7 +17,6 @@ import (
 	"github.com/liran/sink/internal/testuri"
 
 	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/merge"
 	sinkmetrics "github.com/liran/sink/internal/metrics"
 	"github.com/liran/sink/internal/queue"
@@ -265,12 +264,7 @@ func TestMergeConflictMetricsRecordRetriesAndExhaustion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("merge.NewLuaEngine() error = %v", err)
 	}
-	memoryOptions := capacity.Options{Bytes: 256 << 20, BurstPercent: 10, WaitTimeout: 2 * time.Second}
-	pool, err := capacity.New(memoryOptions)
-	if err != nil {
-		t.Fatal(err)
-	}
-	options := service.Options{BoundStore: "primary", Memory: pool,
+	options := service.Options{BoundStore: "primary",
 		Storage:          conflictStorage{},
 		Lua:              luaEngine,
 		MaxMergeAttempts: 2,
@@ -629,18 +623,14 @@ func newTestServer(t testing.TB, store storage.Storage, publisher queue.Publishe
 	if err != nil {
 		t.Fatalf("NewLuaEngine() error = %v", err)
 	}
-	memoryOptions := capacity.Options{Bytes: 256 << 20, BurstPercent: 10, WaitTimeout: 2 * time.Second}
-	pool, err := capacity.New(memoryOptions)
-	if err != nil {
-		t.Fatal(err)
-	}
-	options := service.Options{BoundStore: "primary", Memory: pool,
+	options := service.Options{BoundStore: "primary",
 		Storage:          store,
 		Lua:              luaEngine,
 		Publisher:        publisher,
 		MaxMergeAttempts: testMergeAttempts,
 		// Small fixture documents allow many independent RPC budgets in one batch.
-		MaxReadBytes: 1 << 20,
+		MaxReadBytes:  1 << 20,
+		MaxOperations: 1000,
 	}
 	server, err := service.New(options)
 	if err != nil {

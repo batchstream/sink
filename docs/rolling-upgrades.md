@@ -1,5 +1,9 @@
 # Rolling upgrades and replica changes
 
+The role-config redesign changes the private forwarding version. Migrate from
+0.18 and older through a separate matching Gateway/Engine cluster. The compatible
+rolling procedure below does not apply across that boundary.
+
 Treat discovery withdrawal and RPC draining as separate intervals. Sink keeps
 established channels when DNS refreshes, and Gateway retains one Engine address
 snapshot for each Store throughout an accepted public batch. Stopping an Engine
@@ -8,13 +12,15 @@ already accepted request.
 
 ## Memory-admission protocol upgrade
 
-Upgrade all Engines before Gateways when introducing demand-based memory
-admission. New Gateways call the private `ForwardStream` method; old Gateways
-remain compatible with the retained unary `Forward` method on new Engines.
-There is no fallback that replays a mutation or receives an unreserved maximum
-unary response. Roll back Gateways before Engines. Public Sink RPCs and SDK
-messages do not change. Migrate autoscaling to the `sink_memory_*` metrics before
-using the new policy; legacy admission settings no longer control CLI capacity.
+The new private protocol is version 6. It retains only response allowances and
+removes snapshot/input/output grants. Engines reject other protocol versions;
+retaining both `Forward` and `ForwardStream` methods does not provide compatibility
+with older versions. Use matching Gateway/Engine deployments and an isolated
+cutover for incompatible versions. Public SDK messages remain unchanged.
+
+Replace legacy admission/reservation dashboards and alerts with the new
+[memory watermark metrics](observability.md#memory-capacity-and-keda). Old metric
+families are removed, not kept as empty compatibility gauges.
 
 ## Budget both intervals
 
@@ -37,7 +43,7 @@ The first inequality is an operational sizing model, not a hard bound during
 DNS outages. Include CoreDNS, NodeLocal DNSCache, forwarders and sidecars actually
 used on the path. A successful refresh may return an old cached answer; a failed
 lookup retains the last usable membership and follows resolver backoff. Lowering
-`gateway.dns_refresh_interval` does not invalidate upstream caches or guarantee a
+`forwarding.dns_refresh_interval` does not invalidate upstream caches or guarantee a
 maximum failed-lookup duration.
 
 For example, 5s publication + 30s cache + 30s refresh + 5s lookup + 30s request

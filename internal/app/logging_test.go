@@ -12,14 +12,13 @@ import (
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/config"
 	"github.com/liran/sink/internal/logging"
-	"github.com/liran/sink/internal/protocol"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 func TestRPCDiagnosticsCaptureApplicationFailuresWithoutPayload(t *testing.T) {
-	loaded, err := config.Decode(strings.NewReader("mode: engine\nstorage:\n  name: primary\n  driver: mongodb\n  mongodb:\n    uri: mongodb://localhost:27017\n"))
+	loaded, err := config.Decode(strings.NewReader("mode: engine\n"), strings.NewReader("name: primary\nstorage:\n  driver: mongodb\n  mongodb:\n    uri: mongodb://localhost:27017\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,9 +39,6 @@ func TestRPCDiagnosticsCaptureApplicationFailuresWithoutPayload(t *testing.T) {
 	wrapped := &forward.ForwardResponse_Write{Write: write}
 	envelope := &forward.ForwardResponse{Response: wrapped}
 	native := &sink.ExecuteResponse{Success: false, Payload: []byte("private response")}
-	managedWrite := &protocol.ManagedMessage{Message: write}
-	managedEnvelope := &protocol.ManagedMessage{Message: envelope}
-	managedNative := &protocol.ManagedMessage{Message: native}
 	tests := []struct {
 		name     string
 		response any
@@ -50,9 +46,9 @@ func TestRPCDiagnosticsCaptureApplicationFailuresWithoutPayload(t *testing.T) {
 		want     string
 	}{
 		{name: "partial failure", response: write, want: "warn"},
-		{name: "managed failure", response: managedWrite, want: "warn"},
-		{name: "managed forwarded failure", response: managedEnvelope, want: "warn"},
-		{name: "managed native failure", response: managedNative, want: "warn"},
+		{name: "managed failure", response: write, want: "warn"},
+		{name: "managed forwarded failure", response: envelope, want: "warn"},
+		{name: "managed native failure", response: native, want: "warn"},
 		{name: "forwarded failure", response: envelope, want: "warn"},
 		{name: "native failure", response: native, want: "warn"},
 		{name: "transport failure", err: status.Error(codes.Internal, "private error"), want: "error"},
@@ -88,7 +84,7 @@ func TestRPCDiagnosticsCaptureApplicationFailuresWithoutPayload(t *testing.T) {
 }
 
 func TestStreamDiagnosticsPreserveOutcomeAndExcludeHealth(t *testing.T) {
-	loaded, err := config.Decode(strings.NewReader("mode: gateway\ngateway:\n  routes: [{store: primary, target: '127.0.0.1:8080', tls: {insecure: true}}]\nlogging:\n  level: debug\n"))
+	loaded, err := config.Decode(strings.NewReader("mode: gateway\nforwarding:\n  routes: [{store: primary, target: '127.0.0.1:8080', tls: {insecure: true}}]\nlogging:\n  level: debug\n"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

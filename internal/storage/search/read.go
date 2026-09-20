@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/liran/sink/internal/capacity"
 	"github.com/liran/sink/internal/storage"
 )
 
@@ -38,7 +37,6 @@ type multiGetDocument struct {
 }
 
 type multiGetResponse struct {
-	memory    *capacity.Lease
 	Documents []multiGetDocument `json:"docs"`
 }
 
@@ -88,7 +86,6 @@ func (s *Store) Read(ctx context.Context, req storage.ReadRequest) (storage.Read
 			}
 			applyMultiGetDocument(result, document, budget)
 		}
-		capacity.Close(documents.memory)
 	}
 	return response, nil
 }
@@ -137,8 +134,6 @@ func (s *Store) multiGet(ctx context.Context, works []readWork, source bool) (mu
 			return empty, fmt.Errorf("search multi-get result %d has a missing index or mismatched document ID", index)
 		}
 	}
-	decoded.memory = response.memory
-	response.memory = nil
 	return decoded, nil
 }
 

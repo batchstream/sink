@@ -53,7 +53,6 @@ func applyReadResult(result *sink.ReadResult, stored storage.ReadResult) {
 			Payload:  bytes.Clone(stored.Document.Payload),
 		}
 		result.Document = document
-		result.Revision = &sink.RevisionToken{Data: bytes.Clone(stored.Revision.Data)}
 	case storage.ReadStatusNotFound:
 		result.Status = sink.ReadStatus_READ_STATUS_NOT_FOUND
 	case storage.ReadStatusFailed:
@@ -69,7 +68,6 @@ func applyWriteResult(result *sink.WriteResult, stored storage.WriteResult) {
 	switch stored.Status {
 	case storage.WriteStatusApplied:
 		result.Status = sink.WriteStatus_WRITE_STATUS_APPLIED
-		result.Revision = &sink.RevisionToken{Data: bytes.Clone(stored.Revision.Data)}
 	case storage.WriteStatusPreconditionFailed:
 		result.Status = sink.WriteStatus_WRITE_STATUS_PRECONDITION_FAILED
 		failure := &sink.Failure{

@@ -62,19 +62,10 @@ func TestPutFoldingMatchesSequentialPreconditions(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var revision []byte
 			for index, result := range response.Results {
 				want := expected[index]
 				if result.OperationIndex != uint32(index) || result.Status != want.Status || result.GetFailure().GetCode() != want.GetFailure().GetCode() {
 					t.Fatalf("exists=%t sequence=%d operation=%d: got %v want %v", exists, sequence, index, result, want)
-				}
-				if result.Status == sink.WriteStatus_WRITE_STATUS_APPLIED {
-					if revision == nil {
-						revision = result.GetRevision().GetData()
-					}
-					if len(revision) == 0 || !bytes.Equal(revision, result.GetRevision().GetData()) {
-						t.Fatal("puts did not share a committed revision")
-					}
 				}
 			}
 			read := storage.ReadOperation{Address: storageAddress("key")}
@@ -91,7 +82,7 @@ func TestPutFoldingMatchesSequentialPreconditions(t *testing.T) {
 	}
 }
 
-func TestUpsertFoldingAvoidsReadsAndSharesRevision(t *testing.T) {
+func TestUpsertFoldingAvoidsReadsAndCommitsOnce(t *testing.T) {
 	observed := &countingStorage{backend: memory.New()}
 	server := newTestServer(t, observed, nil)
 	var operations []*sink.WriteOperation
@@ -104,7 +95,7 @@ func TestUpsertFoldingAvoidsReadsAndSharesRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, result := range response.Results {
-		if result.Status != sink.WriteStatus_WRITE_STATUS_APPLIED || !bytes.Equal(result.GetRevision().GetData(), response.Results[0].GetRevision().GetData()) {
+		if result.Status != sink.WriteStatus_WRITE_STATUS_APPLIED {
 			t.Fatal(result)
 		}
 	}

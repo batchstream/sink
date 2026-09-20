@@ -15,26 +15,18 @@ import (
 )
 
 const (
-	defaultMetadataField    = "__sink"
-	defaultConcurrentWrites = 64
-	defaultConcurrentGroups = 16
+	defaultMetadataField = "__sink"
 )
 
 type Options struct {
-	Store               string
-	MetadataField       string
-	MaxConcurrentWrites int
-	MaxConcurrentGroups int
+	Store         string
+	MetadataField string
 }
 
 type Store struct {
 	client               *mongo.Client
 	store                string
 	metadataField        string
-	maxConcurrentWrites  int
-	maxConcurrentGroups  int
-	groups               chan struct{}
-	writes               chan struct{}
 	clientBulkCapability atomic.Uint32
 }
 
@@ -45,9 +37,6 @@ func New(client *mongo.Client, opts Options) (*Store, error) {
 	if opts.Store == "" {
 		return nil, errors.New("create MongoDB storage: logical store is required")
 	}
-	if opts.MaxConcurrentWrites < 0 || opts.MaxConcurrentGroups < 0 {
-		return nil, errors.New("create MongoDB storage: concurrency limits cannot be negative")
-	}
 
 	metadataField := opts.MetadataField
 	if metadataField == "" {
@@ -57,22 +46,10 @@ func New(client *mongo.Client, opts Options) (*Store, error) {
 		return nil, errors.New("create MongoDB storage: metadata field is invalid")
 	}
 
-	maxConcurrentWrites := opts.MaxConcurrentWrites
-	if maxConcurrentWrites == 0 {
-		maxConcurrentWrites = defaultConcurrentWrites
-	}
-	maxConcurrentGroups := opts.MaxConcurrentGroups
-	if maxConcurrentGroups == 0 {
-		maxConcurrentGroups = defaultConcurrentGroups
-	}
 	store := &Store{
-		client:              client,
-		store:               opts.Store,
-		metadataField:       metadataField,
-		maxConcurrentWrites: maxConcurrentWrites,
-		maxConcurrentGroups: maxConcurrentGroups,
-		groups:              make(chan struct{}, maxConcurrentGroups),
-		writes:              make(chan struct{}, maxConcurrentWrites),
+		client:        client,
+		store:         opts.Store,
+		metadataField: metadataField,
 	}
 	return store, nil
 }

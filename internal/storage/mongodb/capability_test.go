@@ -2,6 +2,7 @@ package mongodb
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -22,6 +23,9 @@ func TestClientBulkDiscoveryCannotUndoCommandRejection(t *testing.T) {
 	deployment := drivertest.NewMockDeployment(hello, hello, rejected, unmatched, unmatched)
 	started := make(chan struct{})
 	release := make(chan struct{})
+	// The wire fixture has one unsynchronized response queue. Serialize only
+	// fallback updates while keeping the stale discovery response suspended.
+	var updateMu sync.Mutex
 	var hellos, bulks, updates atomic.Int32
 	monitor := &event.CommandMonitor{
 		Started: func(_ context.Context, command *event.CommandStartedEvent) {
@@ -29,10 +33,19 @@ func TestClientBulkDiscoveryCannotUndoCommandRejection(t *testing.T) {
 			case "bulkWrite":
 				bulks.Add(1)
 			case "update":
+				updateMu.Lock()
 				updates.Add(1)
 			}
 		},
+		Failed: func(_ context.Context, command *event.CommandFailedEvent) {
+			if command.CommandName == "update" {
+				updateMu.Unlock()
+			}
+		},
 		Succeeded: func(ctx context.Context, command *event.CommandSucceededEvent) {
+			if command.CommandName == "update" {
+				updateMu.Unlock()
+			}
 			if command.CommandName == "hello" && hellos.Add(1) == 1 {
 				close(started)
 				select {
@@ -51,7 +64,7 @@ func TestClientBulkDiscoveryCannotUndoCommandRejection(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = client.Disconnect(context.Background()) })
-	storeOptions := Options{Store: "primary", MaxConcurrentWrites: 1, MaxConcurrentGroups: 1}
+	storeOptions := Options{Store: "primary"}
 	store, err := New(client, storeOptions)
 	if err != nil {
 		t.Fatal(err)

@@ -60,7 +60,7 @@ retries safe.
 
 Returned-document chains execute in ordered rounds: independent direct Puts
 commit before a round starts conditional reads, without concurrent unbudgeted
-snapshots. Each returned operation retains its own committed revision/document.
+snapshots. Each returned operation retains its own committed document.
 Scan has separate byte, request and per-store sublimits in addition to global
 admission. Defaults reserve half the configured capacity for ordinary work
 (count limits round up to one for a total limit of one). Two default BSON scans

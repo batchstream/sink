@@ -405,20 +405,21 @@ retries. Older servers without the detail keep single-attempt behavior.
 
 Set `WriteOperation.return_document` (SDK `WithReturnedDocument()` or
 `Record.ReturnDocument`) to receive the operation's logical Put/Merge document
-alongside its successful revision. Only APPLIED results include documents.
+after its successful commit. Only APPLIED results include documents.
+Record revisions remain internal to Sink and are not returned by Read or Write.
 `RETURN_AFTER_ACCEPTED` with this option is rejected before publishing anything;
 use `WAIT_UNTIL_APPLIED` or `WAIT_UNTIL_VISIBLE`.
 
 Sink takes the document from the successful commit candidate, never from a later
 Read. Every operation requesting a returned document commits independently of
 preceding and following operations. Other operations can still share a folded
-commit and revision; setting the option on one operation does not promise
+commit; setting the option on one operation does not promise
 independent commits for the entire same-address chain. For three increments
-where only the first requests a document, the first can return value 1 and
-revision A while the remaining two share the commit of value 3 and revision B.
-Request a document on each operation when each needs its own committed output
-and revision. A conflicting attempt's speculative output is not returned. A
-definite CAS conflict may recompute against a fresh snapshot; transport failures
+where only the first requests a document, the first can return value 1 while
+the remaining two share the commit of value 3.
+Request a document on each operation when each needs its own committed output.
+A conflicting attempt's speculative output is not returned. A definite CAS
+conflict may recompute against a fresh snapshot; transport failures
 and unknown commit outcomes are not automatically replayed.
 
 The returned document is the logical document submitted to the backend. Sink

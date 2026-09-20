@@ -21,7 +21,7 @@ own boundary. See [record addresses](record-addresses.md).
 | One Create or Replace | One direct conditional write, as before |
 | Repeated Create/Replace/Upsert, or Put mixed with Merge | Read once, evaluate in order, commit the final successful document once |
 | Merge only | Read once, execute each Lua program in order, commit once |
-| Write requesting `return_document` | Commit that operation independently and return its own logical document and revision; other operations may still fold |
+| Write requesting `return_document` | Commit that operation independently and return its own logical document; other operations may still fold |
 | Repeated Read | Fetch once, return separate result objects from that observation |
 | Repeated synchronous Delete | Delete once, return the same outcome to every operation |
 
@@ -41,7 +41,7 @@ The folding rules below apply to operations that share a commit.
 `return_document` guarantees an independent commit for the operation carrying
 the option, retaining the batcher's ordering barrier. It does not guarantee
 separate commits for every other operation in the same-address chain. A trailing
-run without returned documents may still fold and share a revision. Only APPLIED
+run without returned documents may still fold into one commit. Only APPLIED
 operations requesting a document receive one. Asynchronous completion rejects this option.
 Returned documents are the logical Put/Merge outputs; backend-generated fields
 and ingest transformations are excluded. See [returned writes](native-access.md#returned-writes).
@@ -56,8 +56,8 @@ and ingest transformations are excluded. See [returned writes](native-access.md#
 4. A failed condition or Lua program leaves the working state unchanged. Commit
    the final successful document using the original snapshot's revision, or a
    record-not-exists condition for an initially absent document.
-5. After a successful commit, successful operations return APPLIED with the
-   same final revision. Preserve the individually evaluated failures and original
+5. After a successful commit, successful operations return APPLIED. The revision
+   remains internal to Sink. Preserve the individually evaluated failures and original
    operation indexes/RPC boundaries. If no operation succeeds, return the
    evaluated failures without writing.
 
@@ -101,7 +101,7 @@ requirements still apply; folding does not provide exactly-once execution or
 batch transactions.
 
 Reads share one backend observation per address but produce independent payload
-and revision copies. Every streamed result, including repetitions, must fit its
+copies. Every streamed result, including repetitions, must fit its
 own message ceiling. Internal batch callers retain their local response limits.
 The backend's unique-document read remains bounded by the active microbatch. Missing/error results are returned to all matching
 operations.
@@ -136,7 +136,7 @@ conflict recomputation, failed/lost commits, output and admission bounds, read
 response copies and repeated-key budgets, full address isolation, cross-RPC
 folding, and preservation of asynchronous intents. Existing completion-mode and
 cancellation regressions remain applicable. Tagged MongoDB/Search integration
-cases exercise mixed writes, final revisions, BSON dates, and search visibility.
+cases exercise mixed writes, final committed state, BSON dates, and search visibility.
 Additional regressions cover multiline Bulk JSON, bounded Replace revision
 retries (including unknown acknowledgements and successful siblings), per-RPC
 budget isolation, memory-limited splitting, and cross-batch dependencies and
@@ -213,7 +213,7 @@ Reproduce with `GOMAXPROCS=4 go test ./internal/service -run '^$'
 benchmark and test helpers into a detached baseline worktree. Race tests separately
 cover concurrent servers, whole-run conflict retries, cancellation, failed commits,
 and lost acknowledgements. Tagged integration tests check real backend visibility,
-concurrent folded updates, shared revisions, and BSON types.
+concurrent folded updates, shared commits, and BSON types.
 
 ### Contended commits
 

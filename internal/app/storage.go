@@ -64,10 +64,8 @@ func openMongoStorage(ctx context.Context, configured config.Storage, shutdownTi
 	}
 
 	storageOptions := mongodb.Options{
-		Store:               configured.Name,
-		MetadataField:       configured.MongoDB.MetadataField,
-		MaxConcurrentWrites: configured.MongoDB.MaxConcurrentWrites,
-		MaxConcurrentGroups: configured.MongoDB.MaxConcurrentGroups,
+		Store:         configured.Name,
+		MetadataField: configured.MongoDB.MetadataField,
 	}
 	store, err := mongodb.New(mongoClient, storageOptions)
 	if err != nil {

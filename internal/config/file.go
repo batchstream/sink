@@ -83,11 +83,9 @@ type storageFile struct {
 }
 
 type mongoDBFile struct {
-	URI                 *string `yaml:"uri"`
-	URIFile             *string `yaml:"uri_file"`
-	MetadataField       string  `yaml:"metadata_field"`
-	MaxConcurrentWrites *int    `yaml:"max_concurrent_writes"`
-	MaxConcurrentGroups *int    `yaml:"max_concurrent_groups"`
+	URI           *string `yaml:"uri"`
+	URIFile       *string `yaml:"uri_file"`
+	MetadataField string  `yaml:"metadata_field"`
 }
 
 type searchFile struct {

@@ -7,7 +7,6 @@ import (
 
 func resolveStorage(prefix string, file storageFile) (Storage, error) {
 	var loaded Storage
-	v := validator{}
 	loaded.Driver = Driver(strings.TrimSpace(string(file.Driver)))
 	if loaded.Driver != DriverMongoDB && file.MongoDB != (mongoDBFile{}) {
 		return loaded, fmt.Errorf("%s.mongodb requires the mongodb driver", prefix)
@@ -24,8 +23,6 @@ func resolveStorage(prefix string, file storageFile) (Storage, error) {
 			return loaded, fmt.Errorf("%s.mongodb.uri is required when driver is mongodb", prefix)
 		}
 		mongo.MetadataField = valueOrDefault(file.MongoDB.MetadataField, "__sink")
-		mongo.MaxConcurrentWrites = v.integer(prefix+".mongodb.max_concurrent_writes", file.MongoDB.MaxConcurrentWrites, 64)
-		mongo.MaxConcurrentGroups = v.integer(prefix+".mongodb.max_concurrent_groups", file.MongoDB.MaxConcurrentGroups, 16)
 	case DriverElasticsearch, DriverOpenSearch:
 		search := &loaded.Search
 		search.Endpoints = nonEmptyValues(file.Search.Endpoints)
@@ -54,5 +51,5 @@ func resolveStorage(prefix string, file storageFile) (Storage, error) {
 	default:
 		return loaded, fmt.Errorf("%s.driver must be mongodb, elasticsearch, or opensearch", prefix)
 	}
-	return loaded, v.err
+	return loaded, nil
 }

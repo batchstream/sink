@@ -51,9 +51,7 @@ func (s *Store) Delete(ctx context.Context, req storage.DeleteRequest) (storage.
 	var deletes sync.WaitGroup
 	deletes.Add(len(groups))
 	for _, group := range groups {
-		select {
-		case s.groups <- struct{}{}:
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			for _, operation := range group.operations {
 				setDeleteError(&response.Results[operation.index], storage.BackendError(ctx.Err()))
 			}
@@ -62,9 +60,6 @@ func (s *Store) Delete(ctx context.Context, req storage.DeleteRequest) (storage.
 		}
 		go func() {
 			defer deletes.Done()
-			defer func() {
-				<-s.groups
-			}()
 			s.deleteGroup(ctx, group, response.Results)
 		}()
 	}

@@ -18,17 +18,17 @@ func TestExecutionRejectsRemovedLimits(t *testing.T) {
 	}
 }
 
-func TestMongoDBStoreConcurrencyValidation(t *testing.T) {
+func TestMongoDBStoreRejectsRemovedConcurrencyLimits(t *testing.T) {
 	for _, field := range []string{"max_concurrent_writes", "max_concurrent_groups"} {
-		for _, value := range []string{"0", "-1"} {
+		for _, value := range []string{"0", "-1", "16", "64"} {
 			shared := minimalStorage + "    " + field + ": " + value + "\n"
 			_, err := Decode(strings.NewReader("mode: engine"), strings.NewReader(shared))
-			if err == nil || !strings.Contains(err.Error(), "storage.mongodb."+field) {
-				t.Fatalf("invalid concurrency accepted: %s: %v", shared, err)
+			if err == nil || !strings.Contains(err.Error(), "field "+field+" not found") {
+				t.Fatalf("removed concurrency setting accepted: %s: %v", shared, err)
 			}
 		}
 	}
-	shared := "name: primary\nstorage:\n  driver: opensearch\n  search: {endpoints: [http://localhost:9200]}\n  mongodb: {max_concurrent_writes: 4}\n"
+	shared := "name: primary\nstorage:\n  driver: opensearch\n  search: {endpoints: [http://localhost:9200]}\n  mongodb: {metadata_field: custom}\n"
 	_, err := Decode(strings.NewReader("mode: engine"), strings.NewReader(shared))
 	if err == nil || !strings.Contains(err.Error(), "requires the mongodb driver") {
 		t.Fatalf("MongoDB tuning accepted by another driver: %v", err)

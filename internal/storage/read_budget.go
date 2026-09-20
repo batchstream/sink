@@ -40,7 +40,7 @@ func (b *ReadBudget) Reserve(size int) error {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	// Include room for the per-operation protobuf envelope and revision.
+	// Include room for the per-operation protobuf envelope and internal revision.
 	const overhead = 128
 	if size < 0 || b.remaining < overhead || size > b.remaining-overhead {
 		cause := errors.New("read response exceeds its byte budget; request fewer or smaller records")

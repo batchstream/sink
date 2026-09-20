@@ -1,7 +1,6 @@
 package service_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -55,7 +54,6 @@ func TestMergeFoldingAcrossRPCsPreservesResponseBoundaries(t *testing.T) {
 			errs <- err
 		}()
 	}
-	var revision []byte
 	for range callers {
 		if err := <-errs; err != nil {
 			t.Fatal(err)
@@ -68,11 +66,6 @@ func TestMergeFoldingAcrossRPCsPreservesResponseBoundaries(t *testing.T) {
 			if result.OperationIndex != uint32(index) || result.Status != sink.WriteStatus_WRITE_STATUS_APPLIED {
 				t.Fatalf("result boundary: %v", result)
 			}
-		}
-		if revision == nil {
-			revision = response.Results[0].GetRevision().GetData()
-		} else if !bytes.Equal(revision, response.Results[0].GetRevision().GetData()) {
-			t.Fatal("hot writes were not folded across RPCs")
 		}
 	}
 	if observed.readCalls.Load() != 1 || observed.writeCalls.Load() != 1 || observed.maxWriteOperations.Load() != callers+1 || !observed.writeWaitVisible.Load() {
@@ -195,7 +188,7 @@ func foldingValue(t testing.TB, backend storage.Storage, key string) int {
 	return document.Value
 }
 
-func TestMergeFoldingPreservesOrderAndSharesCommitRevision(t *testing.T) {
+func TestMergeFoldingPreservesOrderAndCommitsOnce(t *testing.T) {
 	backend := memory.New()
 	observed := &countingStorage{backend: backend}
 	server := newTestServer(t, observed, nil)
@@ -222,9 +215,6 @@ func TestMergeFoldingPreservesOrderAndSharesCommitRevision(t *testing.T) {
 	for index, result := range response.Results {
 		if result.OperationIndex != uint32(index) || result.Status != sink.WriteStatus_WRITE_STATUS_APPLIED || result.Failure != nil {
 			t.Fatalf("result %d: %v", index, result)
-		}
-		if len(result.GetRevision().GetData()) == 0 || !bytes.Equal(result.GetRevision().GetData(), response.Results[0].GetRevision().GetData()) {
-			t.Fatalf("result %d did not share the final commit revision", index)
 		}
 	}
 	if got := foldingValue(t, backend, "ordered"); got != 123 {
@@ -256,9 +246,6 @@ func TestWriteFoldingPreservesPutBetweenMerges(t *testing.T) {
 	}
 	if observed.readCalls.Load() != 1 || observed.writeCalls.Load() != 1 {
 		t.Fatalf("folded reads=%d writes=%d", observed.readCalls.Load(), observed.writeCalls.Load())
-	}
-	if !bytes.Equal(response.Results[0].GetRevision().GetData(), response.Results[3].GetRevision().GetData()) {
-		t.Fatal("writes to one record did not share the final commit")
 	}
 }
 
@@ -363,7 +350,7 @@ func TestMergeFoldingDoesNotAcknowledgeOrReplayFailedCommit(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, result := range response.Results {
-					if result.Status != sink.WriteStatus_WRITE_STATUS_FAILED || result.GetFailure().GetCode() != sink.FailureCode_FAILURE_CODE_UNAVAILABLE || len(result.GetRevision().GetData()) != 0 {
+					if result.Status != sink.WriteStatus_WRITE_STATUS_FAILED || result.GetFailure().GetCode() != sink.FailureCode_FAILURE_CODE_UNAVAILABLE {
 						t.Fatalf("acknowledged an uncommitted outcome: %v", result)
 					}
 				}

@@ -68,18 +68,7 @@ func (s *Store) writeConditionalBulk(ctx context.Context, operations []writeWork
 	if len(writes) == 0 {
 		return
 	}
-	select {
-	case s.groups <- struct{}{}:
-		defer func() { <-s.groups }()
-	case <-ctx.Done():
-		for _, operation := range prepared {
-			setWriteError(&results[operation.index], storage.BackendError(ctx.Err()))
-		}
-		return
-	}
-	select {
-	case s.writes <- struct{}{}:
-	case <-ctx.Done():
+	if ctx.Err() != nil {
 		for _, operation := range prepared {
 			setWriteError(&results[operation.index], storage.BackendError(ctx.Err()))
 		}
@@ -87,7 +76,6 @@ func (s *Store) writeConditionalBulk(ctx context.Context, operations []writeWork
 	}
 	bulkOptions := options.ClientBulkWrite().SetOrdered(false).SetVerboseResults(true)
 	response, err := s.client.BulkWrite(ctx, writes, bulkOptions)
-	<-s.writes
 	if unsupportedClientBulk(response, err) {
 		// Command availability can differ from cached wire-version discovery,
 		// for example after a primary changes. Retry only a command rejection

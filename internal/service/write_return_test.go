@@ -1,7 +1,6 @@
 package service_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"sort"
 	"strings"
@@ -38,7 +37,8 @@ func returnedCounter(t *testing.T, result *sink.WriteResult) int {
 
 func TestWriteReturningSeparatesSameRecordCommits(t *testing.T) {
 	store := memory.New()
-	server := newTestServer(t, store, nil)
+	observed := &countingStorage{backend: store}
+	server := newTestServer(t, observed, nil)
 	first := returningIncrement("quota")
 	second := returningIncrement("quota")
 	first.Operations = append(first.Operations, second.Operations[0])
@@ -49,7 +49,7 @@ func TestWriteReturningSeparatesSameRecordCommits(t *testing.T) {
 	if returnedCounter(t, response.Results[0]) != 1 || returnedCounter(t, response.Results[1]) != 2 {
 		t.Fatalf("return values=%v", response)
 	}
-	if bytes.Equal(response.Results[0].GetRevision().GetData(), response.Results[1].GetRevision().GetData()) {
+	if observed.writeCalls.Load() != 2 {
 		t.Fatal("returning operations shared a commit")
 	}
 	read, err := server.Read(t.Context(), readRequest("quota"))

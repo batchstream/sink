@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   soak:
-    uses: batchstream/sink-production-suite/.github/workflows/reliability.yml@360d4b01d7286542d2d21032bcab9e612d9a6fec
+    uses: batchstream/sink-production-suite/.github/workflows/reliability.yml@0620bb768f44452aa2633b2ac9249a505b398b07
     with:
-      suite_ref: 360d4b01d7286542d2d21032bcab9e612d9a6fec
+      suite_ref: 0620bb768f44452aa2633b2ac9249a505b398b07
       sink_ref: ${{ github.sha }}

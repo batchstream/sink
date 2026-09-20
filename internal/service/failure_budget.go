@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	sink "github.com/liran/sink/gen/sink"
+	sink "github.com/batchstream/sink/gen/sink"
 )
 
 const maxFailureMessageBytes = 1024

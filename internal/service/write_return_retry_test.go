@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/merge"
-	"github.com/liran/sink/internal/service"
-	"github.com/liran/sink/internal/storage"
-	"github.com/liran/sink/internal/storage/memory"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/merge"
+	"github.com/batchstream/sink/internal/service"
+	"github.com/batchstream/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage/memory"
 )
 
 type shrinkingCASStorage struct {

@@ -1,7 +1,7 @@
 package service
 
 import (
-	"github.com/liran/sink/internal/storage/memory"
+	"github.com/batchstream/sink/internal/storage/memory"
 
 	"context"
 	"slices"
@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liran/sink/internal/testuri"
+	"github.com/batchstream/sink/internal/testuri"
 
-	sink "github.com/liran/sink/gen/sink"
+	sink "github.com/batchstream/sink/gen/sink"
 )
 
 func TestBatcherOldBatchCannotReleaseNewOwnerOfCompletedDocument(t *testing.T) {

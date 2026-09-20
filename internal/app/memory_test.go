@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liran/sink/internal/config"
+	"github.com/batchstream/sink/internal/config"
 )
 
 func TestStartupMemoryMinimumForEveryRole(t *testing.T) {

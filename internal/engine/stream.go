@@ -3,10 +3,10 @@ package engine
 import (
 	"context"
 
-	forward "github.com/liran/sink/gen/forward"
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/forwarding"
-	"github.com/liran/sink/internal/metrics"
+	forward "github.com/batchstream/sink/gen/forward"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/forwarding"
+	"github.com/batchstream/sink/internal/metrics"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

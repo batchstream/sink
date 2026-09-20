@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/liran/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage"
 )
 
 type writeWork struct {

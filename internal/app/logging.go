@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liran/sink/gen/forward"
-	sink "github.com/liran/sink/gen/sink"
+	"github.com/batchstream/sink/gen/forward"
+	sink "github.com/batchstream/sink/gen/sink"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

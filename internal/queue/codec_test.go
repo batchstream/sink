@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/batchstream/sink/internal/testuri"
 	"github.com/liran/sink-go/uri"
-	"github.com/liran/sink/internal/testuri"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/queue"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/queue"
 	"google.golang.org/protobuf/proto"
 )
 

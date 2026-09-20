@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/liran/sink/internal/logging"
+	"github.com/batchstream/sink/internal/logging"
 )
 
 type healthAttempt struct {

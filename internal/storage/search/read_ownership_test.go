@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liran/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage"
 )
 
 func BenchmarkSearchReadDocument(b *testing.B) {

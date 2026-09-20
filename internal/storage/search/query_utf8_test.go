@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/liran/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage"
 )
 
 func TestManagedQueryRejectsInvalidUTF8BeforeJSONConversion(t *testing.T) {

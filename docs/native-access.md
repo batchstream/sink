@@ -441,7 +441,7 @@ refusal before backend execution preserves Scan's safe retry detail:
 `google.rpc.ErrorInfo` with `domain="sink"`, `reason="SCAN_ADMISSION_REJECTED"`
 and metadata `pool=memory`, `reason=busy`. Oversized requests and failures after
 execution begins do not advertise this pre-execution guarantee. Admitted work follows the caller deadline and continues through memory pressure. Cancellation and deadline expiry retain `CANCELED` and
-`DEADLINE_EXCEEDED` respectively. See [memory admission](design/demand-based-admission.md).
+`DEADLINE_EXCEEDED` respectively. See [memory admission](design/process-memory-admission.md).
 
 Execute responses and returned Write documents share the gRPC send ceiling
 semantics; each returned Write result is checked independently even after batching.

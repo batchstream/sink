@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/queue"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/queue"
 )
 
 // Applier executes one collected mutation group. Errors keep the source records

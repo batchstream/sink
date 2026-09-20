@@ -13,9 +13,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/batchstream/sink/internal/storage"
+	"github.com/batchstream/sink/internal/testuri"
 	"github.com/liran/sink-go/uri"
-	"github.com/liran/sink/internal/storage"
-	"github.com/liran/sink/internal/testuri"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 

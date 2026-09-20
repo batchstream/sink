@@ -9,7 +9,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/liran/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage"
 )
 
 type readWork struct {

@@ -187,14 +187,9 @@ The queue wire format is unchanged.
 Publishing a GitHub Release triggers `.github/workflows/release-image.yml`.
 Semantic version tags such as `v0.3.2` publish `0.3.2`, `0.3`, and `0` image
 tags. A non-prerelease also publishes `latest`. Images are available for
-`linux/amd64` and `linux/arm64` at `ghcr.io/batchstream/sink`.
-
-The legacy `ghcr.io/liran/sink` package remains unchanged. The manual
-`copy-legacy-images.yml` workflow copies its existing tags to the organization
-package, preserving manifest digests, all platforms, and embedded attestations.
-It refuses to overwrite an organization tag with a different digest. New
-releases publish to the current repository's GHCR namespace only. The
-organization package must be public for anonymous pulls.
+`linux/amd64` and `linux/arm64` at `ghcr.io/batchstream/sink`. Releases publish
+to the current repository's GHCR namespace only. The organization package must
+be public for anonymous pulls.
 
 The Release description is updated after publication with the complete tagged
 image address, pull command, and immutable image digest. For `v0.3.2`, the
@@ -234,7 +229,7 @@ DLQ publication failure, CREATE replay continuation, partition-prefix commits,
 rebalance cancellation, admission/cancellation, and read/Lua output budgets.
 Sink CI fuzzes mutation envelopes and BSON inputs for 30 seconds each on every change.
 
-The public [production suite](https://github.com/liran/sink-production-suite)
+The public [production suite](https://github.com/batchstream/sink-production-suite)
 owns release and sustained qualification. Sink's release workflow pins both the
 reusable workflow and suite source to the same immutable commit. The manual
 `.github/workflows/reliability.yml` entry point invokes that suite's two-hour

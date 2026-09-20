@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/config"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/config"
 )
 
 func TestRoutesRejectDuplicateStoreNames(t *testing.T) {

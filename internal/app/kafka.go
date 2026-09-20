@@ -3,11 +3,11 @@ package app
 import (
 	"fmt"
 
-	"github.com/liran/sink/internal/config"
-	sinkmetrics "github.com/liran/sink/internal/metrics"
-	queuekafka "github.com/liran/sink/internal/queue/kafka"
-	"github.com/liran/sink/internal/service"
-	"github.com/liran/sink/internal/worker"
+	"github.com/batchstream/sink/internal/config"
+	sinkmetrics "github.com/batchstream/sink/internal/metrics"
+	queuekafka "github.com/batchstream/sink/internal/queue/kafka"
+	"github.com/batchstream/sink/internal/service"
+	"github.com/batchstream/sink/internal/worker"
 )
 
 func (app *Application) configureKafka(observed *sinkmetrics.Metrics) error {

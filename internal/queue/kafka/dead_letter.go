@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/liran/sink/internal/queue"
+	"github.com/batchstream/sink/internal/queue"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 )

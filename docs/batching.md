@@ -66,7 +66,7 @@ submit one existing microbatch at a time and check each returned result against
 the local gRPC ceiling before its own commit. Kafka producer buffers and Lua sandbox limits remain.
 Queue limits count waiting work only, excluding dispatched batches. Graceful
 shutdown drains gRPC calls before stopping batch dispatchers.
-See [memory admission](design/demand-based-admission.md).
+See [memory admission](design/process-memory-admission.md).
 
 Batching happens only among requests for the same store reaching the same Sink
 process. More pods increase aggregate queue and storage concurrency, but they

@@ -121,7 +121,7 @@ The annotated [Gateway](../../configs/gateway.yaml),
 [Engine](../../configs/engine.yaml), and [Worker](../../configs/worker.yaml)
 examples collectively cover all 70 supported main-configuration leaf fields. Each
 file contains only settings used by that component. Store routes are included
-under `gateway.routes` and all listed entries are active. Each component configuration and the Engine/Worker search-driver
+under `forwarding.routes` and all listed entries are active. Each component configuration and the Engine/Worker search-driver
 alternatives were checked with the offline config command.
 
 Prometheus metrics are opt-in through `prometheus.enabled` (default `false`),

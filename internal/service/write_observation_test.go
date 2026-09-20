@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/merge"
-	sinkmetrics "github.com/liran/sink/internal/metrics"
-	"github.com/liran/sink/internal/storage/memory"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/merge"
+	sinkmetrics "github.com/batchstream/sink/internal/metrics"
+	"github.com/batchstream/sink/internal/storage/memory"
 )
 
 func TestWriteObservationsCountOnlyRetriedDocuments(t *testing.T) {

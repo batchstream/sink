@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package sink.v1;
 
-option go_package = "github.com/liran/sink/gen/sink;sink";
+option go_package = "github.com/batchstream/sink/gen/sink;sink";
 
 // Sink provides database-independent record reads and mutations.
 //

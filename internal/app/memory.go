@@ -5,8 +5,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/liran/sink/internal/capacity"
-	"github.com/liran/sink/internal/config"
+	"github.com/batchstream/sink/internal/capacity"
+	"github.com/batchstream/sink/internal/config"
 )
 
 type memoryRequirement struct {

@@ -20,7 +20,7 @@ most one outstanding probe per dependency; a completed result is not cached.
 
 Every server PR runs the immutable public suite against the candidate executable,
 with race detection and real Elasticsearch plus OpenSearch 3.8/2.17. The suite's
-[incident contracts](https://github.com/liran/sink-production-suite/blob/b2c0ea1c79827083c33f5d005e95e632e68f01df/docs/reliability-contract.md)
+[incident contracts](https://github.com/batchstream/sink-production-suite/blob/b2c0ea1c79827083c33f5d005e95e632e68f01df/docs/reliability-contract.md)
 cover the production failures behind PRs 37, 38, 40 and 41: bounded hot-key work,
 applied/visible isolation, per-caller budgets, Replace conflicts, independent
 document completion, dataset refresh waits and queued cancellation.

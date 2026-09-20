@@ -1,9 +1,9 @@
 package service
 
 import (
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/protocol"
-	"github.com/liran/sink/internal/storage"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/protocol"
+	"github.com/batchstream/sink/internal/storage"
 )
 
 type mutationRequest[Operation addressedOperation] interface {

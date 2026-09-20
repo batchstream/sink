@@ -6,15 +6,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/batchstream/sink/internal/testuri"
 	"github.com/liran/sink-go/uri"
-	"github.com/liran/sink/internal/testuri"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/merge"
-	"github.com/liran/sink/internal/queue"
-	"github.com/liran/sink/internal/service"
-	"github.com/liran/sink/internal/storage"
-	"github.com/liran/sink/internal/worker"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/merge"
+	"github.com/batchstream/sink/internal/queue"
+	"github.com/batchstream/sink/internal/service"
+	"github.com/batchstream/sink/internal/storage"
+	"github.com/batchstream/sink/internal/worker"
 )
 
 func TestEmptySearchKeyIsPermanentWithoutBackendAccess(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	sink "github.com/liran/sink/gen/sink"
+	sink "github.com/batchstream/sink/gen/sink"
 )
 
 func TestReturnedChainDoesNotBlockUnrelatedPut(t *testing.T) {

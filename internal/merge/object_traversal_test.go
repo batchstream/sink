@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/batchstream/sink/internal/storage"
 	"github.com/iceisfun/golua/vm"
-	"github.com/liran/sink/internal/storage"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 

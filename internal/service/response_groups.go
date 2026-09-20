@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 
-	"github.com/liran/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage"
 )
 
 // responseGroups maps coalesced operations to their local response boundaries.

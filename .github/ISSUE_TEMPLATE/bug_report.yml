@@ -4,7 +4,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        For security vulnerabilities, use [private reporting](https://github.com/liran/sink/security/advisories/new).
+        For security vulnerabilities, use [private reporting](https://github.com/batchstream/sink/security/advisories/new).
         Remove credentials, private endpoints, and document data from logs and configuration.
   - type: input
     id: version

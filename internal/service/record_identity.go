@@ -1,6 +1,6 @@
 package service
 
-import "github.com/liran/sink/internal/storage"
+import "github.com/batchstream/sink/internal/storage"
 
 // Record identity is the complete canonical URI, independent of the backend.
 type recordIdentity string

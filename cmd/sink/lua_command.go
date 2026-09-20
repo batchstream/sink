@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liran/sink/internal/config"
-	"github.com/liran/sink/internal/merge"
-	"github.com/liran/sink/internal/storage"
+	"github.com/batchstream/sink/internal/config"
+	"github.com/batchstream/sink/internal/merge"
+	"github.com/batchstream/sink/internal/storage"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"gopkg.in/yaml.v3"
 )

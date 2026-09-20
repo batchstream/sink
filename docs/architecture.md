@@ -180,9 +180,10 @@ completion mode. Disjoint modes may run concurrently; a shared full record
 address creates an ordering barrier when its completion mode changes. Bounded
 Write/Delete dispatchers also track active and queued record dependencies across
 batches, so unrelated later requests can execute during an earlier refresh wait.
-Each original RPC retains its own read/snapshot/output quota; memory-limited
-execution groups split at RPC boundaries while hot records share physical
-snapshot/output reservations.
+Each original RPC retains its own bounded response group with a local read
+budget, and merge snapshots and returned documents stay bounded by the active
+microbatch. Memory-limited execution groups split at RPC boundaries; process
+memory watermarks gate new work.
 
 Read, write, and delete queues are independent for each store. This keeps a
 slow method or backend from consuming another queue's allowance. Each queue is

@@ -6,7 +6,7 @@ package forward
 
 import (
 	fmt "fmt"
-	sink "github.com/liran/sink/gen/sink"
+	sink "github.com/batchstream/sink/gen/sink"
 	protohelpers "github.com/planetscale/vtprotobuf/protohelpers"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	io "io"

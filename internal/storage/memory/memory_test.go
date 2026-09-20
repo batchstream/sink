@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/liran/sink/internal/storage"
-	"github.com/liran/sink/internal/storage/memory"
-	"github.com/liran/sink/internal/testuri"
+	"github.com/batchstream/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage/memory"
+	"github.com/batchstream/sink/internal/testuri"
 )
 
 func TestStoreRevisionPrecondition(t *testing.T) {

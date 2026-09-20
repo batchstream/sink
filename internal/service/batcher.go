@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	sinkmetrics "github.com/liran/sink/internal/metrics"
+	sinkmetrics "github.com/batchstream/sink/internal/metrics"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

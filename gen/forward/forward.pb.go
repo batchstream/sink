@@ -7,7 +7,7 @@
 package forward
 
 import (
-	sink "github.com/liran/sink/gen/sink"
+	sink "github.com/batchstream/sink/gen/sink"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -409,7 +409,7 @@ const file_forward_forward_proto_rawDesc = "" +
 	"\n" +
 	"\bresponse2X\n" +
 	"\x06Engine\x12N\n" +
-	"\aForward\x12\x1f.sink.forward.v1.ForwardRequest\x1a .sink.forward.v1.ForwardResponse0\x01B+Z)github.com/liran/sink/gen/forward;forwardb\x06proto3"
+	"\aForward\x12\x1f.sink.forward.v1.ForwardRequest\x1a .sink.forward.v1.ForwardResponse0\x01B1Z/github.com/batchstream/sink/gen/forward;forwardb\x06proto3"
 
 var (
 	file_forward_forward_proto_rawDescOnce sync.Once

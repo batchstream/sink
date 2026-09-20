@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	sinkmetrics "github.com/liran/sink/internal/metrics"
-	"github.com/liran/sink/internal/queue"
-	"github.com/liran/sink/internal/storage"
+	sinkmetrics "github.com/batchstream/sink/internal/metrics"
+	"github.com/batchstream/sink/internal/queue"
+	"github.com/batchstream/sink/internal/storage"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 

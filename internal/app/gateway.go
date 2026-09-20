@@ -1,7 +1,7 @@
 package app
 
 import (
-	"github.com/liran/sink/internal/gateway"
+	"github.com/batchstream/sink/internal/gateway"
 )
 
 func newGateway(opts Options) (*Application, error) {

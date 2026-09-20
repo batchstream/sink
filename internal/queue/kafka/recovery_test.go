@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/queue"
-	"github.com/liran/sink/internal/storage"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/queue"
+	"github.com/batchstream/sink/internal/storage"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"

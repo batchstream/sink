@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liran/sink/internal/merge"
+	"github.com/batchstream/sink/internal/merge"
 )
 
 func TestSinkV1UtilitiesShareInstructionBudgetAcrossCalls(t *testing.T) {

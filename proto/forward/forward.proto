@@ -1,6 +1,6 @@
 syntax = "proto3";
 package sink.forward.v1;
-option go_package = "github.com/liran/sink/gen/forward;forward";
+option go_package = "github.com/batchstream/sink/gen/forward;forward";
 
 import "sink/sink.proto";
 

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liran/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage"
 )
 
 func TestMultiGetRejectsUnidentifiedAndMisorderedResults(t *testing.T) {

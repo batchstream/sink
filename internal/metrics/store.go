@@ -1,8 +1,8 @@
 package metrics
 
 import (
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/protocol"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/protocol"
 )
 
 const (

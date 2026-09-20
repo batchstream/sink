@@ -4,7 +4,7 @@ package queue
 import (
 	"context"
 
-	sink "github.com/liran/sink/gen/sink"
+	sink "github.com/batchstream/sink/gen/sink"
 )
 
 type Publisher interface {

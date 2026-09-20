@@ -9,7 +9,7 @@ import (
 	"math"
 	"math/big"
 
-	"github.com/liran/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 

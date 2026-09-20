@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/batchstream/sink/internal/testuri"
 	"github.com/liran/sink-go/uri"
-	"github.com/liran/sink/internal/testuri"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/config"
-	"github.com/liran/sink/internal/queue"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/config"
+	"github.com/batchstream/sink/internal/queue"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 )

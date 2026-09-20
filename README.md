@@ -1,8 +1,8 @@
 # Sink
 
-[![CI](https://github.com/liran/sink/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/liran/sink/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/liran/sink)](https://github.com/liran/sink/releases/latest)
-[![Go version](https://img.shields.io/github/go-mod/go-version/liran/sink)](go.mod)
+[![CI](https://github.com/batchstream/sink/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/batchstream/sink/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/batchstream/sink)](https://github.com/batchstream/sink/releases/latest)
+[![Go version](https://img.shields.io/github/go-mod/go-version/batchstream/sink)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **One gRPC data layer for MongoDB, Elasticsearch, and OpenSearch.**
@@ -12,8 +12,8 @@ database connections, routing, bounded batching, and backpressure, with optional
 Kafka-backed asynchronous delivery. Native queries use the same connections.
 
 [Quickstart](#quickstart) · [Documentation](docs/README.md) ·
-[Go client](https://github.com/liran/sink-go) ·
-[Releases](https://github.com/liran/sink/releases) · [Contributing](CONTRIBUTING.md)
+[Go client](https://github.com/batchstream/sink-go) ·
+[Releases](https://github.com/batchstream/sink/releases) · [Contributing](CONTRIBUTING.md)
 
 For independent Store scaling, see [Gateway, Engine and Worker](docs/store-isolation.md)
 and the [Compose quickstart](examples/quickstart/README.md).
@@ -35,7 +35,7 @@ flowchart LR
 With Docker Compose and Make installed:
 
 ```shell
-git clone https://github.com/liran/sink.git
+git clone https://github.com/batchstream/sink.git
 cd sink
 make quickstart
 ```
@@ -51,7 +51,7 @@ After the checks pass, connect to **`127.0.0.1:8080`** or inspect
 for ports, rerunning the example, and resetting local data.
 
 Need just the binary or container? Use the
-[latest release](https://github.com/liran/sink/releases/latest) for Linux/macOS
+[latest release](https://github.com/batchstream/sink/releases/latest) for Linux/macOS
 binaries and checksums, or [run the container](#run-the-container).
 
 ## Why Sink?
@@ -134,13 +134,13 @@ flow, ordering, batching, merge, and failure semantics.
 ## Connect an application
 
 Go applications can use the typed, concurrency-safe
-[`sink-go`](https://github.com/liran/sink-go) client:
+[`sink-go`](https://github.com/batchstream/sink-go) client:
 
 ```shell
 go get github.com/liran/sink-go
 ```
 
-Its [quick-start example](https://github.com/liran/sink-go#quick-start) shows
+Its [quick-start example](https://github.com/batchstream/sink-go#quick-start) shows
 how to connect, create an address, and write a Go value. Other languages can
 generate a standard gRPC client from [`proto/sink/sink.proto`](proto/sink/sink.proto).
 
@@ -230,12 +230,12 @@ Start with the [documentation index](docs/README.md), organized by task:
 ## Contributing and support
 
 Bug reports, documentation improvements, and focused pull requests are welcome.
-Use the [issue forms](https://github.com/liran/sink/issues/new/choose) for bugs
+Use the [issue forms](https://github.com/batchstream/sink/issues/new/choose) for bugs
 and feature proposals, and read [CONTRIBUTING.md](CONTRIBUTING.md) for local
 checks and review guidance. Report vulnerabilities through the
 [security policy](SECURITY.md).
 
-Related projects: [Go SDK](https://github.com/liran/sink-go) ·
-[Public production qualification suite](https://github.com/liran/sink-production-suite).
+Related projects: [Go SDK](https://github.com/batchstream/sink-go) ·
+[Public production qualification suite](https://github.com/batchstream/sink-production-suite).
 
 Sink is released under the [MIT License](LICENSE).

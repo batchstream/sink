@@ -7,7 +7,7 @@
 | Guide | What you will learn |
 | --- | --- |
 | [Docker Compose quickstart](../examples/quickstart/README.md) | Start Sink, MongoDB, and Kafka and verify the public API |
-| [Go client](https://github.com/liran/sink-go#quick-start) | Connect an application and read or write typed documents |
+| [Go client](https://github.com/batchstream/sink-go#quick-start) | Connect an application and read or write typed documents |
 | [Store isolation](store-isolation.md) | Gateway, per-Store Engine/Worker, migration and scaling. |
 | [Architecture and behavior](architecture.md) | Understand addresses, encoding, batching, ordering, and completion modes |
 | [Document write flow](document-write-flow.md) | Follow one document from an RPC through storage or a Kafka worker |
@@ -44,5 +44,5 @@
 | [Contributing](../CONTRIBUTING.md) | Report an issue and prepare a focused pull request |
 | [Development](development.md) | Build, lint, generate protobuf code, run tests, and package releases |
 | [Lua benchmarks](https://github.com/batchstream/sink-production-suite/blob/main/benchmarks/lua/README.md) | Compare Lua runtime workloads |
-| [Public production suite](https://github.com/liran/sink-production-suite) | Run public API conformance and sustained fault qualification |
+| [Public production suite](https://github.com/batchstream/sink-production-suite) | Run public API conformance and sustained fault qualification |
 | [Security policy](../SECURITY.md) | Report a vulnerability privately |

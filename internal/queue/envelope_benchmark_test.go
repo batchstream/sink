@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/queue"
+	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/queue"
 )
 
 func BenchmarkMutationEnvelope(b *testing.B) {

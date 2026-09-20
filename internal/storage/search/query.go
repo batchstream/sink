@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/liran/sink/internal/storage"
+	"github.com/batchstream/sink/internal/storage"
 )
 
 func (s *Store) pageOptions(req storage.NativeRequest) (requestOptions, map[string]json.RawMessage, error) {

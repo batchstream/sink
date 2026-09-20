@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/liran/sink/internal/logging"
+	"github.com/batchstream/sink/internal/logging"
 )
 
 // TopicManager gates one store until its durable topic policy has been applied.

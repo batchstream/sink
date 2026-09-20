@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"time"
 
-	sink "github.com/liran/sink/gen/sink"
-	sinkmetrics "github.com/liran/sink/internal/metrics"
+	sink "github.com/batchstream/sink/gen/sink"
+	sinkmetrics "github.com/batchstream/sink/internal/metrics"
 )
 
 type writeObservation struct {

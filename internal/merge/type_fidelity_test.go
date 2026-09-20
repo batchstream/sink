@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liran/sink/internal/merge"
+	"github.com/batchstream/sink/internal/merge"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 

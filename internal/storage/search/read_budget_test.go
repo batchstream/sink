@@ -32,18 +32,17 @@ func TestReadFailuresPreserveDocumentBudget(t *testing.T) {
 					expected := expectedRequest{method: http.MethodPost, path: "/_mget", statusCode: http.StatusOK, responseBody: payload}
 					store, handler := newScriptedStore(t, []expectedRequest{expected})
 					t.Cleanup(store.Close)
-					var charged int
 					maximum := charge
 					if scope == "exhausted" {
-						maximum = 0
+						maximum = 1
 					}
-					budget := storage.NewTrackedReadBudget(maximum, func(used int) { charged = used })
+					budget := storage.NewReadBudget(maximum)
 					request := storage.ReadRequest{
 						Operations: []storage.ReadOperation{{Address: testAddress("bad")}, {Address: testAddress("good")}},
 						Budget:     budget,
 					}
 					if scope == "operation" {
-						request.Budget = storage.NewTrackedReadBudget(0, nil)
+						request.Budget = storage.NewReadBudget(1)
 						for index := range request.Operations {
 							request.Operations[index].Budget = budget
 						}
@@ -62,11 +61,11 @@ func TestReadFailuresPreserveDocumentBudget(t *testing.T) {
 					good := response.Results[1]
 					if scope == "exhausted" {
 						code, _ := storage.ErrorDetails(good.Err)
-						if good.Status != storage.ReadStatusFailed || code != storage.ErrorCodeResourceExhausted || charged != 0 || len(good.Document.Payload) != 0 || len(good.Revision.Data) != 0 {
-							t.Fatalf("exhausted budget retained a document: %+v, charged %d", good, charged)
+						if good.Status != storage.ReadStatusFailed || code != storage.ErrorCodeResourceExhausted || len(good.Document.Payload) != 0 || len(good.Revision.Data) != 0 {
+							t.Fatalf("exhausted budget retained a document: %+v", good)
 						}
-					} else if good.Status != storage.ReadStatusFound || string(good.Document.Payload) != source || charged != charge {
-						t.Fatalf("failed document consumed its sibling's budget: %+v, charged %d", good, charged)
+					} else if good.Status != storage.ReadStatusFound || string(good.Document.Payload) != source {
+						t.Fatalf("failed document consumed its sibling's budget: %+v", good)
 					}
 					handler.verify()
 				})

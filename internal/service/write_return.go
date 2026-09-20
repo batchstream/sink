@@ -5,7 +5,6 @@ import (
 	"errors"
 
 	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/forwarding"
 	"github.com/liran/sink/internal/storage"
 )
 
@@ -13,20 +12,19 @@ import (
 // bounds retained responses before committing, including per-RPC batching.
 type writeReturns struct {
 	remaining []int
-	maximum   []int
 	sizes     map[int]int
-	owners    *requestBudgets
+	owners    *responseGroups
 }
 
-func newWriteReturns(req *sink.WriteRequest, budgets *requestBudgets, maximum int) *writeReturns {
+func newWriteReturns(req *sink.WriteRequest, budgets *responseGroups, maximum int) *writeReturns {
 	if !hasWriteReturns(req) {
 		return nil
 	}
 	remaining := make([]int, budgets.callerCount())
 	for index := range remaining {
-		remaining[index] = budgets.tracker(index).Limit(forwarding.Returns, maximum)
+		remaining[index] = maximum
 	}
-	returns := &writeReturns{remaining: remaining, maximum: append([]int(nil), remaining...), sizes: make(map[int]int), owners: budgets}
+	returns := &writeReturns{remaining: remaining, sizes: make(map[int]int), owners: budgets}
 	return returns
 }
 
@@ -63,7 +61,6 @@ func (r *writeReturns) reserve(group writeGroup, document storage.Document) erro
 			return storage.ResourceExhaustedError(errors.New("returned write documents exceed response byte budget"))
 		}
 		r.remaining[owner] -= difference
-		r.owners.tracker(owner).Observe(forwarding.Returns, r.maximum[owner]-r.remaining[owner])
 		r.sizes[operation.index] = max(charge, r.sizes[operation.index])
 	}
 	return nil

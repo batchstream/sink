@@ -4,7 +4,6 @@ import (
 	"context"
 
 	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/forwarding"
 	"github.com/liran/sink/internal/protocol"
 	"github.com/liran/sink/internal/storage"
 	"google.golang.org/grpc/codes"
@@ -14,10 +13,7 @@ import (
 const maxCountResponseBytes = 256 << 10
 
 func (s *Server) query(ctx context.Context, req *sink.QueryRequest, send func(*sink.QueryResponse) error) error {
-	maximum := forwarding.FromContext(ctx).Limit(forwarding.Returns, s.maxReadBytes)
-	if maximum <= 0 {
-		return status.Error(codes.ResourceExhausted, "native response budget is exhausted")
-	}
+	maximum := s.maxReadBytes
 	if err := protocol.CheckStore(req, s.boundStore); err != nil {
 		return err
 	}
@@ -73,10 +69,7 @@ func (s *Server) query(ctx context.Context, req *sink.QueryRequest, send func(*s
 }
 
 func (s *Server) Count(ctx context.Context, req *sink.CountRequest) (*sink.CountResponse, error) {
-	maximum := forwarding.FromContext(ctx).Limit(forwarding.Returns, s.maxReadBytes)
-	if maximum <= 0 {
-		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
-	}
+	maximum := s.maxReadBytes
 	if err := protocol.CheckStore(req, s.boundStore); err != nil {
 		return nil, err
 	}

@@ -12,6 +12,8 @@ import (
 	"github.com/liran/sink/internal/forwarding"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 type pressureService struct {
@@ -40,15 +42,15 @@ func TestEnginePressureRejectsBeforeExecution(t *testing.T) {
 	}
 	write := &sink.WriteRequest{}
 	body := &forward.ForwardRequest_Write{Write: write}
-	request := &forward.ForwardRequest{Version: forwarding.Version, Store: "primary", Grant: forwarding.FullBudget(1 << 20), Request: body}
+	request := &forward.ForwardRequest{Version: forwarding.Version, Store: "primary", Request: body}
 	stream := &forwardRecorder{ctx: t.Context()}
 	err = server.Forward(request, stream)
 	response := stream.response
-	if err != nil || !response.GetNotStarted() || response.GetCode() != uint32(codes.ResourceExhausted) || backend.calls != 0 {
+	if status.Code(err) != codes.ResourceExhausted || response != nil || backend.calls != 0 {
 		t.Fatalf("pressure reached service: %v %v calls=%d", response, err, backend.calls)
 	}
-	if response.GetUsed().GetReturns() != 0 {
-		t.Fatal("rejection consumed response allowance")
+	if marker := stream.trailer.Get(forwarding.NotStartedTrailer); len(marker) != 1 || marker[0] != "true" {
+		t.Fatal("rejection omitted not-started evidence")
 	}
 }
 
@@ -56,10 +58,15 @@ type forwardRecorder struct {
 	grpc.ServerStream
 	ctx      context.Context
 	response *forward.ForwardResponse
+	trailer  metadata.MD
 }
 
 func (s *forwardRecorder) Context() context.Context { return s.ctx }
 func (s *forwardRecorder) Send(response *forward.ForwardResponse) error {
 	s.response = response
 	return nil
+}
+
+func (s *forwardRecorder) SetTrailer(trailer metadata.MD) {
+	s.trailer = metadata.Join(s.trailer, trailer)
 }

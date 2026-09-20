@@ -12,8 +12,9 @@ already accepted request.
 
 ## Streaming protocol upgrade
 
-The private forwarding protocol is version 7. `Forward` is one server-streaming
-RPC carrying typed results and a final usage/status settlement. The old unary
+The private forwarding protocol is version 8. `Forward` is one server-streaming
+RPC carrying typed results and ending with standard gRPC status and EOF. Budget
+grants, usage tracking and custom settlement/status envelopes have been removed. The old unary
 endpoint and byte-chunk protocol have been removed.
 
 Public `Read`, `Write`, `Query` and `Scan` are server-streaming RPCs. Upgrade the

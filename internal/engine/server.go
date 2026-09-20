@@ -3,7 +3,6 @@ package engine
 
 import (
 	"errors"
-	"google.golang.org/grpc"
 	"time"
 
 	forward "github.com/liran/sink/gen/forward"
@@ -12,7 +11,9 @@ import (
 	"github.com/liran/sink/internal/forwarding"
 	"github.com/liran/sink/internal/metrics"
 	"github.com/liran/sink/internal/protocol"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -44,21 +45,12 @@ func New(opts Options) (*Server, error) {
 	server := &Server{memory: opts.Memory, maxRequestBytes: opts.MaxRequestBytes, service: opts.Service, store: opts.Store, maximum: opts.MaxReadBytes, metrics: opts.Metrics}
 	return server, nil
 }
-func (s *Server) Forward(req *forward.ForwardRequest, stream grpc.ServerStreamingServer[forward.ForwardResponse]) error {
+func (s *Server) Forward(req *forward.ForwardRequest, stream grpc.ServerStreamingServer[forward.ForwardResponse]) (err error) {
 	ctx := stream.Context()
-	response := &forward.ForwardResponse{Version: forwarding.Version, Store: s.store, NotStarted: true, Complete: true}
 	started := time.Now()
-	defer func() { s.metrics.ObserveForward(req, response, time.Since(started)) }()
-	tracker := forwarding.NewTracker(req.GetGrant(), s.maximum)
+	defer func() { s.metrics.ObserveForward(req, status.Code(err), time.Since(started)) }()
 	reject := func(err error) error {
-		response.Code = uint32(status.Code(err))
-		response.Message = status.Convert(err).Message()
-		response.StatusDetails = status.Convert(err).Proto().GetDetails()
-		response.Used = tracker.Usage()
-		err = stream.Send(response)
-		if err != nil {
-			response.Code = uint32(status.Code(err))
-		}
+		stream.SetTrailer(metadata.Pairs(forwarding.NotStartedTrailer, "true"))
 		return err
 	}
 	if req.GetVersion() != forwarding.Version {
@@ -66,9 +58,6 @@ func (s *Server) Forward(req *forward.ForwardRequest, stream grpc.ServerStreamin
 	}
 	if req.GetStore() != s.store {
 		return reject(status.Error(codes.FailedPrecondition, "Engine identity does not match route"))
-	}
-	if req.GetGrant() == nil {
-		return reject(status.Error(codes.InvalidArgument, "forwarding budget is required"))
 	}
 	var request any
 	switch body := req.GetRequest().(type) {
@@ -102,55 +91,40 @@ func (s *Server) Forward(req *forward.ForwardRequest, stream grpc.ServerStreamin
 	s.metrics.AdjustInFlight(1)
 	defer s.metrics.AdjustInFlight(-1)
 	ctx = admitted
-	response.NotStarted = false
-	ctx = forwarding.WithTracker(ctx, tracker)
-	var err error
 	switch body := req.GetRequest().(type) {
 	case *forward.ForwardRequest_Read:
 		output := &resultStream[sink.ReadResponse]{ServerStream: stream, metrics: s.metrics, request: req, ctx: ctx, store: s.store, maximum: s.maximum, send: stream.Send}
-		err = s.service.Read(body.Read, output)
+		return s.service.Read(body.Read, output)
 	case *forward.ForwardRequest_Write:
 		output := &resultStream[sink.WriteResponse]{ServerStream: stream, metrics: s.metrics, request: req, ctx: ctx, store: s.store, maximum: s.maximum, send: stream.Send}
-		err = s.service.Write(body.Write, output)
+		return s.service.Write(body.Write, output)
 	case *forward.ForwardRequest_Delete:
-		result, callErr := s.service.Delete(ctx, body.Delete)
-		err = callErr
-		if callErr == nil {
-			frame := &forward.ForwardResponse{Version: forwarding.Version, Store: s.store}
-			frame.Response = &forward.ForwardResponse_Delete{Delete: result}
-			if sendErr := stream.Send(frame); sendErr != nil {
-				return sendErr
-			}
-			s.metrics.ObserveForwardResult(req, frame)
+		output := &resultStream[sink.DeleteResponse]{ServerStream: stream, metrics: s.metrics, request: req, ctx: ctx, store: s.store, maximum: s.maximum, send: stream.Send}
+		result, err := s.service.Delete(ctx, body.Delete)
+		if err != nil {
+			return err
 		}
+		return output.Send(result)
 	case *forward.ForwardRequest_Execute:
-		result, callErr := s.service.Execute(ctx, body.Execute)
-		err = callErr
-		if callErr == nil {
-			frame := &forward.ForwardResponse{Version: forwarding.Version, Store: s.store}
-			frame.Response = &forward.ForwardResponse_Execute{Execute: result}
-			if sendErr := stream.Send(frame); sendErr != nil {
-				return sendErr
-			}
-			s.metrics.ObserveForwardResult(req, frame)
+		output := &resultStream[sink.ExecuteResponse]{ServerStream: stream, metrics: s.metrics, request: req, ctx: ctx, store: s.store, maximum: s.maximum, send: stream.Send}
+		result, err := s.service.Execute(ctx, body.Execute)
+		if err != nil {
+			return err
 		}
+		return output.Send(result)
 	case *forward.ForwardRequest_Query:
 		output := &resultStream[sink.QueryResponse]{ServerStream: stream, metrics: s.metrics, request: req, ctx: ctx, store: s.store, maximum: s.maximum, send: stream.Send}
-		err = s.service.Query(body.Query, output)
+		return s.service.Query(body.Query, output)
 	case *forward.ForwardRequest_Count:
-		result, callErr := s.service.Count(ctx, body.Count)
-		err = callErr
-		if callErr == nil {
-			frame := &forward.ForwardResponse{Version: forwarding.Version, Store: s.store}
-			frame.Response = &forward.ForwardResponse_Count{Count: result}
-			if sendErr := stream.Send(frame); sendErr != nil {
-				return sendErr
-			}
-			s.metrics.ObserveForwardResult(req, frame)
+		output := &resultStream[sink.CountResponse]{ServerStream: stream, metrics: s.metrics, request: req, ctx: ctx, store: s.store, maximum: s.maximum, send: stream.Send}
+		result, err := s.service.Count(ctx, body.Count)
+		if err != nil {
+			return err
 		}
+		return output.Send(result)
 	case *forward.ForwardRequest_Scan:
 		output := &resultStream[sink.ScanResponse]{ServerStream: stream, metrics: s.metrics, request: req, ctx: ctx, store: s.store, maximum: s.maximum, send: stream.Send}
-		err = s.service.Scan(body.Scan, output)
+		return s.service.Scan(body.Scan, output)
 	}
-	return reject(err)
+	return status.Error(codes.Internal, "unsupported forwarding request")
 }

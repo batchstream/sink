@@ -54,7 +54,7 @@ type writeExecutionOptions struct {
 	returns          *writeReturns
 	completion       *writeCompletion
 	observation      *writeObservation
-	budgets          *requestBudgets
+	budgets          *responseGroups
 	WaitUntilVisible bool
 }
 

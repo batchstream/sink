@@ -11,7 +11,7 @@ quickstart. Deployment settings and their validation rules live in the
 New deployments use Gateway for routing, one Engine process per Store, and one
 Worker role per Store. Engine and Worker replicas scale independently and share
 the execution core; Worker directly accesses its database. Gateway does not open
-database or Kafka connections. The seven public RPCs remain unchanged.
+database or Kafka connections. Read, Write, Query and Scan stream results; Delete, Execute and Count return scalar responses.
 
 See [isolated topology, budgets and migration](store-isolation.md) for the private
 forwarding contract and cross-Store request behavior. Execution details below

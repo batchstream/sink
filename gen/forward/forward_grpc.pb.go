@@ -28,7 +28,7 @@ const (
 //
 // Private Gateway-to-Engine protocol. Never used by public clients.
 type EngineClient interface {
-	// Typed result frames followed by exactly one complete settlement frame.
+	// Typed results; EOF and errors use the standard gRPC stream status.
 	Forward(ctx context.Context, in *ForwardRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ForwardResponse], error)
 }
 
@@ -65,7 +65,7 @@ type Engine_ForwardClient = grpc.ServerStreamingClient[ForwardResponse]
 //
 // Private Gateway-to-Engine protocol. Never used by public clients.
 type EngineServer interface {
-	// Typed result frames followed by exactly one complete settlement frame.
+	// Typed results; EOF and errors use the standard gRPC stream status.
 	Forward(*ForwardRequest, grpc.ServerStreamingServer[ForwardResponse]) error
 	mustEmbedUnimplementedEngineServer()
 }

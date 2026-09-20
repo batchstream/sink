@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+
 	forward "github.com/liran/sink/gen/forward"
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/forwarding"
@@ -34,6 +35,12 @@ func (s *resultStream[T]) Send(result *T) error {
 		frame.Response = &forward.ForwardResponse_Read{Read: result}
 	case *sink.WriteResponse:
 		frame.Response = &forward.ForwardResponse_Write{Write: result}
+	case *sink.DeleteResponse:
+		frame.Response = &forward.ForwardResponse_Delete{Delete: result}
+	case *sink.ExecuteResponse:
+		frame.Response = &forward.ForwardResponse_Execute{Execute: result}
+	case *sink.CountResponse:
+		frame.Response = &forward.ForwardResponse_Count{Count: result}
 	case *sink.QueryResponse:
 		frame.Response = &forward.ForwardResponse_Query{Query: result}
 	case *sink.ScanResponse:

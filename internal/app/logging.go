@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	forward "github.com/liran/sink/gen/forward"
 	sink "github.com/liran/sink/gen/sink"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -20,21 +19,7 @@ func logUnary(ctx context.Context, req any, info *grpc.UnaryServerInfo, next grp
 	if method != "" {
 		code := status.Code(err)
 		observed := response
-		if forwarded, ok := observed.(*forward.ForwardResponse); ok {
-			if code == codes.OK {
-				code = codes.Code(forwarded.GetCode())
-			}
-			switch body := forwarded.GetResponse().(type) {
-			case *forward.ForwardResponse_Read:
-				observed = body.Read
-			case *forward.ForwardResponse_Write:
-				observed = body.Write
-			case *forward.ForwardResponse_Delete:
-				observed = body.Delete
-			case *forward.ForwardResponse_Execute:
-				observed = body.Execute
-			}
-		}
+
 		logRPC(method, code, observed, time.Since(started))
 	}
 	return response, err

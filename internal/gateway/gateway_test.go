@@ -19,16 +19,16 @@ func TestRoutesRejectDuplicateStoreNames(t *testing.T) {
 }
 
 func TestInvalidEngineResultsCannotOverwriteKnownSuccess(t *testing.T) {
-	good := &sink.WriteResult{OperationIndex: 0, Status: sink.WriteStatus_WRITE_STATUS_APPLIED}
-	cases := [][]*sink.WriteResult{
+	good := &sink.DeleteResult{OperationIndex: 0, Status: sink.DeleteStatus_DELETE_STATUS_APPLIED}
+	cases := [][]*sink.DeleteResult{
 		{nil},
-		{{OperationIndex: 0, Status: sink.WriteStatus_WRITE_STATUS_UNSPECIFIED}},
-		{{OperationIndex: 1, Status: sink.WriteStatus_WRITE_STATUS_APPLIED}},
+		{{OperationIndex: 0, Status: sink.DeleteStatus_DELETE_STATUS_UNSPECIFIED}},
+		{{OperationIndex: 1, Status: sink.DeleteStatus_DELETE_STATUS_APPLIED}},
 		{good, good},
 	}
 	for _, source := range cases {
-		destination := []*sink.WriteResult{good, nil}
-		if err := mergeResults(destination, source, []int{1}); err == nil {
+		destination := []*sink.DeleteResult{good, nil}
+		if err := mergeDeleteResults(destination, source, []int{1}); err == nil {
 			t.Fatal("invalid response accepted")
 		}
 		if destination[0] != good || destination[1] != nil {

@@ -261,7 +261,7 @@ func (s *BatchingServer) executeReads(ctx context.Context, calls []*batchCall[*s
 		return
 	}
 	operations := make([]*sink.ReadOperation, 0, totalReadOperations(calls))
-	budgets := &requestBudgets{}
+	budgets := &responseGroups{}
 	for _, call := range calls {
 		operations = append(operations, call.request.GetOperations()...)
 		budgets.addContext(call.ctx, len(call.request.GetOperations()))
@@ -340,7 +340,7 @@ func (s *BatchingServer) executeWrite(ctx context.Context, calls []*batchCall[*s
 		return
 	}
 	request := combinedWriteRequest(calls)
-	budgets := &requestBudgets{}
+	budgets := &responseGroups{}
 	for _, call := range calls {
 		budgets.addContext(call.ctx, len(call.request.GetOperations()))
 	}
@@ -398,7 +398,7 @@ func (s *BatchingServer) executeDeleteBatch(ctx context.Context, calls []*batchC
 		return
 	}
 	request := combinedDeleteRequest(calls)
-	budgets := &requestBudgets{}
+	budgets := &responseGroups{}
 	for _, call := range calls {
 		budgets.addContext(call.ctx, len(call.request.GetOperations()))
 	}

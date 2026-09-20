@@ -32,7 +32,7 @@ func boundedFailureMessage(message string, maximum int) string {
 	return strings.Clone(strings.ToValidUTF8(message, "?")) + suffix
 }
 
-func boundResultFailures[T interface{ GetFailure() *sink.Failure }](results []T, budgets *requestBudgets, maximum int) {
+func boundResultFailures[T interface{ GetFailure() *sink.Failure }](results []T, budgets *responseGroups, maximum int) {
 	counts := make([]int, budgets.callerCount())
 	for index := range results {
 		counts[budgets.owner(index)]++

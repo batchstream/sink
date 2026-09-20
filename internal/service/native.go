@@ -10,7 +10,6 @@ import (
 
 	"github.com/liran/sink-go/uri"
 	sink "github.com/liran/sink/gen/sink"
-	"github.com/liran/sink/internal/forwarding"
 	"github.com/liran/sink/internal/protocol"
 	"github.com/liran/sink/internal/storage"
 	"google.golang.org/grpc/codes"
@@ -92,10 +91,7 @@ func nativeStatus(err error) error {
 }
 
 func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.ExecuteResponse, error) {
-	maximum := forwarding.FromContext(ctx).Limit(forwarding.Returns, s.maxReadBytes)
-	if maximum <= 0 {
-		return nil, status.Error(codes.ResourceExhausted, "native response budget is exhausted")
-	}
+	maximum := s.maxReadBytes
 	if err := protocol.CheckStore(req, s.boundStore); err != nil {
 		return nil, err
 	}
@@ -140,10 +136,7 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 }
 
 func (s *Server) scan(ctx context.Context, req *sink.ScanRequest, send func(*sink.ScanResponse) error) error {
-	maximum := forwarding.FromContext(ctx).Limit(forwarding.Returns, s.maxReadBytes)
-	if maximum <= 0 {
-		return status.Error(codes.ResourceExhausted, "native response budget is exhausted")
-	}
+	maximum := s.maxReadBytes
 	if err := protocol.CheckStore(req, s.boundStore); err != nil {
 		return err
 	}

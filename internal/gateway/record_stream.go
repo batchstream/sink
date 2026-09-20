@@ -73,10 +73,6 @@ func (s *Server) streamRecords(ctx context.Context, req *forward.ForwardRequest,
 		}
 		groups[position].indices = append(groups[position].indices, index)
 	}
-	remaining, err := s.responseBudget(1)
-	if err != nil {
-		return err
-	}
 
 	// Routing failures contain metadata only and can be sent immediately.
 	for index := range addresses {
@@ -105,7 +101,6 @@ func (s *Server) streamRecords(ctx context.Context, req *forward.ForwardRequest,
 	for _, group := range groups {
 		work.Go(func() error {
 			sub := splitRequest(req, group.indices)
-			sub.Grant = remaining
 			seen := make([]bool, len(group.indices))
 			delivered := 0
 			var sendErr error
@@ -145,19 +140,12 @@ func (s *Server) streamRecords(ctx context.Context, req *forward.ForwardRequest,
 				delivered++
 				return nil
 			}
-			final, err := s.forwardEach(execution, call)
+			notStarted, err := s.forwardEach(execution, call)
 			if sendErr != nil {
 				return sendErr
 			}
 			if execution.Err() != nil {
 				return status.FromContextError(execution.Err()).Err()
-			}
-			notStarted := false
-			if err == nil {
-				notStarted = final.GetNotStarted()
-				if final.GetCode() != 0 {
-					err = forwardedError(final)
-				}
 			}
 			if err == nil && delivered != len(group.indices) {
 				err = status.Error(codes.Internal, "Engine omitted record results")

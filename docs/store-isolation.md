@@ -92,28 +92,23 @@ request-wide declarations, operation counts and completion modes before dispatch
 Same-record operations remain together and retain their order. There is no
 cross-Store transaction or global write ordering.
 
-Reads and synchronous writes requesting returned documents process Store groups in first-occurrence order. Only returned-document
-allowances cross the forwarding boundary. Each Engine receives the remaining
-response grant; coalesced requests retain their original RPC grants. Intermediate
-snapshots and merge outputs have no separate byte quota.
-Returned-document space is checked **before committing**, never truncated after
-successful writes. Native requests apply the smaller of Gateway and Engine limits.
+All Store groups use bounded concurrency within `max_fanout`. Read and Write
+results are relayed as individual frames; Query and Scan stream documents followed
+by their public page completion metadata. Forwarding carries no byte grants or
+usage settlement. Each process applies its own message ceiling and existing
+memory admission. Returned-write candidates must fit the Engine's local limit
+before their own commit. Align Gateway and Engine message limits.
 
-Writes without returned documents, deletes and async acceptance can
-forward Store groups concurrently within `max_fanout`. The extra network hop and
-serial budget-sensitive groups have a latency cost; benchmark your workload.
+Gateway never automatically replays Write, Delete or Execute. Delivered results
+remain known when an Engine stream fails. Missing mutation outcomes are reported
+with `retryable=false` unless local non-dispatch or Engine's private rejection
+trailer proves execution never started. An interrupted public stream cannot
+roll back completed writes.
 
-Gateway never automatically replays Write, Delete or Execute. Complete responses
-from healthy Stores are retained when another Store fails. A lost Engine mutation reply
-is represented as a failed operation with `retryable=false`, since the effect may
-already exist. A missing budget settlement consumes the entire grant; it cannot
-be reused by another Store. A proven local rejection before dispatch consumes
-nothing. The public result stream itself may be cancelled before a pending result
-can reach the caller; completed writes are not rolled back.
-
-Public gRPC status details survive forwarding, including the Scan admission retry
-marker understood by existing SDKs. Client deadlines and cancellation propagate
-to Engine. Neither SDK nor public protobuf changes are required.
+Errors and status details use standard gRPC trailers, including Scan's admission
+retry marker. Successful EOF ends the private stream; there is no separate
+settlement frame. Deadlines and cancellation propagate to Engine. The matching
+streaming SDK and Server must be upgraded together.
 
 ## Readiness, metrics and scaling
 

@@ -3,26 +3,16 @@ package sink.forward.v1;
 option go_package = "github.com/liran/sink/gen/forward;forward";
 
 import "sink/sink.proto";
-import "google/protobuf/any.proto";
 
 // Private Gateway-to-Engine protocol. Never used by public clients.
 service Engine {
-  // Typed result frames followed by exactly one complete settlement frame.
+  // Typed results; EOF and errors use the standard gRPC stream status.
   rpc Forward(ForwardRequest) returns (stream ForwardResponse);
-}
-
-// Public response allowance, including per-record envelope charges.
-// Intermediate allocations are owned by each process memory pool.
-message Budget {
-  reserved 1, 2, 3;
-  reserved "snapshots", "inputs", "outputs";
-  uint64 returns = 4;
 }
 
 message ForwardRequest {
   uint32 version = 1;
   string store = 2;
-  Budget grant = 4;
   oneof request {
     sink.v1.ReadRequest read = 10;
     sink.v1.WriteRequest write = 11;
@@ -35,17 +25,8 @@ message ForwardRequest {
 }
 
 message ForwardResponse {
-  // The final frame carries usage and application status, with no response body.
-  bool complete = 9;
   uint32 version = 1;
   string store = 2;
-  Budget used = 4;
-  // gRPC application status is carried inside the envelope so usage survives errors.
-  uint32 code = 5;
-  string message = 6;
-  // True only when rejected before invoking the execution service.
-  bool not_started = 7;
-  repeated google.protobuf.Any status_details = 8;
   oneof response {
     sink.v1.ReadResponse read = 10;
     sink.v1.WriteResponse write = 11;

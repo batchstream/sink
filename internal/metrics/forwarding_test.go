@@ -8,6 +8,7 @@ import (
 
 	forward "github.com/liran/sink/gen/forward"
 	sink "github.com/liran/sink/gen/sink"
+	"google.golang.org/grpc/codes"
 )
 
 func TestForwardedRPCUsesPublicMethodMetrics(t *testing.T) {
@@ -24,7 +25,8 @@ func TestForwardedRPCUsesPublicMethodMetrics(t *testing.T) {
 	result := &sink.WriteResponse{Results: []*sink.WriteResult{applied}}
 	responseBody := &forward.ForwardResponse_Write{Write: result}
 	response := &forward.ForwardResponse{Response: responseBody}
-	observed.ObserveForward(request, response, time.Millisecond)
+	observed.ObserveForward(request, codes.OK, time.Millisecond)
+	observed.ObserveForwardResult(request, response)
 	recorder := httptest.NewRecorder()
 	httpRequest := httptest.NewRequest("GET", "/metrics", nil)
 	observed.Handler().ServeHTTP(recorder, httpRequest)

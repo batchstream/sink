@@ -91,8 +91,7 @@ Gateway and Engine check process memory watermarks before admitting new work.
 The core validates addresses, document encodings, payloads and write actions.
 Engine's method queues bound waiting operations and encoded input bytes. Dispatched
 batches run as collected, without snapshot/output byte quotas or per-allocation
-reservations. Each original RPC retains its returned-document allowance derived
-from the gRPC send limit. Caller cancellation still stops work when no live caller
+reservations. Each streamed result must fit the local gRPC send limit. Caller cancellation still stops work when no live caller
 remains; memory pressure alone never cancels an admitted batch.
 
 In this example, Upsert means "write this complete document without requiring
@@ -312,7 +311,7 @@ If every modification needs its own database commit and events, issue
 sequential calls and wait for each to complete. See the
 [folding contract](merge-folding.md) for the full boundaries. Repeated Reads
 fetch one backend observation per address and return independent results;
-every copy still counts against the response budget. Repeated synchronous
+every copy must fit its result frame. Repeated synchronous
 Deletes issue one backend delete and return its outcome to all callers.
 
 ## 6. Which layer is doing the batching?

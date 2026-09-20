@@ -47,8 +47,8 @@ alone does not release an executing document. Backend bulk calls still return
 together; Sink cannot acknowledge an item whose backend result is not yet known.
 
 Gateway splits cross-Store requests before forwarding them. Engine accepts only its
-bound Store and never bypasses that check through the batching layer. Budget-sensitive
-Store groups follow the scheduling policy in the [runtime guide](store-isolation.md).
+bound Store and never bypasses that check through the batching layer. Independent
+Store groups follow the bounded-fanout policy in the [runtime guide](store-isolation.md).
 
 Read, Write and Delete each have one bounded queue in an Engine process. Queue
 operation and byte limits apply per method; the process has three such queues.
@@ -61,9 +61,9 @@ Execution follows the callers' deadlines and cancellation; there is no default
 whole-request timeout.
 Admitted batches continue through memory pressure. The entire collected batch
 executes without independent snapshot/output byte quotas or memory-based splitting.
-Record dependencies and adapter/completion grouping still apply. Public response
-allowances remain per original RPC; returned documents must fit the gRPC ceiling
-before their own commit. Kafka producer buffers and Lua sandbox limits remain.
+Record dependencies and adapter/completion grouping still apply. Streaming RPCs
+submit one existing microbatch at a time and check each returned result against
+the local gRPC ceiling before its own commit. Kafka producer buffers and Lua sandbox limits remain.
 Queue limits count waiting work only, excluding dispatched batches. Graceful
 shutdown drains gRPC calls before stopping batch dispatchers.
 See [memory admission](design/demand-based-admission.md).

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	forward "github.com/liran/sink/gen/forward"
 	sink "github.com/liran/sink/gen/sink"
 	"github.com/liran/sink/internal/config"
 	"github.com/liran/sink/internal/logging"
@@ -36,8 +35,6 @@ func TestRPCDiagnosticsCaptureApplicationFailuresWithoutPayload(t *testing.T) {
 	failure := &sink.Failure{Code: sink.FailureCode_FAILURE_CODE_UNAVAILABLE, Message: "private document error"}
 	result := &sink.WriteResult{Status: sink.WriteStatus_WRITE_STATUS_FAILED, Failure: failure}
 	write := &sink.WriteResponse{Results: []*sink.WriteResult{result}}
-	wrapped := &forward.ForwardResponse_Write{Write: write}
-	envelope := &forward.ForwardResponse{Response: wrapped}
 	native := &sink.ExecuteResponse{Success: false, Payload: []byte("private response")}
 	tests := []struct {
 		name     string
@@ -47,9 +44,7 @@ func TestRPCDiagnosticsCaptureApplicationFailuresWithoutPayload(t *testing.T) {
 	}{
 		{name: "partial failure", response: write, want: "warn"},
 		{name: "managed failure", response: write, want: "warn"},
-		{name: "managed forwarded failure", response: envelope, want: "warn"},
 		{name: "managed native failure", response: native, want: "warn"},
-		{name: "forwarded failure", response: envelope, want: "warn"},
 		{name: "native failure", response: native, want: "warn"},
 		{name: "transport failure", err: status.Error(codes.Internal, "private error"), want: "error"},
 	}

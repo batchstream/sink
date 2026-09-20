@@ -13,8 +13,10 @@ callback may therefore have processed part of a failed page: do not checkpoint
 it; use idempotent processing when resuming from the previous cursor.
 
 Gateway forwards typed Engine results directly. It never serializes or
-reassembles a complete response. Forward protocol version 7 has one `Forward`
-stream with result frames followed by exactly one final usage/status settlement.
+reassembles a complete response. Forward protocol version 8 has one `Forward`
+stream containing typed results. EOF and errors use standard gRPC status. The
+protocol has no Budget, grant/used fields, Tracker or settlement frame. A private
+rejection trailer proves non-execution only when no results have been delivered.
 No unary or binary-chunk compatibility endpoint remains.
 
 Record execution pulls one existing synchronous microbatch at a time, using the

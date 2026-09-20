@@ -12,7 +12,6 @@ import (
 	"github.com/liran/sink/internal/config"
 	"github.com/liran/sink/internal/forwarding"
 	"github.com/liran/sink/internal/protocol"
-	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -88,8 +87,8 @@ func (s *Server) begin(ctx context.Context, req *forward.ForwardRequest) (contex
 	return execution, release, nil
 }
 
-// Scalar RPCs carry one typed response plus the final settlement.
-func (s *Server) forward(ctx context.Context, route Route, req *forward.ForwardRequest) (*forward.ForwardResponse, error) {
+// Scalar RPCs carry one typed response and finish with the gRPC status.
+func (s *Server) forward(ctx context.Context, route Route, req *forward.ForwardRequest) (*forward.ForwardResponse, bool, error) {
 	var response *forward.ForwardResponse
 	call := forwardCall{route: route, request: req}
 	call.emit = func(frame *forward.ForwardResponse) error {
@@ -99,24 +98,14 @@ func (s *Server) forward(ctx context.Context, route Route, req *forward.ForwardR
 		response = frame
 		return nil
 	}
-	final, err := s.forwardEach(ctx, call)
+	notStarted, err := s.forwardEach(ctx, call)
 	if err != nil {
-		return nil, err
-	}
-	if final.GetCode() != 0 {
-		return final, nil
+		return nil, notStarted, err
 	}
 	if response == nil {
-		return nil, status.Error(codes.Internal, "Engine omitted scalar response")
+		return nil, false, status.Error(codes.Internal, "Engine omitted scalar response")
 	}
-	response.Used, response.NotStarted = final.Used, final.NotStarted
-	return response, nil
-}
-func validUsage(grant, used *forward.Budget) bool {
-	return used.GetReturns() <= grant.GetReturns()
-}
-func consume(remaining, used *forward.Budget) {
-	remaining.Returns -= used.GetReturns()
+	return response, false, nil
 }
 func routeFor(view *snapshot, store string) (Route, error) {
 	route, exists := view.routes[store]
@@ -124,34 +113,4 @@ func routeFor(view *snapshot, store string) (Route, error) {
 		return route, status.Error(codes.InvalidArgument, "Store is not configured")
 	}
 	return route, nil
-}
-
-func forwardedError(response *forward.ForwardResponse) error {
-	encoded := &statuspb.Status{Code: int32(response.GetCode()), Message: response.GetMessage(), Details: response.GetStatusDetails()}
-	return status.FromProto(encoded).Err()
-}
-
-func localRejection(route Route, code codes.Code, message string) *forward.ForwardResponse {
-	usage := &forward.Budget{}
-	response := &forward.ForwardResponse{Version: forwarding.Version, Store: route.Store, Used: usage, Code: uint32(code), Message: message, NotStarted: true}
-	return response
-}
-
-// responseBudget derives public payload capacity from the transport ceiling.
-// Result envelopes, revision tokens and bounded failures are reserved before
-// forwarding; Store-local working allocations follow process watermark admission.
-func (s *Server) responseBudget(operations int) (*forward.Budget, error) {
-	overhead := 0
-	if operations > 0 {
-		if operations > s.request.MaxReadBytes/1280 {
-			return nil, status.Error(codes.ResourceExhausted, "result envelopes exceed gRPC send limit")
-		}
-		overhead = operations * 1280
-	}
-	bytes := s.request.MaxReadBytes - overhead
-	if bytes <= 0 {
-		return nil, status.Error(codes.ResourceExhausted, "response budget is exhausted")
-	}
-	budget := &forward.Budget{Returns: uint64(bytes)}
-	return budget, nil
 }

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+
 	"google.golang.org/grpc"
 
 	forward "github.com/liran/sink/gen/forward"
@@ -38,11 +39,7 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 		return nil, status.Error(codes.InvalidArgument, "command is required")
 	}
 	body := &forward.ForwardRequest_Execute{Execute: req}
-	grant, err := s.responseBudget(0)
-	if err != nil {
-		return nil, err
-	}
-	request := &forward.ForwardRequest{Request: body, Grant: grant}
+	request := &forward.ForwardRequest{Request: body}
 	ctx, release, err := s.begin(ctx, request)
 	if err != nil {
 		return nil, err
@@ -52,12 +49,9 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 	if err != nil {
 		return nil, err
 	}
-	response, err := s.forward(ctx, route, request)
+	response, _, err := s.forward(ctx, route, request)
 	if err != nil {
 		return nil, err
-	}
-	if response.GetCode() != 0 {
-		return nil, forwardedError(response)
 	}
 	if response.GetExecute() == nil {
 		return nil, status.Error(codes.Internal, "Engine returned an invalid response type")
@@ -71,11 +65,6 @@ func (s *Server) Query(req *sink.QueryRequest, stream grpc.ServerStreamingServer
 	}
 	body := &forward.ForwardRequest_Query{Query: req}
 	request := &forward.ForwardRequest{Request: body}
-	grant, err := s.responseBudget(0)
-	if err != nil {
-		return err
-	}
-	request.Grant = grant
 	ctx, release, err := s.begin(stream.Context(), request)
 	if err != nil {
 		return err
@@ -102,12 +91,9 @@ func (s *Server) Query(req *sink.QueryRequest, stream grpc.ServerStreamingServer
 		}
 		return stream.Send(result)
 	}
-	final, err := s.forwardEach(ctx, call)
+	_, err = s.forwardEach(ctx, call)
 	if err != nil {
 		return err
-	}
-	if final.GetCode() != 0 {
-		return forwardedError(final)
 	}
 	if !complete {
 		return status.Error(codes.Internal, "Engine omitted Query completion")
@@ -120,11 +106,7 @@ func (s *Server) Count(ctx context.Context, req *sink.CountRequest) (*sink.Count
 		return nil, status.Error(codes.InvalidArgument, "command is required")
 	}
 	body := &forward.ForwardRequest_Count{Count: req}
-	grant, err := s.responseBudget(0)
-	if err != nil {
-		return nil, err
-	}
-	request := &forward.ForwardRequest{Request: body, Grant: grant}
+	request := &forward.ForwardRequest{Request: body}
 	ctx, release, err := s.begin(ctx, request)
 	if err != nil {
 		return nil, err
@@ -134,12 +116,9 @@ func (s *Server) Count(ctx context.Context, req *sink.CountRequest) (*sink.Count
 	if err != nil {
 		return nil, err
 	}
-	response, err := s.forward(ctx, route, request)
+	response, _, err := s.forward(ctx, route, request)
 	if err != nil {
 		return nil, err
-	}
-	if response.GetCode() != 0 {
-		return nil, forwardedError(response)
 	}
 	if response.GetCount() == nil {
 		return nil, status.Error(codes.Internal, "Engine returned an invalid response type")
@@ -153,11 +132,6 @@ func (s *Server) Scan(req *sink.ScanRequest, stream grpc.ServerStreamingServer[s
 	}
 	body := &forward.ForwardRequest_Scan{Scan: req}
 	request := &forward.ForwardRequest{Request: body}
-	grant, err := s.responseBudget(0)
-	if err != nil {
-		return err
-	}
-	request.Grant = grant
 	ctx, release, err := s.begin(stream.Context(), request)
 	if err != nil {
 		return err
@@ -184,12 +158,9 @@ func (s *Server) Scan(req *sink.ScanRequest, stream grpc.ServerStreamingServer[s
 		}
 		return stream.Send(result)
 	}
-	final, err := s.forwardEach(ctx, call)
+	_, err = s.forwardEach(ctx, call)
 	if err != nil {
 		return err
-	}
-	if final.GetCode() != 0 {
-		return forwardedError(final)
 	}
 	if !complete {
 		return status.Error(codes.Internal, "Engine omitted Scan completion")

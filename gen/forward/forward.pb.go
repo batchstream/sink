@@ -10,7 +10,6 @@ import (
 	sink "github.com/liran/sink/gen/sink"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	anypb "google.golang.org/protobuf/types/known/anypb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -23,57 +22,10 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Public response allowance, including per-record envelope charges.
-// Intermediate allocations are owned by each process memory pool.
-type Budget struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Returns       uint64                 `protobuf:"varint,4,opt,name=returns,proto3" json:"returns,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *Budget) Reset() {
-	*x = Budget{}
-	mi := &file_forward_forward_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Budget) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Budget) ProtoMessage() {}
-
-func (x *Budget) ProtoReflect() protoreflect.Message {
-	mi := &file_forward_forward_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Budget.ProtoReflect.Descriptor instead.
-func (*Budget) Descriptor() ([]byte, []int) {
-	return file_forward_forward_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *Budget) GetReturns() uint64 {
-	if x != nil {
-		return x.Returns
-	}
-	return 0
-}
-
 type ForwardRequest struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Version uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
 	Store   string                 `protobuf:"bytes,2,opt,name=store,proto3" json:"store,omitempty"`
-	Grant   *Budget                `protobuf:"bytes,4,opt,name=grant,proto3" json:"grant,omitempty"`
 	// Types that are valid to be assigned to Request:
 	//
 	//	*ForwardRequest_Read
@@ -90,7 +42,7 @@ type ForwardRequest struct {
 
 func (x *ForwardRequest) Reset() {
 	*x = ForwardRequest{}
-	mi := &file_forward_forward_proto_msgTypes[1]
+	mi := &file_forward_forward_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -102,7 +54,7 @@ func (x *ForwardRequest) String() string {
 func (*ForwardRequest) ProtoMessage() {}
 
 func (x *ForwardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_forward_forward_proto_msgTypes[1]
+	mi := &file_forward_forward_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -115,7 +67,7 @@ func (x *ForwardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ForwardRequest.ProtoReflect.Descriptor instead.
 func (*ForwardRequest) Descriptor() ([]byte, []int) {
-	return file_forward_forward_proto_rawDescGZIP(), []int{1}
+	return file_forward_forward_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *ForwardRequest) GetVersion() uint32 {
@@ -130,13 +82,6 @@ func (x *ForwardRequest) GetStore() string {
 		return x.Store
 	}
 	return ""
-}
-
-func (x *ForwardRequest) GetGrant() *Budget {
-	if x != nil {
-		return x.Grant
-	}
-	return nil
 }
 
 func (x *ForwardRequest) GetRequest() isForwardRequest_Request {
@@ -256,18 +201,9 @@ func (*ForwardRequest_Count) isForwardRequest_Request() {}
 func (*ForwardRequest_Scan) isForwardRequest_Request() {}
 
 type ForwardResponse struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The final frame carries usage and application status, with no response body.
-	Complete bool    `protobuf:"varint,9,opt,name=complete,proto3" json:"complete,omitempty"`
-	Version  uint32  `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
-	Store    string  `protobuf:"bytes,2,opt,name=store,proto3" json:"store,omitempty"`
-	Used     *Budget `protobuf:"bytes,4,opt,name=used,proto3" json:"used,omitempty"`
-	// gRPC application status is carried inside the envelope so usage survives errors.
-	Code    uint32 `protobuf:"varint,5,opt,name=code,proto3" json:"code,omitempty"`
-	Message string `protobuf:"bytes,6,opt,name=message,proto3" json:"message,omitempty"`
-	// True only when rejected before invoking the execution service.
-	NotStarted    bool         `protobuf:"varint,7,opt,name=not_started,json=notStarted,proto3" json:"not_started,omitempty"`
-	StatusDetails []*anypb.Any `protobuf:"bytes,8,rep,name=status_details,json=statusDetails,proto3" json:"status_details,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Version uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
+	Store   string                 `protobuf:"bytes,2,opt,name=store,proto3" json:"store,omitempty"`
 	// Types that are valid to be assigned to Response:
 	//
 	//	*ForwardResponse_Read
@@ -284,7 +220,7 @@ type ForwardResponse struct {
 
 func (x *ForwardResponse) Reset() {
 	*x = ForwardResponse{}
-	mi := &file_forward_forward_proto_msgTypes[2]
+	mi := &file_forward_forward_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -296,7 +232,7 @@ func (x *ForwardResponse) String() string {
 func (*ForwardResponse) ProtoMessage() {}
 
 func (x *ForwardResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_forward_forward_proto_msgTypes[2]
+	mi := &file_forward_forward_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -309,14 +245,7 @@ func (x *ForwardResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ForwardResponse.ProtoReflect.Descriptor instead.
 func (*ForwardResponse) Descriptor() ([]byte, []int) {
-	return file_forward_forward_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *ForwardResponse) GetComplete() bool {
-	if x != nil {
-		return x.Complete
-	}
-	return false
+	return file_forward_forward_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *ForwardResponse) GetVersion() uint32 {
@@ -331,41 +260,6 @@ func (x *ForwardResponse) GetStore() string {
 		return x.Store
 	}
 	return ""
-}
-
-func (x *ForwardResponse) GetUsed() *Budget {
-	if x != nil {
-		return x.Used
-	}
-	return nil
-}
-
-func (x *ForwardResponse) GetCode() uint32 {
-	if x != nil {
-		return x.Code
-	}
-	return 0
-}
-
-func (x *ForwardResponse) GetMessage() string {
-	if x != nil {
-		return x.Message
-	}
-	return ""
-}
-
-func (x *ForwardResponse) GetNotStarted() bool {
-	if x != nil {
-		return x.NotStarted
-	}
-	return false
-}
-
-func (x *ForwardResponse) GetStatusDetails() []*anypb.Any {
-	if x != nil {
-		return x.StatusDetails
-	}
-	return nil
 }
 
 func (x *ForwardResponse) GetResponse() isForwardResponse_Response {
@@ -488,13 +382,10 @@ var File_forward_forward_proto protoreflect.FileDescriptor
 
 const file_forward_forward_proto_rawDesc = "" +
 	"\n" +
-	"\x15forward/forward.proto\x12\x0fsink.forward.v1\x1a\x0fsink/sink.proto\x1a\x19google/protobuf/any.proto\"P\n" +
-	"\x06Budget\x12\x18\n" +
-	"\areturns\x18\x04 \x01(\x04R\areturnsJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03J\x04\b\x03\x10\x04R\tsnapshotsR\x06inputsR\aoutputs\"\xc6\x03\n" +
+	"\x15forward/forward.proto\x12\x0fsink.forward.v1\x1a\x0fsink/sink.proto\"\x97\x03\n" +
 	"\x0eForwardRequest\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x14\n" +
-	"\x05store\x18\x02 \x01(\tR\x05store\x12-\n" +
-	"\x05grant\x18\x04 \x01(\v2\x17.sink.forward.v1.BudgetR\x05grant\x12*\n" +
+	"\x05store\x18\x02 \x01(\tR\x05store\x12*\n" +
 	"\x04read\x18\n" +
 	" \x01(\v2\x14.sink.v1.ReadRequestH\x00R\x04read\x12-\n" +
 	"\x05write\x18\v \x01(\v2\x15.sink.v1.WriteRequestH\x00R\x05write\x120\n" +
@@ -503,17 +394,10 @@ const file_forward_forward_proto_rawDesc = "" +
 	"\x05query\x18\x0e \x01(\v2\x15.sink.v1.QueryRequestH\x00R\x05query\x12-\n" +
 	"\x05count\x18\x0f \x01(\v2\x15.sink.v1.CountRequestH\x00R\x05count\x12*\n" +
 	"\x04scan\x18\x10 \x01(\v2\x14.sink.v1.ScanRequestH\x00R\x04scanB\t\n" +
-	"\arequest\"\xf5\x04\n" +
-	"\x0fForwardResponse\x12\x1a\n" +
-	"\bcomplete\x18\t \x01(\bR\bcomplete\x12\x18\n" +
+	"\arequest\"\xa0\x03\n" +
+	"\x0fForwardResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x14\n" +
 	"\x05store\x18\x02 \x01(\tR\x05store\x12+\n" +
-	"\x04used\x18\x04 \x01(\v2\x17.sink.forward.v1.BudgetR\x04used\x12\x12\n" +
-	"\x04code\x18\x05 \x01(\rR\x04code\x12\x18\n" +
-	"\amessage\x18\x06 \x01(\tR\amessage\x12\x1f\n" +
-	"\vnot_started\x18\a \x01(\bR\n" +
-	"notStarted\x12;\n" +
-	"\x0estatus_details\x18\b \x03(\v2\x14.google.protobuf.AnyR\rstatusDetails\x12+\n" +
 	"\x04read\x18\n" +
 	" \x01(\v2\x15.sink.v1.ReadResponseH\x00R\x04read\x12.\n" +
 	"\x05write\x18\v \x01(\v2\x16.sink.v1.WriteResponseH\x00R\x05write\x121\n" +
@@ -539,52 +423,47 @@ func file_forward_forward_proto_rawDescGZIP() []byte {
 	return file_forward_forward_proto_rawDescData
 }
 
-var file_forward_forward_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_forward_forward_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_forward_forward_proto_goTypes = []any{
-	(*Budget)(nil),               // 0: sink.forward.v1.Budget
-	(*ForwardRequest)(nil),       // 1: sink.forward.v1.ForwardRequest
-	(*ForwardResponse)(nil),      // 2: sink.forward.v1.ForwardResponse
-	(*sink.ReadRequest)(nil),     // 3: sink.v1.ReadRequest
-	(*sink.WriteRequest)(nil),    // 4: sink.v1.WriteRequest
-	(*sink.DeleteRequest)(nil),   // 5: sink.v1.DeleteRequest
-	(*sink.ExecuteRequest)(nil),  // 6: sink.v1.ExecuteRequest
-	(*sink.QueryRequest)(nil),    // 7: sink.v1.QueryRequest
-	(*sink.CountRequest)(nil),    // 8: sink.v1.CountRequest
-	(*sink.ScanRequest)(nil),     // 9: sink.v1.ScanRequest
-	(*anypb.Any)(nil),            // 10: google.protobuf.Any
-	(*sink.ReadResponse)(nil),    // 11: sink.v1.ReadResponse
-	(*sink.WriteResponse)(nil),   // 12: sink.v1.WriteResponse
-	(*sink.DeleteResponse)(nil),  // 13: sink.v1.DeleteResponse
-	(*sink.ExecuteResponse)(nil), // 14: sink.v1.ExecuteResponse
-	(*sink.QueryResponse)(nil),   // 15: sink.v1.QueryResponse
-	(*sink.CountResponse)(nil),   // 16: sink.v1.CountResponse
-	(*sink.ScanResponse)(nil),    // 17: sink.v1.ScanResponse
+	(*ForwardRequest)(nil),       // 0: sink.forward.v1.ForwardRequest
+	(*ForwardResponse)(nil),      // 1: sink.forward.v1.ForwardResponse
+	(*sink.ReadRequest)(nil),     // 2: sink.v1.ReadRequest
+	(*sink.WriteRequest)(nil),    // 3: sink.v1.WriteRequest
+	(*sink.DeleteRequest)(nil),   // 4: sink.v1.DeleteRequest
+	(*sink.ExecuteRequest)(nil),  // 5: sink.v1.ExecuteRequest
+	(*sink.QueryRequest)(nil),    // 6: sink.v1.QueryRequest
+	(*sink.CountRequest)(nil),    // 7: sink.v1.CountRequest
+	(*sink.ScanRequest)(nil),     // 8: sink.v1.ScanRequest
+	(*sink.ReadResponse)(nil),    // 9: sink.v1.ReadResponse
+	(*sink.WriteResponse)(nil),   // 10: sink.v1.WriteResponse
+	(*sink.DeleteResponse)(nil),  // 11: sink.v1.DeleteResponse
+	(*sink.ExecuteResponse)(nil), // 12: sink.v1.ExecuteResponse
+	(*sink.QueryResponse)(nil),   // 13: sink.v1.QueryResponse
+	(*sink.CountResponse)(nil),   // 14: sink.v1.CountResponse
+	(*sink.ScanResponse)(nil),    // 15: sink.v1.ScanResponse
 }
 var file_forward_forward_proto_depIdxs = []int32{
-	0,  // 0: sink.forward.v1.ForwardRequest.grant:type_name -> sink.forward.v1.Budget
-	3,  // 1: sink.forward.v1.ForwardRequest.read:type_name -> sink.v1.ReadRequest
-	4,  // 2: sink.forward.v1.ForwardRequest.write:type_name -> sink.v1.WriteRequest
-	5,  // 3: sink.forward.v1.ForwardRequest.delete:type_name -> sink.v1.DeleteRequest
-	6,  // 4: sink.forward.v1.ForwardRequest.execute:type_name -> sink.v1.ExecuteRequest
-	7,  // 5: sink.forward.v1.ForwardRequest.query:type_name -> sink.v1.QueryRequest
-	8,  // 6: sink.forward.v1.ForwardRequest.count:type_name -> sink.v1.CountRequest
-	9,  // 7: sink.forward.v1.ForwardRequest.scan:type_name -> sink.v1.ScanRequest
-	0,  // 8: sink.forward.v1.ForwardResponse.used:type_name -> sink.forward.v1.Budget
-	10, // 9: sink.forward.v1.ForwardResponse.status_details:type_name -> google.protobuf.Any
-	11, // 10: sink.forward.v1.ForwardResponse.read:type_name -> sink.v1.ReadResponse
-	12, // 11: sink.forward.v1.ForwardResponse.write:type_name -> sink.v1.WriteResponse
-	13, // 12: sink.forward.v1.ForwardResponse.delete:type_name -> sink.v1.DeleteResponse
-	14, // 13: sink.forward.v1.ForwardResponse.execute:type_name -> sink.v1.ExecuteResponse
-	15, // 14: sink.forward.v1.ForwardResponse.query:type_name -> sink.v1.QueryResponse
-	16, // 15: sink.forward.v1.ForwardResponse.count:type_name -> sink.v1.CountResponse
-	17, // 16: sink.forward.v1.ForwardResponse.scan:type_name -> sink.v1.ScanResponse
-	1,  // 17: sink.forward.v1.Engine.Forward:input_type -> sink.forward.v1.ForwardRequest
-	2,  // 18: sink.forward.v1.Engine.Forward:output_type -> sink.forward.v1.ForwardResponse
-	18, // [18:19] is the sub-list for method output_type
-	17, // [17:18] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	2,  // 0: sink.forward.v1.ForwardRequest.read:type_name -> sink.v1.ReadRequest
+	3,  // 1: sink.forward.v1.ForwardRequest.write:type_name -> sink.v1.WriteRequest
+	4,  // 2: sink.forward.v1.ForwardRequest.delete:type_name -> sink.v1.DeleteRequest
+	5,  // 3: sink.forward.v1.ForwardRequest.execute:type_name -> sink.v1.ExecuteRequest
+	6,  // 4: sink.forward.v1.ForwardRequest.query:type_name -> sink.v1.QueryRequest
+	7,  // 5: sink.forward.v1.ForwardRequest.count:type_name -> sink.v1.CountRequest
+	8,  // 6: sink.forward.v1.ForwardRequest.scan:type_name -> sink.v1.ScanRequest
+	9,  // 7: sink.forward.v1.ForwardResponse.read:type_name -> sink.v1.ReadResponse
+	10, // 8: sink.forward.v1.ForwardResponse.write:type_name -> sink.v1.WriteResponse
+	11, // 9: sink.forward.v1.ForwardResponse.delete:type_name -> sink.v1.DeleteResponse
+	12, // 10: sink.forward.v1.ForwardResponse.execute:type_name -> sink.v1.ExecuteResponse
+	13, // 11: sink.forward.v1.ForwardResponse.query:type_name -> sink.v1.QueryResponse
+	14, // 12: sink.forward.v1.ForwardResponse.count:type_name -> sink.v1.CountResponse
+	15, // 13: sink.forward.v1.ForwardResponse.scan:type_name -> sink.v1.ScanResponse
+	0,  // 14: sink.forward.v1.Engine.Forward:input_type -> sink.forward.v1.ForwardRequest
+	1,  // 15: sink.forward.v1.Engine.Forward:output_type -> sink.forward.v1.ForwardResponse
+	15, // [15:16] is the sub-list for method output_type
+	14, // [14:15] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_forward_forward_proto_init() }
@@ -592,7 +471,7 @@ func file_forward_forward_proto_init() {
 	if File_forward_forward_proto != nil {
 		return
 	}
-	file_forward_forward_proto_msgTypes[1].OneofWrappers = []any{
+	file_forward_forward_proto_msgTypes[0].OneofWrappers = []any{
 		(*ForwardRequest_Read)(nil),
 		(*ForwardRequest_Write)(nil),
 		(*ForwardRequest_Delete)(nil),
@@ -601,7 +480,7 @@ func file_forward_forward_proto_init() {
 		(*ForwardRequest_Count)(nil),
 		(*ForwardRequest_Scan)(nil),
 	}
-	file_forward_forward_proto_msgTypes[2].OneofWrappers = []any{
+	file_forward_forward_proto_msgTypes[1].OneofWrappers = []any{
 		(*ForwardResponse_Read)(nil),
 		(*ForwardResponse_Write)(nil),
 		(*ForwardResponse_Delete)(nil),
@@ -616,7 +495,7 @@ func file_forward_forward_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_forward_forward_proto_rawDesc), len(file_forward_forward_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

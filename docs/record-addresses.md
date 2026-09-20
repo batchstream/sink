@@ -74,9 +74,8 @@ rendezvous hashing of the full URI and each endpoint to choose an Engine.
 DNS answer order and Gateway process identity do not affect the choice.
 
 Gateway groups operations by Store and chosen Engine, preserving operation order
-for repeated records and restoring original result indexes. Groups share the
-original RPC's budgets; adding replicas does not multiply the return budget.
-Eligible independent groups run with bounded fanout. Native requests select an
+for repeated records and restoring original result indexes. Each result must fit
+the local message ceiling; independent groups run with bounded fanout. Native requests select an
 endpoint in round-robin order because they have no record key.
 
 Connections are opened lazily per endpoint and reused. `forwarding.max_connections`

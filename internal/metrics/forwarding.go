@@ -8,20 +8,17 @@ import (
 )
 
 // ObserveForward retains the public method labels when the wire RPC is Forward.
-func (m *Metrics) ObserveForward(req *forward.ForwardRequest, resp *forward.ForwardResponse, elapsed time.Duration) {
+func (m *Metrics) ObserveForward(req *forward.ForwardRequest, code codes.Code, elapsed time.Duration) {
 	if m == nil {
 		return
 	}
-	method, request, response := forwardObservation(req, resp)
+	method, request, _ := forwardObservation(req, nil)
 	if method == "" {
 		return
 	}
 	store := m.RequestStore(request)
-	m.requests.WithLabelValues(store, method, codes.Code(resp.GetCode()).String()).Inc()
+	m.requests.WithLabelValues(store, method, code.String()).Inc()
 	m.requestDuration.WithLabelValues(store, method).Observe(elapsed.Seconds())
-	if resp.GetCode() == 0 {
-		m.observeOperationResults(method, request, response)
-	}
 }
 
 // ObserveForwardResult records delivered outcomes without retaining documents.

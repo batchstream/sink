@@ -58,4 +58,13 @@ client compatibility, storage integration, public conformance, the quickstart,
 and packaging. A passing short CI run does not replace sustained or deployment
 qualification.
 
+## Recover release artifact publication
+
+The **Release artifacts** workflow also accepts an existing published tag through
+`workflow_dispatch`. After correcting release qualification infrastructure, run
+it with `gh workflow run release-image.yml -f tag=vX.Y.Z`. It resolves the existing
+tag to one immutable commit, runs the complete production qualification again,
+and builds all binaries and container images from that same commit. Recovery
+does not move the release tag or bypass qualification.
+
 Contributions are distributed under the repository's [MIT License](LICENSE).

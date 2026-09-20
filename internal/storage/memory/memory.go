@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/liran/sink-go/uri"
+	"github.com/batchstream/sink-go/uri"
 
 	"github.com/batchstream/sink/internal/storage"
 )

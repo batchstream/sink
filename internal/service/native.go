@@ -8,10 +8,10 @@ import (
 	"sort"
 	"unicode/utf8"
 
+	"github.com/batchstream/sink-go/uri"
 	sink "github.com/batchstream/sink/gen/sink"
 	"github.com/batchstream/sink/internal/protocol"
 	"github.com/batchstream/sink/internal/storage"
-	"github.com/liran/sink-go/uri"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

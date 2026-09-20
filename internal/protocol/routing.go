@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/liran/sink-go/uri"
+	"github.com/batchstream/sink-go/uri"
 
 	sink "github.com/batchstream/sink/gen/sink"
 	"google.golang.org/grpc/codes"

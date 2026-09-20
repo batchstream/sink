@@ -1,3 +1,5 @@
+github.com/batchstream/sink-go v0.10.1-0.20260920213411-182e94733852 h1:VAkKeLTY0obY2M9whp93ij5pPh8ZsoZGhS8qYqwjLFc=
+github.com/batchstream/sink-go v0.10.1-0.20260920213411-182e94733852/go.mod h1:pm/L1cLjXV6/3cGij6dmXX0tfJzlhrMJmpX5b6bxwzg=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1xcsSM=
@@ -30,8 +32,6 @@ github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
 github.com/kr/text v0.2.0/go.mod h1:eLer722TekiGuMkidMxC/pM04lWEeraHUUmBw8l2grE=
 github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0SNc=
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
-github.com/liran/sink-go v0.9.1-0.20260920094052-14251539240b h1:AUB9eXU8qNEJem1CkLGSCOsqSvlAxZjRr8hMvFPsQzs=
-github.com/liran/sink-go v0.9.1-0.20260920094052-14251539240b/go.mod h1:yzlNhufcKx518eeC969hAidHTM2ISB+hBag+VDuiPE4=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/pierrec/lz4/v4 v4.1.26 h1:GrpZw1gZttORinvzBdXPUXATeqlJjqUG/D87TKMnhjY=

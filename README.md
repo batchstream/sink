@@ -137,7 +137,7 @@ Go applications can use the typed, concurrency-safe
 [`sink-go`](https://github.com/batchstream/sink-go) client:
 
 ```shell
-go get github.com/liran/sink-go
+go get github.com/batchstream/sink-go
 ```
 
 Its [quick-start example](https://github.com/batchstream/sink-go#quick-start) shows

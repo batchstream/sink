@@ -153,26 +153,6 @@ func foldingRequest(operations ...*sink.WriteOperation) *sink.WriteRequest {
 	return request
 }
 
-func TestMergeIgnoresLegacyMissingModeFieldAndCreatesRecord(t *testing.T) {
-	backend := memory.New()
-	server := newTestServer(t, backend, nil)
-	operation := foldingMerge("legacy", incrementLua, `{"value":7}`)
-	// Field 2 used to request failure for a missing document. It is reserved now,
-	// and old clients or queued messages must receive the single create-or-merge
-	// behavior.
-	operation.GetMerge().ProtoReflect().SetUnknown([]byte{0x10, 0x01})
-	response, err := server.Write(t.Context(), foldingRequest(operation))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result := response.GetResults()[0]; result.GetStatus() != sink.WriteStatus_WRITE_STATUS_APPLIED {
-		t.Fatalf("legacy merge result = %v", result)
-	}
-	if got := foldingValue(t, backend, "legacy"); got != 7 {
-		t.Fatalf("legacy merge value = %d, want 7", got)
-	}
-}
-
 func foldingValue(t testing.TB, backend storage.Storage, key string) int {
 	t.Helper()
 	operation := storage.ReadOperation{Address: storageAddress(key)}

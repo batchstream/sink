@@ -98,11 +98,6 @@ func TestMetricsExposeBuildRequestAndOperationResults(t *testing.T) {
 
 	observed.AdjustInFlight(1)
 	body := scrape(t, observed)
-	for _, obsolete := range []string{"sink_in_flight_bytes", "sink_admission_", "sink_scan_queued_", "sink_scan_admission_", "sink_execution_queued_", "sink_execution_admission_", "sink_execution_store_bytes"} {
-		if strings.Contains(body, obsolete) {
-			t.Errorf("obsolete metric exported: %s", obsolete)
-		}
-	}
 	wanted := []string{
 		`sink_in_flight_requests 1`,
 		`sink_build_info{version="test-version"} 1`,

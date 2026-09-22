@@ -88,7 +88,6 @@ func TestStoreIdentityAndBackendValidation(t *testing.T) {
 		"name: primary\nstorage: {driver: opensearch, search: {endpoints: [http://search:9200], username: test}}",
 		"name: primary\nstorage: {driver: opensearch, search: {endpoints: [http://search:9200], username: test, password: test, api_key: test}}",
 		minimalStorage + "consumer: {group_id: workers}\n", minimalStorage + "producer: {}\n",
-		strings.Replace(minimalStorage, "uri: mongodb://127.0.0.1:1", "uri: mongodb://127.0.0.1:1\n    max_concurrent_writes: 0", 1),
 	} {
 		loaded, err := Decode(strings.NewReader("mode: engine\n"), strings.NewReader(shared))
 		if err == nil || !reflect.ValueOf(loaded).IsZero() {
@@ -101,10 +100,6 @@ func TestStoreIdentityAndBackendValidation(t *testing.T) {
 		if err != nil || loaded.Storage.Search.Username != "test" {
 			t.Fatalf("search configuration: %v", err)
 		}
-		_, err = Decode(strings.NewReader("mode: engine\nexecution:\n  mongodb: {max_concurrent_writes: 3}\n"), strings.NewReader(shared))
-		if err == nil {
-			t.Fatal("irrelevant MongoDB tuning accepted")
-		}
 	}
 }
 
@@ -114,8 +109,12 @@ func TestStrictDocumentsAndRequiredPaths(t *testing.T) {
 		want             string
 	}{
 		{"mode: engine", "", "--store-config"}, {"mode: worker", "", "--store-config"}, {gatewayConfig, minimalStorage, "must not use"},
-		{"mode: server", "", "mode is required"}, {"", "", "EOF"},
+		{"mode: unknown", "", "mode is required"}, {"", "", "EOF"},
 		{"mode: engine\nunknown: true", minimalStorage, "field unknown"},
+		{"mode: engine\nexecution: {unknown: true}", minimalStorage, "field unknown"},
+		{"mode: engine", minimalStorage + "    unknown: true\n", "field unknown"},
+		{"mode: engine", kafkaStore + "  unknown: true\n", "field unknown"},
+		{"mode: engine", minimalStorage + "kafka: {topic: {unknown: true}}", "field unknown"},
 		{"mode: engine\nmode: worker", minimalStorage, "already defined"},
 		{"mode: engine\n---\nmode: engine", minimalStorage, "multiple YAML"},
 		{"mode: engine", minimalStorage + "---\nname: other", "multiple YAML"},

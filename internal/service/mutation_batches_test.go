@@ -156,12 +156,10 @@ func TestMixedWriteCompletionDoesNotWaitForUnrelatedRefresh(t *testing.T) {
 	server := completionServer(t, backend)
 	visible := completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE, completionMerge("product", 1))
 	applied := completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, completionPut("archive", 1))
-	calls := []*batchCall[*sink.WriteRequest, *sink.WriteResponse]{visible, applied}
-	done := make(chan struct{})
-	go func() { server.executeWrites(t.Context(), calls); close(done) }()
+	queueCompletionCall(t, server.writes, visible)
+	queueCompletionCall(t, server.writes, applied)
 	defer func() {
 		close(backend.release)
-		awaitCompletion(t, done)
 		if result := awaitCompletion(t, visible.result); result.err != nil {
 			t.Error(result.err)
 		}
@@ -186,12 +184,10 @@ func TestMixedDeleteCompletionDoesNotWaitForUnrelatedRefresh(t *testing.T) {
 	server := completionServer(t, backend)
 	visible := completionDeleteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE, "product")
 	applied := completionDeleteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, "archive")
-	calls := []*batchCall[*sink.DeleteRequest, *sink.DeleteResponse]{visible, applied}
-	done := make(chan struct{})
-	go func() { server.executeDeletes(t.Context(), calls); close(done) }()
+	queueCompletionCall(t, server.deletes, visible)
+	queueCompletionCall(t, server.deletes, applied)
 	defer func() {
 		close(backend.release)
-		awaitCompletion(t, done)
 		if result := awaitCompletion(t, visible.result); result.err != nil {
 			t.Error(result.err)
 		}
@@ -206,7 +202,7 @@ func TestMixedDeleteCompletionDoesNotWaitForUnrelatedRefresh(t *testing.T) {
 	default:
 	}
 }
-func TestCompletionWavesPreserveSameRecordPutMergeOrderAndFolding(t *testing.T) {
+func TestMutationDispatchPreserveSameRecordPutMergeOrderAndFolding(t *testing.T) {
 	backend := &completionStorage{Storage: memory.New(), events: make(chan completionEvent, 10)}
 	server := completionServer(t, backend)
 	applied := sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED
@@ -219,7 +215,13 @@ func TestCompletionWavesPreserveSameRecordPutMergeOrderAndFolding(t *testing.T) 
 		completionWriteCall(t.Context(), applied, completionMerge("hot", 3), completionMerge("other", 1)),
 		completionWriteCall(t.Context(), applied, completionMerge("hot", 4)),
 	}
-	server.executeWrites(t.Context(), calls)
+	prepareDispatchCalls(calls, backend)
+	pending := calls
+	for len(pending) > 0 {
+		selected, remaining, _ := server.writes.selectReady(pending, nil)
+		server.executeWrites(t.Context(), selected)
+		pending = remaining
+	}
 	assertCompletionWrites(t, calls)
 	address, err := protocol.ParseAddress(completionAddress("hot"))
 	if err != nil {
@@ -253,7 +255,7 @@ func TestCompletionWavesPreserveSameRecordPutMergeOrderAndFolding(t *testing.T) 
 		t.Fatalf("folding/order/visibility: %v", hot)
 	}
 }
-func TestCompletionWavesTrackEveryRecordInMultiOperationRPC(t *testing.T) {
+func TestMutationDispatchTrackEveryRecordInMultiOperationRPC(t *testing.T) {
 	applied := sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED
 	visible := sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE
 	calls := []*batchCall[*sink.WriteRequest, *sink.WriteResponse]{
@@ -262,9 +264,18 @@ func TestCompletionWavesTrackEveryRecordInMultiOperationRPC(t *testing.T) {
 		completionWriteCall(t.Context(), applied, completionPut("b", 3)),
 		completionWriteCall(t.Context(), visible, completionPut("a", 4)),
 	}
-	waves := planMutationWaves[*sink.WriteOperation](calls)
-	if len(waves) != 3 || !reflect.DeepEqual(waves[0].applied, calls[:1]) || !reflect.DeepEqual(waves[1].visible, []*batchCall[*sink.WriteRequest, *sink.WriteResponse]{calls[1], calls[3]}) || !reflect.DeepEqual(waves[2].applied, calls[2:3]) {
-		t.Fatalf("wrong dependency waves: %+v", waves)
+	prepareDispatchCalls(calls, memory.New())
+	batcher := &requestBatcher[*sink.WriteRequest, *sink.WriteResponse]{maxOperations: 100, maxBytes: 1 << 20}
+	pending := calls
+	for _, want := range [][]*batchCall[*sink.WriteRequest, *sink.WriteResponse]{calls[:1], {calls[1], calls[3]}, calls[2:3]} {
+		selected, remaining, _ := batcher.selectReady(pending, nil)
+		if !reflect.DeepEqual(selected, want) {
+			t.Fatalf("wrong dependency selection: %v, want %v", selected, want)
+		}
+		pending = remaining
+	}
+	if len(pending) != 0 {
+		t.Fatal("dispatcher left pending calls")
 	}
 }
 func TestCompletionGroupCancellationDoesNotRetainOtherGroupsContext(t *testing.T) {
@@ -275,13 +286,11 @@ func TestCompletionGroupCancellationDoesNotRetainOtherGroupsContext(t *testing.T
 	defer cancel()
 	visible := completionWriteCall(ctx, sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE, completionMerge("product", 1))
 	applied := completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, completionPut("archive", 1))
-	calls := []*batchCall[*sink.WriteRequest, *sink.WriteResponse]{visible, applied}
-	done := make(chan struct{})
-	go func() { server.executeWrites(t.Context(), calls); close(done) }()
+	queueCompletionCall(t, server.writes, visible)
+	queueCompletionCall(t, server.writes, applied)
 	awaitCompletion(t, backend.events)
 	awaitCompletion(t, backend.events)
 	cancel()
-	awaitCompletion(t, done)
 	if r := awaitCompletion(t, visible.result); r.err == nil {
 		t.Fatal("cancelled refresh returned success")
 	}
@@ -289,20 +298,18 @@ func TestCompletionGroupCancellationDoesNotRetainOtherGroupsContext(t *testing.T
 		t.Fatal(r.err)
 	}
 }
-func TestCompletionWavesSkipCancelledDependentCalls(t *testing.T) {
+func TestMutationDispatchSkipCancelledDependentCalls(t *testing.T) {
 	backend := &completionStorage{Storage: memory.New(), events: make(chan completionEvent, 10), blocked: "hot", release: make(chan struct{})}
 	server := completionServer(t, backend)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	first := completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE, completionPut("hot", 1))
 	next := completionWriteCall(ctx, sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, completionPut("hot", 2))
-	calls := []*batchCall[*sink.WriteRequest, *sink.WriteResponse]{first, next}
-	done := make(chan struct{})
-	go func() { server.executeWrites(t.Context(), calls); close(done) }()
+	queueCompletionCall(t, server.writes, first)
+	queueCompletionCall(t, server.writes, next)
 	awaitCompletion(t, backend.events)
 	cancel()
 	close(backend.release)
-	awaitCompletion(t, done)
 	if r := awaitCompletion(t, first.result); r.err != nil {
 		t.Fatal(r.err)
 	}
@@ -314,7 +321,7 @@ func TestCompletionWavesSkipCancelledDependentCalls(t *testing.T) {
 	}
 }
 
-func TestCompletionWavesKeepFullRecordAddressesSeparate(t *testing.T) {
+func TestMutationDispatchKeepFullRecordAddressesSeparate(t *testing.T) {
 	for _, difference := range []string{"namespace", "dataset", "key_type", "same"} {
 		t.Run(difference, func(t *testing.T) {
 			first := completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, completionPut("same", 1))
@@ -330,12 +337,16 @@ func TestCompletionWavesKeepFullRecordAddressesSeparate(t *testing.T) {
 			}
 			second := completionWriteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE, operation)
 			calls := []*batchCall[*sink.WriteRequest, *sink.WriteResponse]{first, second}
+			prepareDispatchCalls(calls, memory.New())
+			active := map[recordIdentity]int{first.records[0]: 1}
+			batcher := &requestBatcher[*sink.WriteRequest, *sink.WriteResponse]{maxOperations: 100, maxBytes: 1 << 20}
+			selected, _, _ := batcher.selectReady(calls[1:], active)
 			want := 1
 			if difference == "same" {
-				want = 2
+				want = 0
 			}
-			if waves := planMutationWaves[*sink.WriteOperation](calls); len(waves) != want {
-				t.Fatalf("%s: %d waves, want %d", difference, len(waves), want)
+			if len(selected) != want {
+				t.Fatalf("%s: %d selected, want %d", difference, len(selected), want)
 			}
 		})
 	}
@@ -349,7 +360,9 @@ func TestDeleteCompletionChangesPreserveRecordOrder(t *testing.T) {
 		completionDeleteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE, "same"),
 		completionDeleteCall(t.Context(), sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_APPLIED, "same"),
 	}
-	server.executeDeletes(t.Context(), calls)
+	for _, call := range calls {
+		queueCompletionCall(t, server.deletes, call)
+	}
 	for _, call := range calls {
 		r := awaitCompletion(t, call.result)
 		if r.err != nil || len(r.response.Results) != 1 || r.response.Results[0].Status != sink.DeleteStatus_DELETE_STATUS_APPLIED {
@@ -360,5 +373,13 @@ func TestDeleteCompletionChangesPreserveRecordOrder(t *testing.T) {
 		if e := awaitCompletion(t, backend.events); e.visible != want {
 			t.Fatalf("delete ordering: %+v", e)
 		}
+	}
+}
+
+func prepareDispatchCalls(calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse], backend storage.Storage) {
+	for _, call := range calls {
+		call.records = mutationRequestRecords(call.request)
+		call.partition = mutationRequestPartition[*sink.WriteOperation](call.request, backend)
+		call.encodedBytes = call.request.SizeVT()
 	}
 }

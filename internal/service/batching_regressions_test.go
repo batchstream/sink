@@ -341,6 +341,17 @@ func TestMutationDispatcherPreservesDependenciesAcrossBatches(t *testing.T) {
 
 func enqueueCompletionCall[Request interface{ SizeVT() int }, Response any](t *testing.T, batcher *requestBatcher[Request, Response], call *batchCall[Request, Response]) <-chan error {
 	t.Helper()
+	queueCompletionCall(t, batcher, call)
+	done := make(chan error, 1)
+	go func() {
+		result := <-call.result
+		done <- result.err
+	}()
+	return done
+}
+
+func queueCompletionCall[Request interface{ SizeVT() int }, Response any](t *testing.T, batcher *requestBatcher[Request, Response], call *batchCall[Request, Response]) {
+	t.Helper()
 	call.encodedBytes = call.request.SizeVT()
 	call.records = batcher.records(call.request)
 	call.partition = batcher.partition(call.request)
@@ -352,12 +363,6 @@ func enqueueCompletionCall[Request interface{ SizeVT() int }, Response any](t *t
 	// counter cannot order concurrent callers, so establish this dispatcher's
 	// dependency chain by enqueueing its fixtures synchronously.
 	batcher.input <- call
-	done := make(chan error, 1)
-	go func() {
-		result := <-call.result
-		done <- result.err
-	}()
-	return done
 }
 
 func TestMicrobatchConditionalWritesShareWorkingMemory(t *testing.T) {

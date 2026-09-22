@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	sink "github.com/batchstream/sink/gen/sink"
@@ -316,30 +315,8 @@ func splitReadResponse(
 	}
 }
 
-func (s *BatchingServer) executeWrites(
-	ctx context.Context,
-	calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse],
-) {
-	for _, wave := range planMutationWaves[*sink.WriteOperation](calls) {
-		// An admitted execution owns one slot and must remain sequential.
-		// Normal dispatch already partitions by completion mode.
-		parallel := s.server.admission == nil && len(wave.applied) > 0 && len(wave.visible) > 0
-		var executions sync.WaitGroup
-		for _, group := range [][]*batchCall[*sink.WriteRequest, *sink.WriteResponse]{wave.applied, wave.visible} {
-			if len(group) == 0 {
-				continue
-			}
-			if parallel {
-				executions.Go(func() { s.executeWrite(ctx, group) })
-			} else {
-				s.executeWrite(ctx, group)
-			}
-		}
-		executions.Wait()
-	}
-}
-
-func (s *BatchingServer) executeWrite(ctx context.Context, calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]) {
+// The dispatcher supplies one resource/completion partition and owns ordering.
+func (s *BatchingServer) executeWrites(ctx context.Context, calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse]) {
 	calls = liveMutationCalls(calls)
 	if len(calls) == 0 {
 		return
@@ -376,28 +353,8 @@ func totalWriteOperations(calls []*batchCall[*sink.WriteRequest, *sink.WriteResp
 	return total
 }
 
-func (s *BatchingServer) executeDeletes(
-	ctx context.Context,
-	calls []*batchCall[*sink.DeleteRequest, *sink.DeleteResponse],
-) {
-	for _, wave := range planMutationWaves[*sink.DeleteOperation](calls) {
-		parallel := s.server.admission == nil && len(wave.applied) > 0 && len(wave.visible) > 0
-		var executions sync.WaitGroup
-		for _, group := range [][]*batchCall[*sink.DeleteRequest, *sink.DeleteResponse]{wave.applied, wave.visible} {
-			if len(group) == 0 {
-				continue
-			}
-			if parallel {
-				executions.Go(func() { s.executeDeleteBatch(ctx, group) })
-			} else {
-				s.executeDeleteBatch(ctx, group)
-			}
-		}
-		executions.Wait()
-	}
-}
-
-func (s *BatchingServer) executeDeleteBatch(ctx context.Context, calls []*batchCall[*sink.DeleteRequest, *sink.DeleteResponse]) {
+// The dispatcher supplies one resource/completion partition and owns ordering.
+func (s *BatchingServer) executeDeletes(ctx context.Context, calls []*batchCall[*sink.DeleteRequest, *sink.DeleteResponse]) {
 	calls = liveMutationCalls(calls)
 	if len(calls) == 0 {
 		return

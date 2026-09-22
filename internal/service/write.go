@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/batchstream/sink/internal/protocol"
@@ -54,7 +53,6 @@ type writeExecutionOptions struct {
 	returns          *writeReturns
 	completion       *writeCompletion
 	observation      *writeObservation
-	budgets          *responseGroups
 	WaitUntilVisible bool
 }
 
@@ -216,25 +214,16 @@ func (s *Server) executeWriteGroups(
 	results []*sink.WriteResult,
 	opts writeExecutionOptions,
 ) error {
-	// Execute separately through the last operation requesting a document;
-	// the remaining tail can fold. Each round remains batch-native and retains
-	// the original caller budgets without extra concurrent snapshots.
+	// A returned operation is its own commit. Consume each surrounding run
+	// once, retaining folding on both sides without rescanning the whole tail.
 	for len(groups) > 0 {
 		wave := make([]writeGroup, 0, len(groups))
 		next := make([]writeGroup, 0)
 		for _, group := range groups {
-			if len(group.operations) > 1 && group.hasReturns() {
-				first := group.operations[0]
-				single := writeGroup{operations: []parsedWrite{first}}
-				if first.merge != nil {
-					single.merges = 1
-					group.merges--
-				}
-				wave = append(wave, single)
-				group.operations = group.operations[1:]
-				next = append(next, group)
-			} else {
-				wave = append(wave, group)
+			segment, remaining := group.nextCommit()
+			wave = append(wave, segment)
+			if len(remaining.operations) > 0 {
+				next = append(next, remaining)
 			}
 		}
 		err := s.executeWriteWave(ctx, wave, results, opts)
@@ -278,47 +267,19 @@ func (s *Server) executePuts(
 	if len(groups) == 0 {
 		return nil
 	}
-	storageOperations := make([]storage.WriteOperation, 0, len(groups))
-	appliedGroups := make([]writeGroup, 0, len(groups))
+	candidates := make([]writeGroupCandidate, 0, len(groups))
 	for _, group := range groups {
 		operation := group.operations[len(group.operations)-1]
-		if err := opts.returns.reserve(group, operation.put.document); err != nil {
-			failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: err}
-			applyWriteGroupResult(group, results, failure)
-			opts.complete(group, results)
-			continue
-		}
 		storageOperation := storage.WriteOperation{
 			Address:      operation.address,
 			Document:     operation.put.document,
 			Precondition: operation.put.precondition,
 		}
-		storageOperations = append(storageOperations, storageOperation)
-		appliedGroups = append(appliedGroups, group)
+		candidate := writeGroupCandidate{group: group, operation: storageOperation}
+		candidates = append(candidates, candidate)
 	}
-	if len(storageOperations) == 0 {
-		return nil
-	}
-	request := storage.WriteRequest{
-		Operations:       storageOperations,
-		WaitUntilVisible: opts.WaitUntilVisible,
-	}
-	started := time.Now()
-	response, err := s.storage.Write(ctx, request)
-	opts.observation.phase("storage_write", started)
-	if err != nil {
-		return status.Errorf(codes.Unavailable, "write records: %v", err)
-	}
-	if len(response.Results) != len(appliedGroups) {
-		return status.Error(codes.Internal, "storage returned an invalid write result count")
-	}
-	for index, stored := range response.Results {
-		group := appliedGroups[index]
-		applyWriteGroupResult(group, results, stored)
-		attachWriteDocument(group, results, storageOperations[index].Document)
-		opts.complete(group, results)
-	}
-	return nil
+	_, err := s.commitWriteCandidates(ctx, candidates, results, opts)
+	return err
 }
 
 func (s *Server) executeConditionalWrites(
@@ -366,24 +327,29 @@ func (s *Server) executeWriteAttempt(
 	results []*sink.WriteResult,
 	opts writeExecutionOptions,
 ) ([]writeGroup, error) {
-	attempt := writeAttempt{options: opts, results: results}
 	if err := contextError(ctx); err != nil {
 		return nil, err
 	}
-	read, err := s.readWriteSnapshots(ctx, groups, &attempt)
+	read, err := s.readWriteSnapshots(ctx, groups, opts.observation)
 	if err != nil {
 		return nil, err
 	}
 	defer clear(read.Results)
-	return s.applyWriteSnapshots(ctx, groups, read.Results, &attempt)
+	candidates := make([]writeGroupCandidate, 0, len(groups))
+	for index, stored := range read.Results {
+		group := groups[index]
+		input := writeGroupPreparation{group: group, stored: stored, results: results}
+		candidate, include := prepareWriteGroup(ctx, input)
+		if include {
+			candidates = append(candidates, candidate)
+		} else {
+			opts.complete(group, results)
+		}
+	}
+	return s.commitWriteCandidates(ctx, candidates, results, opts)
 }
 
-type writeAttempt struct {
-	options writeExecutionOptions
-	results []*sink.WriteResult
-}
-
-func (s *Server) readWriteSnapshots(ctx context.Context, groups []writeGroup, attempt *writeAttempt) (storage.ReadResponse, error) {
+func (s *Server) readWriteSnapshots(ctx context.Context, groups []writeGroup, observation *writeObservation) (storage.ReadResponse, error) {
 	budget := storage.NewUnboundedReadBudget()
 	readOperations := make([]storage.ReadOperation, 0, len(groups))
 	for _, group := range groups {
@@ -393,7 +359,7 @@ func (s *Server) readWriteSnapshots(ctx context.Context, groups []writeGroup, at
 	readRequest := storage.ReadRequest{Operations: readOperations, Budget: budget}
 	started := time.Now()
 	readResponse, err := s.storage.Read(ctx, readRequest)
-	attempt.options.observation.phase("storage_read", started)
+	observation.phase("storage_read", started)
 	if err != nil {
 		return readResponse, status.Errorf(codes.Unavailable, "read records for conditional write: %v", err)
 	}
@@ -403,122 +369,51 @@ func (s *Server) readWriteSnapshots(ctx context.Context, groups []writeGroup, at
 	return readResponse, nil
 }
 
-func (s *Server) applyWriteSnapshots(ctx context.Context, groups []writeGroup, snapshots []storage.ReadResult, attempt *writeAttempt) ([]writeGroup, error) {
-	opts := attempt.options
-	results := attempt.results
-	candidates := make([]writeGroupCandidate, 0, len(groups))
-	for index, stored := range snapshots {
-		group := groups[index]
-		input := writeGroupPreparation{group: group, stored: stored, results: results}
-		candidate, include := s.prepareWriteGroup(ctx, input)
-		if include {
-			if err := opts.returns.reserve(group, candidate.operation.Document); err != nil {
-				failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: err}
-				applyWriteGroupResult(group, results, failure)
-				opts.complete(group, results)
-				continue
-			}
-			candidates = append(candidates, candidate)
-		} else {
-			opts.complete(group, results)
-		}
-	}
-	return s.commitWriteCandidates(ctx, candidates, attempt)
-}
-
-func (s *Server) commitWriteCandidates(ctx context.Context, candidates []writeGroupCandidate, attempt *writeAttempt) ([]writeGroup, error) {
-	if len(candidates) == 0 {
-		return nil, nil
-	}
+func (s *Server) commitWriteCandidates(ctx context.Context, candidates []writeGroupCandidate, results []*sink.WriteResult, opts writeExecutionOptions) ([]writeGroup, error) {
 	if err := contextError(ctx); err != nil {
 		return nil, err
 	}
 	writeOperations := make([]storage.WriteOperation, 0, len(candidates))
+	ready := candidates[:0]
 	for _, candidate := range candidates {
+		if err := opts.returns.reserve(candidate.group, candidate.operation.Document); err != nil {
+			failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: err}
+			applyWriteGroupResult(candidate.group, results, failure)
+			opts.complete(candidate.group, results)
+			continue
+		}
 		writeOperations = append(writeOperations, candidate.operation)
+		ready = append(ready, candidate)
+	}
+	if len(ready) == 0 {
+		return nil, nil
 	}
 	writeRequest := storage.WriteRequest{
 		Operations:       writeOperations,
-		WaitUntilVisible: attempt.options.WaitUntilVisible,
+		WaitUntilVisible: opts.WaitUntilVisible,
 	}
 	started := time.Now()
 	writeResponse, err := s.storage.Write(ctx, writeRequest)
-	attempt.options.observation.phase("storage_write", started)
+	opts.observation.phase("storage_write", started)
 	if err != nil {
-		return nil, status.Errorf(codes.Unavailable, "commit folded records: %v", err)
+		return nil, status.Errorf(codes.Unavailable, "write records: %v", err)
 	}
-	if len(writeResponse.Results) != len(candidates) {
-		return nil, status.Error(codes.Internal, "storage returned an invalid merge write result count")
+	if len(writeResponse.Results) != len(ready) {
+		return nil, status.Error(codes.Internal, "storage returned an invalid write result count")
 	}
 
 	next := make([]writeGroup, 0)
 	for index, stored := range writeResponse.Results {
-		group := candidates[index].group
-		if stored.Status == storage.WriteStatusPreconditionFailed {
+		group := ready[index].group
+		if stored.Status == storage.WriteStatusPreconditionFailed && !group.directPut() {
 			next = append(next, group)
 			continue
 		}
-		applyWriteGroupResult(group, attempt.results, stored)
-		attachWriteDocument(group, attempt.results, candidates[index].operation.Document)
-		attempt.options.complete(group, attempt.results)
+		applyWriteGroupResult(group, results, stored)
+		attachWriteDocument(group, results, ready[index].operation.Document)
+		opts.complete(group, results)
 	}
 	return next, nil
-}
-
-func (s *Server) prepareMergeOperation(
-	ctx context.Context,
-	operation parsedWrite,
-	stored storage.ReadResult,
-	result *sink.WriteResult,
-) (storage.WriteOperation, bool) {
-	candidate := storage.WriteOperation{}
-	mergeRequest := merge.Request{
-		Incoming:   operation.merge.incoming,
-		ObservedAt: operation.merge.observedAt,
-	}
-	condition := storage.Precondition{}
-
-	switch stored.Status {
-	case storage.ReadStatusFound:
-		current := stored.Document
-		mergeRequest.Current = &current
-		if len(stored.Revision.Data) == 0 {
-			condition.Kind = storage.PreconditionRevisionAbsent
-		} else {
-			condition.Kind = storage.PreconditionRevisionMatches
-			condition.Revision = stored.Revision
-		}
-	case storage.ReadStatusNotFound:
-		condition.Kind = storage.PreconditionRecordNotExists
-	case storage.ReadStatusFailed:
-		code, retryable := storageFailureDetails(stored.Err)
-		setWriteFailure(result, code, stored.Err, retryable)
-		return candidate, false
-	default:
-		err := fmt.Errorf("unsupported storage read status %d", stored.Status)
-		setWriteFailure(result, sink.FailureCode_FAILURE_CODE_INTERNAL, err, false)
-		return candidate, false
-	}
-
-	started := time.Now()
-	merged, err := operation.merge.merger.Merge(ctx, mergeRequest)
-	operation.merge.observation.phase("lua", started)
-	if err != nil {
-		code := mergeFailureCode(err)
-		setWriteFailure(result, code, err, ctx.Err() != nil)
-		return candidate, false
-	}
-	if len(merged.Document.Payload) == 0 {
-		err := errors.New("lua merge program returned an invalid document")
-		setWriteFailure(result, sink.FailureCode_FAILURE_CODE_INTERNAL, err, false)
-		return candidate, false
-	}
-	candidate = storage.WriteOperation{
-		Address:      operation.address,
-		Document:     merged.Document,
-		Precondition: condition,
-	}
-	return candidate, true
 }
 
 func mergeFailureCode(err error) sink.FailureCode {

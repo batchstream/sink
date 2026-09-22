@@ -37,15 +37,6 @@ func hasWriteReturns(req *sink.WriteRequest) bool {
 	return false
 }
 
-func (g writeGroup) hasReturns() bool {
-	for _, operation := range g.operations {
-		if operation.original.GetReturnDocument() {
-			return true
-		}
-	}
-	return false
-}
-
 func (r *writeReturns) reserve(group writeGroup, document storage.Document) error {
 	if r == nil {
 		return nil

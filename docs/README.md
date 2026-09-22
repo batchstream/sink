@@ -31,6 +31,7 @@
 | [Configuration migration](configuration-migration.md) | Move existing YAML to grouped settings and duration strings |
 | [Metrics and health](observability.md) | Inspect metrics, label budgets, and dependency health |
 | [Internal diagnostic logs](logging.md) | Configure warn-level console/OTLP logs, ES labels and bounded failure bodies |
+| [Adaptive Store backpressure](design/store-backpressure.md) | Dispatch admission, congestion feedback, recovery and independence from application scaling |
 | [Batching behavior](batching.md) | Understand collection queues, ordering, and capacity |
 | [Reliability and recovery](reliability.md) | Plan idempotence, monitor dependencies, handle failures, and replay dead letters |
 | [Production sizing](production-sizing.md) | Size Gateway, Engine and Worker against workload and backend capacity |

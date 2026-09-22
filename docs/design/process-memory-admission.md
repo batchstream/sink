@@ -74,7 +74,9 @@ request finishes. No allocation-level counters or forced GC loops are used.
 Engine processes the collected batch without further snapshot/output memory
 splitting. Record ordering, adapter grouping, completion modes and conflict
 retries still determine execution groups. The waiting queue retains its encoded
-byte and operation limits; dispatched work no longer counts toward those limits.
+byte and operation limits. [Store admission](store-backpressure.md) must acquire
+an execution permit before dispatch releases these queue charges. Dispatched
+work then occupies a Store permit until execution completes.
 
 The gRPC message ceiling limits each streamed result independently. Gateway
 and Engine do not exchange response allowances. A requested returned document

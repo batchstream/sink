@@ -161,6 +161,43 @@ independent from dependency readiness to avoid restart loops during an outage.
 
 See the [configuration reference](configuration.md) for listener settings.
 
+## Store backpressure
+
+Engine and Worker expose their independent Store controller with bounded `role`
+and configured `store` labels. Gateway has no Store controller. Health probes
+and memory measurements do not feed these metrics or the congestion algorithm.
+
+| Metric | Type | Additional labels / meaning |
+| --- | --- | --- |
+| `sink_store_concurrency_limit` | gauge | Current local execution window; zero pauses new dispatch |
+| `sink_store_executions_in_flight` | gauge | Admitted sequential executions, including existing retries and cursor sends |
+| `sink_store_cooldown_seconds` | gauge | Remaining pause before real traffic may probe recovery |
+| `sink_store_window_changes_total` | counter | `reason=increase,latency,overload` |
+| `sink_store_admissions_total` | counter | `outcome=admitted,rejected`; rejection counts direct admission, not queue polling |
+| `sink_store_feedback_total` | counter | `method`, `signal=healthy,congested,ignored`; one sample per Store call |
+| `sink_store_backend_duration_seconds_total` | counter | `method`; elapsed Store time excluding admission and downstream Emit waiting |
+| `sink_store_latency_baseline_seconds` | gauge | `method`, `batch_size=1,2_32,33_128,129_plus`; zero before learning |
+
+Methods are the fixed set `read`, `write`, `write_visible`, `delete`,
+`delete_visible`, `execute`, `query`, `count`, `scan`. Opaque Execute commands
+use success/error feedback only, so their latency baseline remains zero.
+The collector creates **80 series per process**, independent of request paths,
+document identities, query text, and error messages. Deployment/target labels
+and historical Pod churn remain outside that count.
+
+Compare backend execution time with `sink_batcher_request_queue_duration_seconds` to
+distinguish backend slowdown from admission waiting. A mean Store duration is
+`rate(sink_store_backend_duration_seconds_total[5m])` divided by
+`sum without (signal) (rate(sink_store_feedback_total[5m]))`. These count interface
+calls, not database commands or records. In-flight executions may temporarily
+exceed the lowered window because already admitted work is never revoked.
+
+Scaling application CPU, memory or consumer capacity does not raise the Store
+window. Queue growth or Kafka lag alongside repeated window decreases indicates
+database pressure, which additional replicas cannot resolve. Do not use replica
+counts or an HPA recommendation to set database concurrency. See the
+[design and verification](design/store-backpressure.md).
+
 ## Memory capacity and KEDA
 
 Each process exports its watermark guard with bounded `role` and `store` labels

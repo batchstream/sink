@@ -6,7 +6,8 @@ is always active; every single-store `Read` uses this path. `Write` and
 `Delete` use it for `WAIT_UNTIL_APPLIED` and `WAIT_UNTIL_VISIBLE`;
 `RETURN_AFTER_ACCEPTED` bypasses it because Kafka already batches asynchronous
 mutations. Read, write, and delete have independent queues within each store.
-A slow batch therefore does not block another method or another store.
+Record dependencies stay method-local; Store admission is shared across all
+methods. A congested Store pauses subsequent dispatch for that Store.
 
 `batching` configures batch and queue limits; batching cannot be disabled.
 Remove the former `batching.enabled` field from existing configurations.
@@ -27,7 +28,7 @@ full address. Executions use their live callers' deadlines and cancellation sign
 
 Write/Delete dispatchers can collect and execute later batches while an earlier
 batch waits for refresh. New RPCs pass the process memory watermark check;
-there is no separate request concurrency cap. Record
+the adaptive Store window admits each batch before its queue capacity is released. Record
 dependencies cover both active and queued RPCs: an RPC touching several records
 waits for every predecessor, while unrelated RPCs may pass it. Ordering does not
 extend across methods, bypass requests, or server replicas. Queue budgets and
@@ -69,8 +70,10 @@ shutdown drains gRPC calls before stopping batch dispatchers.
 See [memory admission](design/process-memory-admission.md).
 
 Batching happens only among requests for the same store reaching the same Sink
-process. More pods increase aggregate queue and storage concurrency, but they
-do not share a batcher. Explicit client-side batches still remove gRPC framing,
+process. More pods increase aggregate application queue capacity, but do not share a
+batcher. Each pod independently adapts Store dispatch concurrency to real backend
+feedback; replica count never directly determines the execution window. See
+[Store backpressure](design/store-backpressure.md). Explicit client-side batches still remove gRPC framing,
 scheduling, and serialization overhead and are therefore more efficient when
 the caller already has several records available.
 

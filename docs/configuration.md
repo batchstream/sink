@@ -147,6 +147,7 @@ use the lowercase spelling shown below. Storage names are also case-sensitive.
 | `storage.search.password` | string | Conditionally | empty | Any password accepted by the search service | Basic-auth password. Must be configured together with `username`. |
 | `storage.search.api_key` | string | No | empty | Any API key accepted by the search service | API key used instead of basic authentication. |
 | `request.max_operations` | positive integer | No | `1000` | Integer greater than `0` | Maximum operation count accepted in one Read, Write, or Delete batch request. |
+| `execution.store_max_concurrent` | positive integer | No | `64` | Integer from `1` through `4096` | Local safety ceiling for the adaptive Store window; Engine/Worker only. Not a backend capacity estimate or replica-based quota. |
 | `execution.merge.max_attempts` | positive integer | No | `3` | Integer greater than `0` | Maximum revision-conflict attempts for Merge and folded conditional Put chains. |
 | `batching.max_wait` | duration string | No | `2ms` | Positive Go duration within the bounds below | Maximum collection delay measured from the first request in a batch. |
 | `batching.max_operations` | positive integer | No | `32` | Positive integer | Operation target for one automatically formed batch; a larger valid RPC still executes alone. See [default selection](batching.md#default-selection). |
@@ -188,8 +189,8 @@ between Gateway and Engine. Oversized returned writes are rejected
 before their own commit. Intermediate snapshots and candidate outputs use process
 memory protection without independent quotas. Collected batches execute together.
 
-All settings in this table are optional. Counts and bytes are positive integers; time values are positive duration strings such as `30s` or `2ms`. Limits are process-local; replica
-counts multiply capacity. Configure the same Kafka policy on servers and workers.
+All settings in this table are optional. Counts and bytes are positive integers; time values are positive duration strings such as `30s` or `2ms`. Memory and queue limits are process-local; replicas add application buffering.
+Store execution windows adapt independently to shared backend feedback. Configure the same Kafka policy on servers and workers.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -210,7 +211,9 @@ and `kafka.dead_letter` each contain only `name` and `retention`, which are inde
 All roles use the same watermark settings. Linux measures process RSS; other
 platforms fall back to Go runtime memory. Sampling is cached for 100 ms. Existing
 requests continue after the high watermark is reached; Worker finishes its current
-poll before pausing. There is no separate request concurrency cap.
+poll before pausing. Store dispatch additionally uses the independent
+[adaptive backpressure controller](design/store-backpressure.md), which may pause
+new backend executions at concurrency zero.
 
 Before opening dependencies, Sink estimates minimum working memory from transport,
 Lua, driver and Kafka settings. Startup panics if the high-watermark portion of the
@@ -223,7 +226,8 @@ The former `service` sections, snapshot/output quotas, `memory.burst_percent`,
 `memory.wait_timeout` and Gateway count/byte admission fields are rejected.
 Use `memory` for process pressure and `batching.queue` for Engine waiting queues.
 
-MongoDB group concurrency is shared across concurrent calls. Sink sets
+Store admission is shared across Read/Write/Delete/Native operations. It counts
+admitted Storage executions; adapter group fanout remains unchanged. Sink sets
 `w=majority` and `journal=true` on its client, overriding weaker URI concerns;
 server selection is bounded to five seconds. Verify the deployment supports
 these settings before upgrading. The caller context controls the overall request lifetime.

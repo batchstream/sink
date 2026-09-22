@@ -135,8 +135,9 @@ Because the adapter receives native BSON, `_id`, datetimes, ObjectIDs, binary
 values, and other BSON types do not pass through JSON or Extended JSON.
 
 Batch reads use one `$in` query per collection. Unconditional puts and creates
-use unordered bulk writes. Revision-conditional writes execute concurrently as
-individual operations so each result can be correlated with its precondition.
+use unordered bulk writes. Revision-conditional writes use client bulk writes
+when the server supports per-operation results, otherwise bounded individual
+operations retain correlation with each precondition.
 Legacy documents without Sink metadata receive it through a conditional first
 mutation, keeping their first read-modify-write atomic.
 
@@ -170,7 +171,8 @@ and failure semantics.
 An operation requesting `return_document` commits independently of the preceding
 and following operations. Its successful result contains that operation's logical
 output and own revision, without a later read. Other operations in the same-address
-chain may still share a folded commit and revision.
+chain may still share a folded commit and revision. The executor consumes one
+segment at a time, folding runs on either side of each returned operation.
 
 Engine automatically coalesces concurrent one-operation RPCs for its bound
 Store into bounded, process-local batches.
@@ -181,10 +183,11 @@ completion mode. Disjoint modes may run concurrently; a shared full record
 address creates an ordering barrier when its completion mode changes. Bounded
 Write/Delete dispatchers also track active and queued record dependencies across
 batches, so unrelated later requests can execute during an earlier refresh wait.
-Each original RPC retains its own bounded response group with a local read
-budget, and merge snapshots and returned documents stay bounded by the active
-microbatch. Memory-limited execution groups split at RPC boundaries; process
-memory watermarks gate new work.
+The dispatcher selects one resource/completion partition; execution does not
+construct a second scheduling plan. Response groups preserve per-result limits
+for streams and per-caller output limits for internal batch calls. Merge
+snapshots use the active microbatch's working memory without independent
+snapshot quotas or memory-based splitting; process memory watermarks gate new work.
 
 Read, write, and delete queues are independent for each store. This keeps a
 slow method or backend from consuming another queue's allowance. Each queue is

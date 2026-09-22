@@ -40,8 +40,9 @@ and queues; a Put and a Delete are not folded together.
 The folding rules below apply to operations that share a commit.
 `return_document` guarantees an independent commit for the operation carrying
 the option, retaining the batcher's ordering barrier. It does not guarantee
-separate commits for every other operation in the same-address chain. A trailing
-run without returned documents may still fold into one commit. Only APPLIED
+separate commits for every other operation in the same-address chain. Each run
+without returned documents, before or after a returned operation, may fold into
+one commit. Only APPLIED
 operations requesting a document receive one. Asynchronous completion rejects this option.
 Returned documents are the logical Put/Merge outputs; backend-generated fields
 and ingest transformations are excluded. See [returned writes](native-access.md#returned-writes).
@@ -106,8 +107,8 @@ own message ceiling. Internal batch callers retain their local response limits.
 The backend's unique-document read remains bounded by the active microbatch. Missing/error results are returned to all matching
 operations.
 
-Snapshot-based Put chains reserve read/output admission space before execution,
-just like Merge. Operation limits, byte limits, request deadlines, bounded
+Snapshot-based Put chains and Merges use the active batch's working memory.
+Operation limits, queue byte limits, request deadlines, bounded
 conflict attempts, and Lua limits remain in force. Single Puts and all-Upsert
 chains retain their direct path. Existing merge metrics continue counting Lua
 operations rather than inflating them with Puts; they are not total folding
@@ -118,14 +119,12 @@ batches. Independent later requests can run during a previous refresh wait,
 within bounded execution capacity; same-record and multi-record dependency
 chains keep their order. This ordering remains local to one store/method queue.
 
-Micro-batches preserve original RPC snapshot/output quotas. Shared observations
-cannot make a healthy RPC inherit another caller's quota failure. A conditional
-RPC's working state is admitted before later callers can use it; failed output
-is excluded from the folded document. Worst-case reservations are charged per
-RPC, sharing physical snapshot/output reservations for hot records; oversized
-combined executions split at RPC boundaries. This can reduce
-cross-RPC folding when large per-RPC budgets approach the process byte limit;
-it does not affect folding within an explicit RPC.
+Memory watermarks gate new requests, and Store admission gates dispatch. Admitted
+batches execute without snapshot/output memory reservations or memory-based
+splitting. Response limits are separate: streamed results each have a message
+ceiling, while internal batch calls retain their caller-local output budgets.
+Returned documents reserve that output allowance before committing and release
+unused allowance after a final failure or a smaller successful CAS result.
 
 ## Validation
 

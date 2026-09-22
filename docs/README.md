@@ -41,6 +41,7 @@
 | Guide | What you will learn |
 | --- | --- |
 | [Store-isolated architecture design](design/store-isolated-architecture.md) | Confirmed agreements and implementation decisions for Gateway, single-Store Engine, and Worker |
+| [Document lifecycle review](design/document-lifecycle.md) | Execution ownership, scheduling and commit simplifications, and benchmark evidence |
 | [Internal logging design](design/internal-logging.md) | Accepted diagnostic logging scope, field contract and reliability boundaries |
 | [Contributing](../CONTRIBUTING.md) | Report an issue and prepare a focused pull request |
 | [Development](development.md) | Build, lint, generate protobuf code, run tests, and package releases |

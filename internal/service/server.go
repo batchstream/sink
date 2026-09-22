@@ -108,7 +108,6 @@ func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *res
 	groups := buildWriteGroups(operations)
 	executionOptions := writeExecutionOptions{
 		returns:          newWriteReturns(req, budgets, s.maxReadBytes),
-		budgets:          budgets,
 		completion:       completion,
 		observation:      observation,
 		WaitUntilVisible: req.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE,

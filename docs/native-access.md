@@ -86,9 +86,8 @@ write errors still retain their native response envelopes. Unknown commands,
 `drop`, `dropDatabase`, collection renames/conversions, and commands such as
 `applyOps` or `mapReduce` are rejected before execution: they cannot bypass the
 revision protocol through opaque native writes. There is no unsafe passthrough
-fallback. This intentionally narrows the earlier unrestricted Execute contract;
-administrative operations outside this list must use a separately controlled
-database administration path.
+fallback. Administrative operations outside this list must use a separately
+controlled database administration path.
 
 #### Revision-protected native mutations
 

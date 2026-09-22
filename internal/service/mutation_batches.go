@@ -11,16 +11,6 @@ type mutationRequest[Operation addressedOperation] interface {
 	GetCompletionMode() sink.CompletionMode
 }
 
-type mutationWave[Request any, Response any] struct {
-	applied []*batchCall[Request, Response]
-	visible []*batchCall[Request, Response]
-}
-
-type mutationPosition struct {
-	wave int
-	mode sink.CompletionMode
-}
-
 // Requests spanning datasets retain their RPC boundary but execute alone.
 // Partitioning never permits a later same-record request to pass a predecessor.
 type batchPartition struct {
@@ -50,52 +40,6 @@ func mutationRequestPartition[Operation addressedOperation, Request mutationRequ
 		}
 	}
 	return partition
-}
-
-// Partition collected RPCs without strengthening their completion requirements.
-// Different modes can execute together only when their record addresses are
-// disjoint. An RPC touching several records waits for every predecessor; keeping
-// the RPC intact also preserves its result and admission boundaries.
-func planMutationWaves[Operation addressedOperation, Request mutationRequest[Operation], Response any](
-	calls []*batchCall[Request, Response],
-) []mutationWave[Request, Response] {
-	waves := make([]mutationWave[Request, Response], 0)
-	last := make(map[recordIdentity]mutationPosition)
-	for _, call := range calls {
-		mode := call.request.GetCompletionMode()
-		wave := 0
-		keys := make([]recordIdentity, 0, call.operationCount)
-		for _, operation := range call.request.GetOperations() {
-			address, err := protocol.ParseAddress(operation.GetAddress())
-			if err != nil {
-				// Invalid URIs are rejected at Store admission.
-				continue
-			}
-			key := identityOf(address)
-			keys = append(keys, key)
-			if previous, exists := last[key]; exists {
-				required := previous.wave
-				if previous.mode != mode {
-					required++
-				}
-				wave = max(wave, required)
-			}
-		}
-		for len(waves) <= wave {
-			var next mutationWave[Request, Response]
-			waves = append(waves, next)
-		}
-		if mode == sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE {
-			waves[wave].visible = append(waves[wave].visible, call)
-		} else {
-			waves[wave].applied = append(waves[wave].applied, call)
-		}
-		position := mutationPosition{wave: wave, mode: mode}
-		for _, key := range keys {
-			last[key] = position
-		}
-	}
-	return waves
 }
 
 func liveMutationCalls[Request any, Response any](calls []*batchCall[Request, Response]) []*batchCall[Request, Response] {

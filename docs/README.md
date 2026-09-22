@@ -8,7 +8,7 @@
 | --- | --- |
 | [Docker Compose quickstart](../examples/quickstart/README.md) | Start Sink, MongoDB, and Kafka and verify the public API |
 | [Go client](https://github.com/batchstream/sink-go#quick-start) | Connect an application and read or write typed documents |
-| [Store isolation](store-isolation.md) | Gateway, per-Store Engine/Worker, migration and scaling. |
+| [Store isolation](store-isolation.md) | Gateway, per-Store Engine/Worker, deployment and scaling |
 | [Architecture and behavior](architecture.md) | Understand addresses, encoding, batching, ordering, and completion modes |
 | [Document write flow](document-write-flow.md) | Follow one document from an RPC through storage or a Kafka worker |
 
@@ -28,7 +28,6 @@
 | Guide | What you will learn |
 | --- | --- |
 | [Configuration reference](configuration.md) | Configure named stores, resource limits, Kafka, and process modes |
-| [Configuration migration](configuration-migration.md) | Move existing YAML to grouped settings and duration strings |
 | [Metrics and health](observability.md) | Inspect metrics, label budgets, and dependency health |
 | [Internal diagnostic logs](logging.md) | Configure warn-level console/OTLP logs, ES labels and bounded failure bodies |
 | [Adaptive Store backpressure](design/store-backpressure.md) | Dispatch admission, congestion feedback, recovery and independence from application scaling |
@@ -40,8 +39,7 @@
 
 | Guide | What you will learn |
 | --- | --- |
-| [Store-isolated architecture design](design/store-isolated-architecture.md) | Confirmed agreements and implementation decisions for Gateway, single-Store Engine, and Worker |
-| [Internal logging design](design/internal-logging.md) | Accepted diagnostic logging scope, field contract and reliability boundaries |
+| [Internal logging design](design/internal-logging.md) | Diagnostic logging scope, field contract and reliability boundaries |
 | [Contributing](../CONTRIBUTING.md) | Report an issue and prepare a focused pull request |
 | [Development](development.md) | Build, lint, generate protobuf code, run tests, and package releases |
 | [Lua benchmarks](https://github.com/batchstream/sink-production-suite/blob/main/benchmarks/lua/README.md) | Compare Lua runtime workloads |

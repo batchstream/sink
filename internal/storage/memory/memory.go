@@ -44,11 +44,11 @@ type SeedRequest struct {
 }
 
 // Seed inserts or replaces a record without generating a revision. It exists
-// to model legacy records in tests.
+// to model documents written outside Sink in tests.
 func (s *Store) Seed(req SeedRequest) {
 	s.mu.Lock()
 	s.records[req.Address.RoutingKey()] = record{
-		document: cloneDocument(req.Document),
+		document: storage.CloneDocument(req.Document),
 		revision: cloneRevision(req.Revision),
 	}
 	s.mu.Unlock()
@@ -81,7 +81,7 @@ func (s *Store) Read(_ context.Context, req storage.ReadRequest) (storage.ReadRe
 		}
 		response.Results[index] = storage.ReadResult{
 			Status:   storage.ReadStatusFound,
-			Document: cloneDocument(stored.document),
+			Document: storage.CloneDocument(stored.document),
 			Revision: cloneRevision(stored.revision),
 		}
 	}
@@ -114,7 +114,7 @@ func (s *Store) Write(_ context.Context, req storage.WriteRequest) (storage.Writ
 
 		revision := s.newRevisionLocked()
 		s.records[key] = record{
-			document: cloneDocument(operation.Document),
+			document: storage.CloneDocument(operation.Document),
 			revision: revision,
 		}
 		response.Results[index] = storage.WriteResult{
@@ -163,10 +163,6 @@ func preconditionMatches(condition storage.Precondition, stored record, exists b
 	default:
 		return false, fmt.Errorf("unsupported precondition kind %d", condition.Kind)
 	}
-}
-
-func cloneDocument(document storage.Document) storage.Document {
-	return storage.CloneDocument(document)
 }
 
 func cloneRevision(revision storage.Revision) storage.Revision {

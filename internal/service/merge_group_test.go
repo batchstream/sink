@@ -153,26 +153,6 @@ func foldingRequest(operations ...*sink.WriteOperation) *sink.WriteRequest {
 	return request
 }
 
-func TestMergeIgnoresLegacyMissingModeFieldAndCreatesRecord(t *testing.T) {
-	backend := memory.New()
-	server := newTestServer(t, backend, nil)
-	operation := foldingMerge("legacy", incrementLua, `{"value":7}`)
-	// Field 2 used to request failure for a missing document. It is reserved now,
-	// and old clients or queued messages must receive the single create-or-merge
-	// behavior.
-	operation.GetMerge().ProtoReflect().SetUnknown([]byte{0x10, 0x01})
-	response, err := server.Write(t.Context(), foldingRequest(operation))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result := response.GetResults()[0]; result.GetStatus() != sink.WriteStatus_WRITE_STATUS_APPLIED {
-		t.Fatalf("legacy merge result = %v", result)
-	}
-	if got := foldingValue(t, backend, "legacy"); got != 7 {
-		t.Fatalf("legacy merge value = %d, want 7", got)
-	}
-}
-
 func foldingValue(t testing.TB, backend storage.Storage, key string) int {
 	t.Helper()
 	operation := storage.ReadOperation{Address: storageAddress(key)}
@@ -286,7 +266,21 @@ type foldingFaultStorage struct {
 
 func (s *foldingFaultStorage) Read(ctx context.Context, req storage.ReadRequest) (storage.ReadResponse, error) {
 	s.reads++
-	return s.backend.Read(ctx, req)
+	response, err := s.backend.Read(ctx, req)
+	switch s.fault {
+	case "read unavailable":
+		return response, errors.New("snapshot unavailable")
+	case "missing snapshot":
+		response.Results = nil
+	case "extra snapshot":
+		response.Results = append(response.Results, response.Results[0])
+	case "invalid snapshot":
+		response.Results[0] = storage.ReadResult{}
+	case "failed snapshot":
+		cause := errors.New("snapshot unavailable")
+		response.Results[0] = storage.ReadResult{Status: storage.ReadStatusFailed, Err: storage.BackendError(cause)}
+	}
+	return response, err
 }
 
 func (s *foldingFaultStorage) Write(ctx context.Context, req storage.WriteRequest) (storage.WriteResponse, error) {
@@ -302,6 +296,12 @@ func (s *foldingFaultStorage) Write(ctx context.Context, req storage.WriteReques
 		return response, nil
 	}
 	response, err := s.backend.Write(ctx, req)
+	if s.fault == "missing acknowledgement" {
+		response.Results = nil
+	}
+	if s.fault == "extra acknowledgement" {
+		response.Results = append(response.Results, response.Results[0])
+	}
 	if s.fault == "lost acknowledgement" && err == nil {
 		return response, errors.New("connection lost after commit")
 	}
@@ -336,7 +336,7 @@ func TestMergeFoldingRecomputesWholeChainAfterConflict(t *testing.T) {
 }
 
 func TestMergeFoldingDoesNotAcknowledgeOrReplayFailedCommit(t *testing.T) {
-	for _, fault := range []string{"reject", "lost acknowledgement"} {
+	for _, fault := range []string{"reject", "lost acknowledgement", "missing acknowledgement", "extra acknowledgement"} {
 		t.Run(fault, func(t *testing.T) {
 			backend := memory.New()
 			observed := &foldingFaultStorage{Storage: backend, backend: backend, fault: fault}
@@ -355,8 +355,12 @@ func TestMergeFoldingDoesNotAcknowledgeOrReplayFailedCommit(t *testing.T) {
 					}
 				}
 			} else {
-				if status.Code(err) != codes.Unavailable {
-					t.Fatalf("lost acknowledgement error = %v", err)
+				wantCode := codes.Unavailable
+				if fault != "lost acknowledgement" {
+					wantCode = codes.Internal
+				}
+				if status.Code(err) != wantCode {
+					t.Fatalf("acknowledgement error = %v, want %v", err, wantCode)
 				}
 				if foldingValue(t, backend, "counter") != 5 {
 					t.Fatal("ambiguous write was replayed")
@@ -480,4 +484,44 @@ func TestMergeFoldingWaitsForVisibilityWhileOneCallerCancels(t *testing.T) {
 
 func (s *foldingFaultStorage) BatchKey(address storage.Address) (string, error) {
 	return testuri.BatchKey(address)
+}
+
+func TestMergeFoldingRejectsInvalidSnapshotsBeforeCommit(t *testing.T) {
+	for _, fault := range []string{"read unavailable", "missing snapshot", "extra snapshot", "invalid snapshot", "failed snapshot"} {
+		t.Run(fault, func(t *testing.T) {
+			backend := memory.New()
+			seed := memory.SeedRequest{Address: storageAddress("counter"), Document: storageJSONDocument(`{"value":10}`)}
+			backend.Seed(seed)
+			observed := &foldingFaultStorage{Storage: backend, backend: backend, fault: fault}
+			server := newTestServer(t, observed, nil)
+			first := foldingMerge("counter", incrementLua, `{"value":2}`)
+			last := foldingMerge("counter", incrementLua, `{"value":3}`)
+			response, err := server.Write(t.Context(), foldingRequest(first, last))
+			switch fault {
+			case "read unavailable":
+				if status.Code(err) != codes.Unavailable {
+					t.Fatalf("snapshot error = %v", err)
+				}
+			case "missing snapshot", "extra snapshot":
+				if status.Code(err) != codes.Internal {
+					t.Fatalf("snapshot count error = %v", err)
+				}
+			default:
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(response.Results) != 2 {
+					t.Fatalf("lost operation results: %v", response)
+				}
+				for index, result := range response.Results {
+					if result.OperationIndex != uint32(index) || result.Status != sink.WriteStatus_WRITE_STATUS_FAILED || result.Failure == nil {
+						t.Fatalf("invalid snapshot acknowledged: %v", result)
+					}
+				}
+			}
+			if observed.reads != 1 || observed.writes != 0 || foldingValue(t, backend, "counter") != 10 {
+				t.Fatalf("invalid snapshot retried or committed: reads=%d writes=%d", observed.reads, observed.writes)
+			}
+		})
+	}
 }

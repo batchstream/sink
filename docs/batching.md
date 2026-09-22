@@ -9,9 +9,7 @@ mutations. Read, write, and delete have independent queues within each store.
 Record dependencies stay method-local; Store admission is shared across all
 methods. A congested Store pauses subsequent dispatch for that Store.
 
-`batching` configures batch and queue limits; batching cannot be disabled.
-Remove the former `batching.enabled` field from existing configurations.
-The strict configuration parser rejects it as an unknown field for either value.
+`batching` configures batch and queue limits; batching is always active.
 
 The first queued request starts `batching.max_wait`.
 Collection stops when that timer expires or adding another request would cross
@@ -79,23 +77,17 @@ the caller already has several records available.
 
 See the [configuration reference](configuration.md) for all settings.
 
-## Default selection
+## Choosing limits
 
 `batching.max_operations` defaults to **32**, with a **2 ms** collection wait.
-These are a starting point for small documents and modest concurrency, based on
-the [historical Kubernetes measurements](https://github.com/batchstream/sink/blob/ec7264f25690088aac767a027d61b17753d08d99/docs/production-sizing.md#observed-small-document-ceilings)
-and their [raw results](https://github.com/batchstream/sink/blob/ec7264f25690088aac767a027d61b17753d08d99/benchmarks/kubernetes/results/eks-arm64.csv).
-At 128 clients, the 32-operation target improved both throughput and P99 over
-128 for MongoDB and OpenSearch. At 512 clients, 128 performed better. These
-measurements used the earlier shared-server architecture and fixed CPU/memory
-budgets; they do not establish a universal optimum for the current Engine.
+Measure throughput, tail latency and memory for the actual document sizes,
+request mix and backend latency before adjusting these targets.
 
 The batch target is independent of Gateway's **1,000-operation** public RPC
 limit and each method's **10,000-operation** waiting queue. A valid explicit
-RPC with more than 32 operations executes alone; it is not rejected or split
-into different public requests by this default change.
+RPC larger than the batch target executes alone and retains its public result
+boundary. Streaming requests submit bounded microbatches to this queue.
 
-Memory watermarks default to 80% for rejection and 70% for recovery. They are
-operational starting points, not benchmark-derived optima. Queue, byte,
-backend-concurrency and Kafka-consumer defaults also require workload-specific
-validation. Historical response caps and GC settings are not universal defaults.
+Memory watermarks default to 80% for rejection and 70% for recovery. Queue,
+byte, backend-concurrency and Kafka-consumer limits require workload-specific
+validation. See [production sizing](production-sizing.md).

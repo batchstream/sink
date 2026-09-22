@@ -35,4 +35,4 @@ routes are active. Restart Gateway after changing its configuration.
 For another Store, add its own database target, Engine, Worker and route. Replicas
 of one Store share that Store file's `name`; different Stores must not share a
 database target. The example's plaintext route is for the local Compose network.
-See [configuration, migration and scaling](../../docs/store-isolation.md).
+See [configuration and scaling](../../docs/store-isolation.md).

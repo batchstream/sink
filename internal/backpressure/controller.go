@@ -290,13 +290,10 @@ func (c *Controller) observeAt(started sample, duration time.Duration, result fe
 		}
 		latency.samples = min(latency.samples+1, 1000)
 		latency.short += (value - latency.short) / 4
-		// Slow upward aging also allows a permanent workload/latency change to
-		// establish a new baseline. Fast downward adaptation follows recovery.
-		weight := 0.01
-		if value < latency.baseline {
-			weight = 0.25
-		}
-		latency.baseline += weight * (value - latency.baseline)
+		// Compare recent latency with its long-term mean. Aging both directions
+		// equally prevents ordinary fast replies from pulling the baseline
+		// toward a minimum and making a stable, variable workload look congested.
+		latency.baseline += 0.01 * (value - latency.baseline)
 		if latency.samples >= 4 && latency.short > max(1.5*latency.baseline, latency.baseline+float64(5*time.Millisecond)) {
 			latency.slow++
 		} else {
@@ -343,7 +340,10 @@ func (c *Controller) observeAt(started sample, duration time.Duration, result fe
 func (c *Controller) decrease(now time.Time, overload bool) {
 	c.threshold = max(1, c.limit/2)
 	c.resumeLimit = c.threshold
-	c.limit /= 2
+	// Latency growth still represents successful work. Keep one execution
+	// available so a slower backend can establish its new baseline; only an
+	// explicit overload or timeout should pause dispatch and grow cooldown.
+	c.limit = c.threshold
 	c.clean = 0
 	c.recovered = 0
 	c.demand = false

@@ -3,13 +3,11 @@
 Sink requires Go 1.27 or newer. Docker with Compose is required for the
 quickstart and external storage integration suites.
 
-## Next architecture design
+## Architecture
 
-Before working on the Gateway and single-store Engine/Worker redesign, read the
-[design agreement and review decisions](design/store-isolated-architecture.md).
-The user has authorized implementation and testing. Preserve the confirmed
-constraints and record implementation decisions and validation in that document.
-This authorization does not include a release or a production deployment.
+Start with [architecture and code ownership](architecture.md) and the
+[document write flow](document-write-flow.md). The [configuration reference](configuration.md)
+and [deployment guide](store-isolation.md) define the supported roles and settings.
 
 ## Validation
 
@@ -102,85 +100,51 @@ make fuzz-unit                  # envelope and BSON input fuzzing, 30 seconds ea
 
 `BenchmarkSynchronousMergeMicrobatch` isolates batching and adapter round trips
 with local doubles. Cross-component Gateway/Engine and real-backend benchmarks,
-Lua runtime comparisons, the memory reserve experiment and the fixed-resource
-load runner belong to the production suite. See its
+Lua runtime comparisons and the fixed-resource load runner belong to the
+production suite. See its
 [benchmark commands](https://github.com/batchstream/sink-production-suite/blob/main/docs/server-benchmarks.md).
 Timing measurements have no CI ranking threshold.
 
-### Gateway routing allocations
+### Focused microbenchmarks
 
-Compare record-affinity routing across replica counts with:
+Use the same workload, iteration count and environment when comparing revisions.
+These local doubles and offline fixtures isolate component costs; they do not
+establish database throughput or deployment capacity.
 
 ```shell
+# Record-affinity routing allocations across replica counts.
 go test ./internal/gateway -run '^$' -bench '^BenchmarkAffinityRoute$' -benchtime=200ms -benchmem -count=5
-```
-
-On an Apple M2 with Go 1.27, reusing the existing stack buffer for the record
-identity reduced the benchmark's 3, 16, 64, and 256-replica cases from 48 B and
-one allocation per route to zero. The single-replica fast path was already
-allocation-free. SHA-256 inputs and owner selection remain unchanged; identities
-and endpoints exceeding the buffer still use an allocation without truncation.
-This isolates routing allocation, not end-to-end deployment throughput.
-
-### Search connection reuse
-
-Compare the default Go HTTP pool with the Store pool using synchronized bursts
-of 16 requests against a local HTTP/1.1 backend:
-
-```shell
+# HTTP connection reuse under synchronized bursts; keep iterations bounded.
 go test ./internal/storage/search -run '^$' -bench '^BenchmarkSearchConnectionReuse$' -benchtime=100x -benchmem -count=5
-```
-
-On an Apple M2, five 100-burst samples reduced median time from 570 to 241
-microseconds per burst and allocation from 309 to 129 KB per burst. After warmup,
-new connections fell from 14 per burst to zero. This isolates HTTP connection
-reuse; it does not measure database throughput or deployment capacity. Fixed
-iteration counts also keep the default-pool comparison from exhausting local
-ephemeral ports during longer runs.
-
-### Payload allocation comparisons
-
-Read benchmarks exercise the adapter against a local HTTP backend for search
-and the MongoDB driver's offline wire fixture. Compare revisions with:
-
-```shell
+# Read payload ownership and mutation-envelope encoding.
 go test ./internal/storage/search ./internal/storage/mongodb -run '^$' -bench '^(BenchmarkSearchReadDocument|BenchmarkMongoReadDocument)$' -benchtime=50x -benchmem -count=5
 go test ./internal/queue -run '^$' -bench '^BenchmarkMutationEnvelope$' -benchtime=100x -benchmem -count=5
 ```
 
-On an Apple M2, transferring an already-owned document into the first read
-result reduced median allocated bytes as follows (five samples):
-
-| Adapter | Document size | Before (B/op) | After (B/op) | Reduction |
-| --- | --- | ---: | ---: | ---: |
-| Search | 64 KiB | 322,748 | 246,350 | 23.7% |
-| Search | 1 MiB | 4,406,891 | 3,346,838 | 24.1% |
-| MongoDB | 64 KiB | 386,795 | 306,979 | 20.6% |
-| MongoDB | 1 MiB | 5,909,091 | 4,576,522 | 22.6% |
-
-Repeated storage results still own separate mutable documents and internal revisions. The read
-measurements include the local harness and do not establish database throughput.
-Encoding queue messages directly into their final envelope reduced allocations
-from two to one and allocated bytes by 50% for 4 KiB, 64 KiB, and 1 MiB payloads.
-The queue wire format is unchanged.
+For record-folding and returned-document boundaries, see the
+[folding benchmarks](merge-folding.md#validation-and-benchmarks).
 
 ## Repository layout
 
 - `proto/sink` defines the public gRPC contract.
 - `internal/service` implements validation, ordering, batching, puts, and Lua
   merge retries.
-- `internal/storage` routes operations to independently configured adapters.
+- `internal/config` decodes configuration and validates role boundaries.
+- `internal/app` assembles dependencies and owns their lifecycle.
+- `internal/gateway` routes public requests by Store and record affinity.
+- `internal/engine` implements the private forwarding contract.
+- `internal/storage` defines the adapter contract and shared document helpers.
 - `internal/storage/mongodb` implements MongoDB storage.
 - `internal/storage/search` implements the shared Elasticsearch and OpenSearch
   adapter.
-- `internal/queue` routes asynchronous mutations to the selected publisher.
+- `internal/queue` defines mutation envelopes and their encoding.
 - `internal/queue/kafka` implements durable publication and manual-offset
   consumption.
 - `internal/worker` applies queued mutations through the synchronous service
   path.
 - `internal/storage/memory` is the deterministic test and local-development
   adapter.
-- `cmd/sink` loads configuration and assembles a Gateway, Engine, or Worker process.
+- `cmd/sink` dispatches commands and establishes the process signal context.
 
 ## Release artifacts
 
@@ -261,9 +225,7 @@ coverage, JSON test events and a package summary to `.reports/coverage/`.
 CI enforces the package floors in `.github/coverage-minimums.json`; generated
 protobuf files do not count. Keep floors stable or raise them when adding tests.
 The report is statement coverage, not branch or end-to-end scenario coverage.
-The unit-only baseline excludes the migrated transport and assembly scenarios.
-The suite retains the previous combined package floors in its
-`.github/candidate-coverage-minimums.json` and enforces them over unit plus
-suite-owned component tests. Lower unit-only numbers are a change of measurement
-scope; the combined gate must not be reduced to accommodate this migration.
+The unit gate covers component tests in this repository. The production suite
+also enforces combined package floors from `.github/candidate-coverage-minimums.json`
+over these unit tests and its transport and assembly scenarios. Both gates must pass.
 Real backend profiles remain separate and are retained by the suite.

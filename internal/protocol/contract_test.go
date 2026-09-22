@@ -36,11 +36,6 @@ func TestRecordAddressContainsOnlyCanonicalURI(t *testing.T) {
 	if message == nil || message.Fields().Len() != 1 || message.Fields().Get(0).Name() != "uri" {
 		t.Fatal("RecordAddress must contain only uri")
 	}
-	for _, name := range []protoreflect.Name{"RecordKey", "OpaqueValue"} {
-		if sink.File_sink_sink_proto.Messages().ByName(name) != nil {
-			t.Fatalf("obsolete message %s remains", name)
-		}
-	}
 }
 
 func TestNativeCommandUsesResourceURI(t *testing.T) {

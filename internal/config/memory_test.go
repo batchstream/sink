@@ -22,7 +22,7 @@ func TestMemoryConfiguration(t *testing.T) {
 	if loaded.Memory.MaxBytes != 128<<20 || loaded.Memory.HighWatermarkPercent != 90 || loaded.Memory.LowWatermarkPercent != 75 {
 		t.Fatalf("explicit: %+v", loaded.Memory)
 	}
-	for _, value := range []string{"high_watermark_percent: 0", "high_watermark_percent: 100", "high_watermark_percent: -1", "max_bytes: 0", "max_bytes: 512", "low_watermark_percent: 0", "unknown: 1", "high_watermark_percent: 70, low_watermark_percent: 70", "high_watermark_percent: 60", "burst_percent: 10", "wait_timeout: 2s"} {
+	for _, value := range []string{"high_watermark_percent: 0", "high_watermark_percent: 100", "high_watermark_percent: -1", "max_bytes: 0", "max_bytes: 512", "low_watermark_percent: 0", "unknown: 1", "high_watermark_percent: 70, low_watermark_percent: 70", "high_watermark_percent: 60"} {
 		if _, err := Decode(strings.NewReader(base+"memory: {"+value+"}\n"), nil); err == nil {
 			t.Fatalf("accepted %s", value)
 		}

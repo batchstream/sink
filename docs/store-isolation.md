@@ -3,7 +3,7 @@
 Use three independent process roles when Stores need independent capacity.
 All roles use the same `sink` executable and strict YAML configuration. See the
 [runnable Compose example](../examples/quickstart/README.md) and the
-[design decisions](design/store-isolated-architecture.md).
+[architecture and execution ownership](architecture.md).
 
 ```mermaid
 flowchart LR
@@ -17,9 +17,9 @@ flowchart LR
     WorkerA --> DatabaseA
 ```
 
-Gateway exposes the existing seven public RPCs. Engine exposes private versioned forwarding and health RPCs for its one Store. Worker has no application
+Gateway exposes seven public RPCs. Engine exposes private versioned forwarding and health RPCs for its one Store. Worker has no application
 gRPC listener and calls the shared execution core directly. Asynchronous acceptance
-still means that Engine's Kafka producer received durable acknowledgement; Gateway
+means that Engine's Kafka producer received durable acknowledgement; Gateway
 never connects to Kafka or a database.
 
 ## Configuration
@@ -59,7 +59,7 @@ forwarding:
 
 TLS with system trust roots and a minimum of TLS 1.2 is the default. An explicitly
 trusted plaintext endpoint requires `tls.insecure: true`; it cannot also set
-`server_name`. Sink's listener remains the existing plaintext gRPC listener;
+`server_name`. Sink's listener serves plaintext gRPC;
 terminate TLS in a trusted proxy when using TLS routes. Keep Engine endpoints
 inside the trusted service network. Store name checking does not provide
 client authentication or authorization.
@@ -107,8 +107,8 @@ roll back completed writes.
 
 Errors and status details use standard gRPC trailers, including Scan's admission
 retry marker. Successful EOF ends the private stream; there is no separate
-settlement frame. Deadlines and cancellation propagate to Engine. The matching
-streaming SDK and Server must be upgraded together.
+settlement frame. Deadlines and cancellation propagate to Engine. Use SDK and
+Server builds with matching streaming contracts.
 
 ## Readiness, metrics and scaling
 
@@ -147,9 +147,11 @@ Gateway remains a shared ingress: exhausting its CPU, memory or global admission
 pressure can affect multiple Stores. Gateway needs its own capacity planning and scaling.
 All roles expose process [memory watermark metrics](observability.md#memory-capacity-and-keda).
 
-## New-cluster deployment
+## Deployment
 
-Deploy matching Gateway, Engine, Worker and SDK builds into a new cluster with
-new Kafka topics and consumer groups. Validate URI routing and asynchronous
-processing before the blue/green client cutover. See the [deployment guide](configuration-migration.md)
+Deploy matching Gateway, Engine, Worker and SDK builds. Configure a distinct
+backend target and Kafka topics for each Store, with a consumer group shared by
+that Store's Worker replicas. Validate configuration before startup, then verify
+URI routing, synchronous writes, Kafka acceptance and Worker delivery through
+the public Gateway endpoint. See the [configuration reference](configuration.md)
 and [record address contract](record-addresses.md).

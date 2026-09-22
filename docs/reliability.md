@@ -297,9 +297,8 @@ reliability certification.
 
 ### Write conflicts and unique constraints
 
-Final record-write conflicts use `WRITE_STATUS_PRECONDITION_FAILED`, including
-Upsert failures previously reported as `WRITE_STATUS_FAILED`. The Go SDK exposes
-this as `WritePreconditionFailed` without requiring a protocol or SDK update.
+Final record-write conflicts use `WRITE_STATUS_PRECONDITION_FAILED`.
+The Go SDK exposes this as `WritePreconditionFailed`.
 Inspect the failure code and retryability to distinguish the cause:
 
 | Cause | Failure code | Retryable |

@@ -10,9 +10,7 @@ func TestRoleBoundariesAndRemovedFields(t *testing.T) {
 		{"gateway", "consumer: {}"}, {"gateway", "producer: {}"}, {"gateway", "execution: {}"}, {"gateway", "batching: {}"},
 		{"engine", "request: {}"}, {"engine", "consumer: {}"}, {"engine", "forwarding: {}"},
 		{"worker", "request: {}"}, {"worker", "batching: {}"}, {"worker", "producer: {}"}, {"worker", "grpc: {}"}, {"worker", "grpc: {address: ':8080'}"},
-		{"worker", "memory: {burst_percent: 10}"}, {"worker", "memory: {wait_timeout: 2s}"},
-		{"gateway", "request: {timeout: 30s}"}, {"gateway", "request: {max_response_bytes: 32MiB}"}, {"gateway", "request: {max_read_bytes: 32MiB}"},
-		{"engine", "service: {}"}, {"engine", "storage: {}"}, {"engine", "store_file: store.yaml"}, {"engine", "kafka: {}"},
+		{"engine", "storage: {}"}, {"engine", "kafka: {}"},
 	} {
 		t.Run(test.mode+"/"+test.fields, func(t *testing.T) {
 			base := "mode: " + test.mode + "\n"

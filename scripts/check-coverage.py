@@ -47,7 +47,7 @@ def check(packages, minimums):
         if not total:
             failures.append(f"{package}: missing coverage")
         elif covered * 100 < floor * total:
-            failures.append(f"{package}: {covered * 100 / total:.2f}% < {floor:.2f}%")
+            failures.append(f"{package}: {covered}/{total} statements ({covered * 100 / total:.4f}%) < {floor:.2f}%")
     return failures
 
 

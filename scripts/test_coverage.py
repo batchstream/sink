@@ -33,3 +33,9 @@ class CoverageGateTests(unittest.TestCase):
         self.assertFalse(gate.check({"mod/pkg": [10000, 8000]}, {"mod/pkg": 80}))
         with self.assertRaises(ValueError):
             gate.check({}, {"mod/pkg": 101})
+
+    def test_failure_explains_rounded_threshold(self):
+        self.assertEqual(
+            gate.check({"mod/pkg": [1688, 1536]}, {"mod/pkg": 91}),
+            ["mod/pkg: 1536/1688 statements (90.9953%) < 91.00%"],
+        )

@@ -108,9 +108,9 @@ their existing retry flag is true.
 
 Latency learning is separate for Read, Write, visible Write, Delete, visible
 Delete, Execute, Query, Count and Scan, with four bounded operation-count classes:
-1, 2–32, 33–128, and 129+. The short EWMA uses weight 0.25. The baseline follows
-lower latency at weight 0.25 and ages upward at 0.01, allowing permanent workload
-changes to recover. After four samples, two successive short-EWMA observations
+1, 2–32, 33–128, and 129+. The short EWMA uses weight 0.25. The baseline uses
+weight 0.01 in both directions, tracking the long-term mean without bias toward
+fast replies in a variable workload. After four samples, two successive short-EWMA observations
 above both 1.5 times baseline and baseline + 5 ms trigger a decrease. The
 window itself is shared, so a congested method reduces subsequent admission for
 every method. No URI, dataset, query text, document identity or error string is

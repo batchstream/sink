@@ -136,6 +136,34 @@ func TestSlowerSuccessfulWorkKeepsMakingProgress(t *testing.T) {
 	}
 }
 
+func TestStationaryLatencyVariationDoesNotKeepShrinkingWindow(t *testing.T) {
+	c := testController(t, 8)
+	now := time.Now()
+	// A stable workload alternates fast and slow replies without any overload.
+	// Comparing its recent mean against a baseline biased toward fast replies
+	// would repeatedly misclassify the ordinary slow replies as congestion.
+	durations := []time.Duration{20 * time.Millisecond, 20 * time.Millisecond, 80 * time.Millisecond, 80 * time.Millisecond}
+	var trainedSlowdowns uint64
+	for iteration := range 800 {
+		duration := durations[iteration%len(durations)]
+		now = now.Add(duration)
+		permit, _, _ := c.tryAcquire(now)
+		if permit == nil {
+			t.Fatal("successful variable-latency work stopped making progress")
+		}
+		started := c.begin(write, 1)
+		started.saturated = true
+		c.observeAt(started, duration, healthy, now)
+		permit.Release()
+		if iteration == 399 {
+			trainedSlowdowns = c.observed.slowdowns
+		}
+	}
+	if c.limit != c.maximum || c.observed.slowdowns != trainedSlowdowns {
+		t.Fatalf("stationary latency kept reducing concurrency: limit=%d, trained decreases=%d, final decreases=%d", c.limit, trainedSlowdowns, c.observed.slowdowns)
+	}
+}
+
 func TestOperationAndBatchClassesDoNotCompareAbsoluteLatency(t *testing.T) {
 	c := testController(t, 16)
 	c.limit = 8

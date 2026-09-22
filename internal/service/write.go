@@ -241,34 +241,14 @@ func (s *Server) executeWriteWave(
 	results []*sink.WriteResult,
 	opts writeExecutionOptions,
 ) error {
-	puts := make([]writeGroup, 0, len(groups))
+	candidates := make([]writeGroupCandidate, 0, len(groups))
 	conditional := make([]writeGroup, 0, len(groups))
 	for _, group := range groups {
 		s.metrics.ObserveMergeFold(group.operations[0].address.Store(), group.merges)
-		if group.directPut() {
-			puts = append(puts, group)
-		} else {
+		if !group.directPut() {
 			conditional = append(conditional, group)
+			continue
 		}
-	}
-	err := s.executePuts(ctx, puts, results, opts)
-	if err != nil {
-		return err
-	}
-	return s.executeConditionalWrites(ctx, conditional, results, opts)
-}
-
-func (s *Server) executePuts(
-	ctx context.Context,
-	groups []writeGroup,
-	results []*sink.WriteResult,
-	opts writeExecutionOptions,
-) error {
-	if len(groups) == 0 {
-		return nil
-	}
-	candidates := make([]writeGroupCandidate, 0, len(groups))
-	for _, group := range groups {
 		operation := group.operations[len(group.operations)-1]
 		storageOperation := storage.WriteOperation{
 			Address:      operation.address,
@@ -279,7 +259,10 @@ func (s *Server) executePuts(
 		candidates = append(candidates, candidate)
 	}
 	_, err := s.commitWriteCandidates(ctx, candidates, results, opts)
-	return err
+	if err != nil {
+		return err
+	}
+	return s.executeConditionalWrites(ctx, conditional, results, opts)
 }
 
 func (s *Server) executeConditionalWrites(
@@ -338,8 +321,7 @@ func (s *Server) executeWriteAttempt(
 	candidates := make([]writeGroupCandidate, 0, len(groups))
 	for index, stored := range read.Results {
 		group := groups[index]
-		input := writeGroupPreparation{group: group, stored: stored, results: results}
-		candidate, include := prepareWriteGroup(ctx, input)
+		candidate, include := prepareWriteGroup(ctx, group, stored, results)
 		if include {
 			candidates = append(candidates, candidate)
 		} else {

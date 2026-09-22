@@ -28,18 +28,11 @@ func (g writeGroup) nextCommit() (writeGroup, writeGroup) {
 	return segment, remaining
 }
 
-type writeGroupPreparation struct {
-	group   writeGroup
-	stored  storage.ReadResult
-	results []*sink.WriteResult
-}
-
-func prepareWriteGroup(ctx context.Context, input writeGroupPreparation) (writeGroupCandidate, bool) {
-	candidate := writeGroupCandidate{group: input.group}
-	stored := input.stored
+func prepareWriteGroup(ctx context.Context, group writeGroup, stored storage.ReadResult, results []*sink.WriteResult) (writeGroupCandidate, bool) {
+	candidate := writeGroupCandidate{group: group}
 	// The commit condition belongs to the original snapshot, never to an
 	// intermediate document produced by a Put or Merge in this chain.
-	candidate.operation.Address = input.group.operations[0].address
+	candidate.operation.Address = group.operations[0].address
 	switch stored.Status {
 	case storage.ReadStatusNotFound:
 		candidate.operation.Precondition.Kind = storage.PreconditionRecordNotExists
@@ -56,16 +49,16 @@ func prepareWriteGroup(ctx context.Context, input writeGroupPreparation) (writeG
 			cause = errors.New("storage returned an invalid conditional write snapshot")
 		}
 		failure := storage.WriteResult{Status: storage.WriteStatusFailed, Err: cause}
-		applyWriteGroupResult(input.group, input.results, failure)
+		applyWriteGroupResult(group, results, failure)
 		return candidate, false
 	}
 	current := stored.Document
 	exists := stored.Status == storage.ReadStatusFound
 	include := false
-	for _, operation := range input.group.operations {
+	for _, operation := range group.operations {
 		// A retry reevaluates failures too: they may depend on an uncommitted
 		// predecessor whose outcome changed with the new snapshot.
-		result := input.results[operation.index]
+		result := results[operation.index]
 		result.Status = sink.WriteStatus_WRITE_STATUS_UNSPECIFIED
 		result.Failure = nil
 		result.Document = nil

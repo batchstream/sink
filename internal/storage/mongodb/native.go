@@ -141,8 +141,77 @@ func (s *Store) Execute(ctx context.Context, req storage.NativeRequest) (storage
 	if budgetErr := budget.Reserve(len(raw)); budgetErr != nil {
 		return empty, budgetErr
 	}
-	response := storage.NativeResponse{ContentType: "application/bson", Payload: bytes.Clone(raw), Success: err == nil}
+	response := storage.NativeResponse{ContentType: "application/bson", Payload: bytes.Clone(raw), Success: err == nil, Failure: nativeResponseFailure(raw, err)}
 	return response, nil
+}
+
+func nativeResponseFailure(raw bson.Raw, err error) error {
+	if err != nil {
+		return nativeFailure(err)
+	}
+	// RunCommand can return ok:1 with per-item errors or an uncertain write
+	// concern. Normalize those too without changing the raw reply or Success.
+	if concern, ok := raw.Lookup("writeConcernError").DocumentOK(); ok {
+		var failure mongo.WriteConcernError
+		if bson.Unmarshal(concern, &failure) == nil {
+			return storage.BackendError(failure)
+		}
+	}
+	items, ok := raw.Lookup("writeErrors").ArrayOK()
+	if !ok {
+		return nil
+	}
+	values, err := items.Values()
+	if err != nil {
+		return nil
+	}
+	var first error
+	for _, value := range values {
+		document, ok := value.DocumentOK()
+		if !ok {
+			continue
+		}
+		var item mongo.WriteError
+		if bson.Unmarshal(document, &item) != nil {
+			continue
+		}
+		commandError := mongo.CommandError{Code: int32(item.Code), Message: item.Message}
+		failure := nativeFailure(commandError)
+		if first == nil {
+			first = failure
+		}
+		if _, retryable := storage.ErrorDetails(failure); retryable {
+			return failure
+		}
+	}
+	return first
+}
+
+// Native errors remain in their original wire response. Supply only confirmed
+// dependency/timeout classifications; arbitrary command failures are not evidence
+// of overload (and must not become new transport errors or retry instructions).
+func nativeFailure(err error) error {
+	if err == nil {
+		return nil
+	}
+	if mongo.IsTimeout(err) {
+		return storage.NewOperationError(storage.ErrorCodeDeadlineExceeded, true, err)
+	}
+	if mongo.IsDuplicateKeyError(err) {
+		return storage.NewOperationError(storage.ErrorCodePreconditionFailed, false, err)
+	}
+	var serverError mongo.ServerError
+	if errors.As(err, &serverError) {
+		for _, code := range []int{6, 7, 89, 91, 189, 10107, 11600, 11602, 13435, 13436} {
+			if serverError.HasErrorCode(code) {
+				return storage.BackendError(err)
+			}
+		}
+		if serverError.HasErrorCode(16500) {
+			return storage.ResourceExhaustedError(err)
+		}
+	}
+	return err
 }
 
 func scanCommand(command bson.D, batchSize int) bson.D {

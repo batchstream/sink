@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/batchstream/sink/internal/backpressure"
 	sinkmetrics "github.com/batchstream/sink/internal/metrics"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -33,6 +34,7 @@ type batchCall[Request any, Response any] struct {
 }
 
 type requestBatcherOptions[Request any, Response any] struct {
+	Admission           *backpressure.Controller
 	MaxConcurrent       int
 	Unlimited           bool
 	Records             func(Request) []recordIdentity
@@ -50,6 +52,7 @@ type requestBatcherOptions[Request any, Response any] struct {
 }
 
 type requestBatcher[Request any, Response any] struct {
+	admission           *backpressure.Controller
 	maxConcurrent       int
 	records             func(Request) []recordIdentity
 	partition           func(Request) batchPartition
@@ -77,6 +80,7 @@ type requestBatcher[Request any, Response any] struct {
 func newRequestBatcher[Request any, Response any](opts requestBatcherOptions[Request, Response]) *requestBatcher[Request, Response] {
 	ctx, cancel := context.WithCancel(context.Background())
 	batcher := &requestBatcher[Request, Response]{
+		admission:           opts.Admission,
 		maxConcurrent:       max(1, opts.MaxConcurrent),
 		records:             opts.Records,
 		partition:           opts.Partition,
@@ -226,14 +230,15 @@ func (b *requestBatcher[Request, Response]) run() {
 	// Each active record stays occupied until every selected caller releases it.
 	active := make(map[recordIdentity]int)
 	recordsDone := make(chan []recordIdentity, max(1, min(1024, b.maxConcurrent)))
-	completed := make(chan []*batchCall[Request, Response], max(1, min(1024, b.maxConcurrent)))
+	completed := make(chan *backpressure.Permit, max(1, min(1024, b.maxConcurrent)))
 	running := 0
 	for {
 		if b.ctx.Err() != nil {
 			b.failCalls(pending)
 			b.drain()
 			for running > 0 {
-				<-completed
+				permit := <-completed
+				permit.Release()
 				running--
 			}
 			return
@@ -262,41 +267,69 @@ func (b *requestBatcher[Request, Response]) run() {
 		pending = live
 		var timer *time.Timer
 		var deadline <-chan time.Time
-		if b.maxConcurrent == 0 || running < b.maxConcurrent {
+		var admissionChanged <-chan struct{}
+		ready := true
+		if len(pending) > 0 {
+			var retryAfter time.Duration
+			ready, admissionChanged, retryAfter = b.admission.Ready()
+			if ready {
+				admissionChanged = nil
+			} else if retryAfter > 0 {
+				timer = time.NewTimer(retryAfter)
+				deadline = timer.C
+			}
+		}
+		if ready && (b.maxConcurrent == 0 || running < b.maxConcurrent) {
 			selected, remaining, reason := b.selectReady(pending, active)
 			if len(selected) > 0 {
 				wait := b.maxWait - time.Since(selected[0].enqueuedAt)
 				if reason != "max_wait" || wait <= 0 {
-					pending = remaining
-					for _, call := range selected {
-						b.release(call)
-						call.pendingRecords = make(map[recordIdentity]bool, len(call.records))
-						for _, key := range call.records {
-							if call.pendingRecords[key] {
-								continue
-							}
-							call.pendingRecords[key] = true
-							active[key]++
+					permit, changed, retryAfter := b.admission.TryAcquire()
+					if permit == nil {
+						admissionChanged = changed
+						if retryAfter > 0 {
+							timer = time.NewTimer(retryAfter)
+							deadline = timer.C
 						}
-						call.onRecordsDone = func(keys []recordIdentity) {
-							select {
-							case recordsDone <- keys:
-							case <-b.ctx.Done():
+					} else {
+						pending = remaining
+						for _, call := range selected {
+							b.release(call)
+							call.pendingRecords = make(map[recordIdentity]bool, len(call.records))
+							for _, key := range call.records {
+								if call.pendingRecords[key] {
+									continue
+								}
+								call.pendingRecords[key] = true
+								active[key]++
+							}
+							call.onRecordsDone = func(keys []recordIdentity) {
+								select {
+								case recordsDone <- keys:
+								case <-b.ctx.Done():
+								}
 							}
 						}
+						running++
+						go func() {
+							b.executeBatch(selected, reason, permit)
+							// Keep the slot until the dispatcher receives completion,
+							// bounding goroutines waiting to report finished work too.
+							completed <- permit
+						}()
+						continue
 					}
-					running++
-					go func() { b.executeBatch(selected, reason); completed <- selected }()
-					continue
+				} else {
+					timer = time.NewTimer(wait)
+					deadline = timer.C
 				}
-				timer = time.NewTimer(wait)
-				deadline = timer.C
 			}
 		}
 		select {
 		case call := <-b.input:
 			pending = append(pending, call)
-		case <-completed:
+		case permit := <-completed:
+			permit.Release()
 			running--
 		case keys := <-recordsDone:
 			for _, key := range keys {
@@ -306,6 +339,7 @@ func (b *requestBatcher[Request, Response]) run() {
 				}
 			}
 		case <-deadline:
+		case <-admissionChanged:
 		case <-b.wake:
 		case <-b.ctx.Done():
 		}
@@ -374,6 +408,7 @@ func (b *requestBatcher[Request, Response]) selectReady(pending []*batchCall[Req
 func (b *requestBatcher[Request, Response]) executeBatch(
 	calls []*batchCall[Request, Response],
 	reason string,
+	permit *backpressure.Permit,
 ) {
 	operationCount := 0
 	encodedBytes := 0
@@ -386,6 +421,7 @@ func (b *requestBatcher[Request, Response]) executeBatch(
 		}
 	}
 	executionContext, cancel := batchExecutionContext(b.ctx, calls, b.executionTimeout)
+	executionContext = permit.Context(executionContext)
 	started := time.Now()
 	b.execute(executionContext, calls)
 	for _, call := range calls {

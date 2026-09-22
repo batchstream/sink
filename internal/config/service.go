@@ -4,6 +4,8 @@ import (
 	"errors"
 	"math"
 	"time"
+
+	"github.com/batchstream/sink/internal/backpressure"
 )
 
 func resolveService(file configFile, grpc GRPC, v *validator) Service {
@@ -17,6 +19,7 @@ func resolveService(file configFile, grpc GRPC, v *validator) Service {
 	if execution == nil {
 		execution = &executionFile{}
 	}
+	loaded.StoreMaxConcurrent = v.bounded("execution.store_max_concurrent", execution.StoreMaxConcurrent, backpressure.DefaultMaxConcurrent, 4096)
 	loaded.Merge.MaxAttempts = v.integer("execution.merge.max_attempts", execution.Merge.MaxAttempts, 3)
 	lua := &loaded.Merge.Lua
 	lua.Timeout = v.duration("execution.merge.lua.timeout", execution.Merge.Lua.Timeout, 100*time.Millisecond)

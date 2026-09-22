@@ -57,6 +57,11 @@ func (s *Server) query(ctx context.Context, req *sink.QueryRequest, send func(*s
 		}
 		return send(frame)
 	}
+	ctx, permit, err := s.admission.Admit(ctx)
+	if err != nil {
+		return err
+	}
+	defer permit.Release()
 	result, err := backend.Query(ctx, query)
 	if err != nil {
 		return nativeStatus(err)
@@ -83,6 +88,11 @@ func (s *Server) Count(ctx context.Context, req *sink.CountRequest) (*sink.Count
 	if !ok {
 		return nil, nativeStatus(storage.ErrNativeUnsupported)
 	}
+	ctx, permit, err := s.admission.Admit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer permit.Release()
 	countRequest := storage.CountRequest{Request: request}
 	count, err := backend.Count(ctx, countRequest)
 	if err != nil {

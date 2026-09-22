@@ -9,6 +9,7 @@ import (
 	"time"
 
 	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/backpressure"
 	"github.com/batchstream/sink/internal/merge"
 	sinkmetrics "github.com/batchstream/sink/internal/metrics"
 	"github.com/batchstream/sink/internal/protocol"
@@ -20,6 +21,7 @@ import (
 )
 
 type Server struct {
+	admission  *backpressure.Controller
 	boundStore string
 
 	storage          storage.Storage
@@ -98,6 +100,11 @@ func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *res
 		return response, nil
 	}
 
+	ctx, permit, err := s.admission.Admit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer permit.Release()
 	groups := buildWriteGroups(operations)
 	executionOptions := writeExecutionOptions{
 		returns:          newWriteReturns(req, budgets, s.maxReadBytes),
@@ -202,6 +209,11 @@ func (s *Server) delete(ctx context.Context, req *sink.DeleteRequest, budgets *r
 		return response, nil
 	}
 
+	ctx, permit, err := s.admission.Admit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer permit.Release()
 	storageRequest := storage.DeleteRequest{
 		Operations:       storageOperations,
 		WaitUntilVisible: req.GetCompletionMode() == sink.CompletionMode_COMPLETION_MODE_WAIT_UNTIL_VISIBLE,

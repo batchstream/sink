@@ -4,6 +4,7 @@ package service
 import (
 	"errors"
 
+	"github.com/batchstream/sink/internal/backpressure"
 	"github.com/batchstream/sink/internal/merge"
 	sinkmetrics "github.com/batchstream/sink/internal/metrics"
 	"github.com/batchstream/sink/internal/queue"
@@ -13,6 +14,7 @@ import (
 const defaultMaxMergeAttempts = 3
 
 type Options struct {
+	Admission        *backpressure.Controller
 	BoundStore       string
 	Storage          storage.Storage
 	Lua              *merge.LuaEngine
@@ -45,6 +47,6 @@ func New(opts Options) (*Server, error) {
 	if opts.MaxReadBytes == 0 {
 		opts.MaxReadBytes = storage.DefaultMaxReadBytes
 	}
-	server := &Server{boundStore: opts.BoundStore, storage: opts.Storage, lua: opts.Lua, publisher: opts.Publisher, maxOperations: opts.MaxOperations, maxMergeAttempts: opts.MaxMergeAttempts, metrics: opts.Metrics, maxReadBytes: opts.MaxReadBytes}
+	server := &Server{admission: opts.Admission, boundStore: opts.BoundStore, storage: backpressure.Observe(opts.Storage, opts.Admission), lua: opts.Lua, publisher: opts.Publisher, maxOperations: opts.MaxOperations, maxMergeAttempts: opts.MaxMergeAttempts, metrics: opts.Metrics, maxReadBytes: opts.MaxReadBytes}
 	return server, nil
 }

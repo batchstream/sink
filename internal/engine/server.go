@@ -7,6 +7,7 @@ import (
 
 	forward "github.com/batchstream/sink/gen/forward"
 	sink "github.com/batchstream/sink/gen/sink"
+	"github.com/batchstream/sink/internal/backpressure"
 	"github.com/batchstream/sink/internal/capacity"
 	"github.com/batchstream/sink/internal/forwarding"
 	"github.com/batchstream/sink/internal/metrics"
@@ -49,6 +50,13 @@ func (s *Server) Forward(req *forward.ForwardRequest, stream grpc.ServerStreamin
 	ctx := stream.Context()
 	started := time.Now()
 	defer func() { s.metrics.ObserveForward(req, status.Code(err), time.Since(started)) }()
+	defer func() {
+		// Direct Native admission can reject after validation, but still before
+		// execution. Do not turn that known rejection into an unknown mutation.
+		if err == backpressure.ErrBusy {
+			stream.SetTrailer(metadata.Pairs(forwarding.NotStartedTrailer, "true"))
+		}
+	}()
 	reject := func(err error) error {
 		stream.SetTrailer(metadata.Pairs(forwarding.NotStartedTrailer, "true"))
 		return err

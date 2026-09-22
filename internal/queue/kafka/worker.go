@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/batchstream/sink/internal/backpressure"
 	"github.com/batchstream/sink/internal/capacity"
 	"github.com/batchstream/sink/internal/logging"
 	sinkmetrics "github.com/batchstream/sink/internal/metrics"
@@ -37,6 +38,7 @@ type Handler interface {
 }
 
 type WorkerOptions struct {
+	Admission         *backpressure.Controller
 	Memory            *capacity.Guard
 	Topics            *TopicManager
 	Brokers           []string
@@ -57,6 +59,7 @@ type WorkerOptions struct {
 }
 
 type Worker struct {
+	admission         *backpressure.Controller
 	memory            *capacity.Guard
 	topic             string
 	topics            *TopicManager
@@ -131,6 +134,7 @@ func NewWorker(opts WorkerOptions) (*Worker, error) {
 		opts.ShutdownTimeout = 5 * time.Second
 	}
 	worker := &Worker{memory: opts.Memory, topic: opts.Topic,
+		admission:         opts.Admission,
 		topics:            opts.Topics,
 		handler:           opts.Handler,
 		store:             opts.Store,
@@ -191,6 +195,16 @@ func (w *Worker) Run(ctx context.Context) error {
 	}
 	fetchBackoff := w.retryBackoff
 	for {
+		// Leave pressure in Kafka. Waiting here is outside processingTimeout,
+		// holds no partition work and does not change worker/backend health.
+		ready, _, _ := w.admission.Ready()
+		if !ready {
+			w.client.PauseFetchTopics(w.topic)
+			if err := w.admission.Wait(ctx); err != nil {
+				return nil
+			}
+			w.client.ResumeFetchTopics(w.topic)
+		}
 		if w.memory.Blocked() {
 			w.client.PauseFetchTopics(w.topic)
 			if err := w.memory.Wait(ctx); err != nil {
@@ -412,7 +426,17 @@ func (w *Worker) handleWithRetry(ctx context.Context, mutations []queue.Mutation
 		pending[index] = index
 	}
 	for attempt := 1; attempt <= w.maxRetryAttempts; attempt++ {
-		results := w.handler.HandleBatch(ctx, batch)
+		// A retained poll is bounded by maxPollRecords. Admission waiting is
+		// cancellable on shutdown/rebalance and never spends a retry attempt.
+		permit, err := w.admission.Acquire(ctx)
+		if err != nil {
+			for _, index := range pending {
+				finalResults[index] = err
+			}
+			return finalResults
+		}
+		results := w.handler.HandleBatch(permit.Context(ctx), batch)
+		permit.Release()
 		if len(results) != len(batch) {
 			err := storage.BackendError(errors.New("kafka mutation handler returned an invalid result count"))
 			for _, index := range pending {

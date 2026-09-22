@@ -104,13 +104,34 @@ func (s *Store) Execute(ctx context.Context, req storage.NativeRequest) (storage
 	response, err := s.perform(ctx, opts)
 	if err != nil {
 		if errors.Is(err, errResponseTooLarge) {
-			return empty, storage.ResourceExhaustedError(err)
+			return empty, storage.NewOperationError(storage.ErrorCodeResourceExhausted, false, err)
 		}
 		return empty, err
 	}
 	result := storage.NativeResponse{ContentType: response.headers.Get("Content-Type"),
 		Payload: response.body, StatusCode: response.statusCode, Headers: response.headers,
 		Success: response.statusCode >= 200 && response.statusCode < 300}
+	if retryableSearchStatus(response.statusCode) {
+		result.Failure = responseError(s.driver, response)
+	} else if result.Success && strings.HasSuffix(opts.path, "/_bulk") {
+		// Native bulk replies can have HTTP 200 while individual operations
+		// were overloaded. Classification does not rewrite the original reply.
+		var bulk bulkResponse
+		if json.Unmarshal(response.body, &bulk) == nil {
+			for _, actions := range bulk.Items {
+				for _, item := range actions {
+					if (item.Status >= 400 || item.Error != nil) && result.Failure == nil {
+						result.Failure = fmt.Errorf("native bulk item returned HTTP %d", item.Status)
+					}
+					if retryableSearchStatus(item.Status) {
+						failure := fmt.Errorf("native bulk item returned HTTP %d", item.Status)
+						result.Failure = classifySearchStatus(item.Status, failure)
+						return result, nil
+					}
+				}
+			}
+		}
+	}
 	return result, nil
 }
 

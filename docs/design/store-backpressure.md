@@ -194,5 +194,7 @@ does not spend processing timeout, report unhealthy, advance offsets, or produce
 dead letters; another test verifies a real processor's overload/cooldown retry.
 
 See [Store metrics](../observability.md#store-backpressure) and
-[configuration](../configuration.md). Sustained production qualification remains
-owned by the separate sink-production-suite project.
+[configuration](../configuration.md). Real-process Elasticsearch/OpenSearch congestion and Kafka backlog regressions
+are required by [sink-production-suite](https://github.com/batchstream/sink-production-suite/pull/35).
+Its one/four-Engine tests inject delay and 429s in front of disposable real backends;
+they are fault/recovery qualification, not a production capacity benchmark.

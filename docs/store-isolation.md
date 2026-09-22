@@ -139,8 +139,10 @@ Broker consumer lag comes from the external Kafka scaler or exporter.
 KEDA or any other external scaler can query these signals. Gateway forwarding
 capacity, Engine admission/latency, and Worker lag/age are separate scaling inputs.
 CPU, resource requests, replica floors and scale-to-zero are deployment settings.
-Engine and Worker replica maxima and pool sizes must jointly fit their Store's
-backend capacity. Increasing Store A replicas creates no Store B database clients.
+Engine and Worker independently adapt their Store execution windows to backend
+feedback. Replica count does not set the window. Pool sizes and replica maxima
+still require a separate database connection budget; admission does not close
+idle connections. See [Store backpressure](design/store-backpressure.md). Increasing Store A replicas creates no Store B database clients.
 Gateway remains a shared ingress: exhausting its CPU, memory or global admission
 pressure can affect multiple Stores. Gateway needs its own capacity planning and scaling.
 All roles expose process [memory watermark metrics](observability.md#memory-capacity-and-keda).

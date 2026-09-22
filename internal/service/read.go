@@ -61,6 +61,11 @@ func (s *Server) read(ctx context.Context, req *sink.ReadRequest, budgets *respo
 	if len(storageOperations) == 0 {
 		return response, nil
 	}
+	ctx, permit, err := s.admission.Admit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer permit.Release()
 	budget := storage.NewUnboundedReadBudget()
 	storageRequest := storage.ReadRequest{Operations: storageOperations, Budget: budget}
 	storageResponse, err := s.storage.Read(ctx, storageRequest)

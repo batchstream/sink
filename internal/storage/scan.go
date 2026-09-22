@@ -93,7 +93,7 @@ func (c ScanCursor) Page(documents []Document, position []byte) (ScanResponse, e
 	response.NextCursor = append(checksum[:], payload...)
 	if len(response.NextCursor) > MaxScanCursorBytes {
 		var empty ScanResponse
-		return empty, ResourceExhaustedError(errors.New("scan position exceeds cursor byte limit"))
+		return empty, NewOperationError(ErrorCodeResourceExhausted, false, errors.New("scan position exceeds cursor byte limit"))
 	}
 	return response, nil
 }

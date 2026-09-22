@@ -23,6 +23,7 @@ func (app *Application) newService(observed *sinkmetrics.Metrics) (*service.Serv
 		return nil, err
 	}
 	serverOptions := service.Options{
+		Admission:        app.admission,
 		MaxReadBytes:     loaded.GRPC.MaxSendMessageBytes,
 		Storage:          app.storage,
 		Lua:              luaEngine,

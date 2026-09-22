@@ -32,6 +32,9 @@ type NativeRequest struct {
 }
 
 type NativeResponse struct {
+	// Failure classifies a backend rejection for observation only. Execute still
+	// returns the native response unchanged; this does not authorize a retry.
+	Failure     error
 	ContentType string
 	Payload     []byte
 	Success     bool
@@ -40,6 +43,7 @@ type NativeResponse struct {
 }
 
 type ScanRequest struct {
+	// Emit is called synchronously; returning an error stops the scan.
 	Emit       func(Document) error `json:"-"`
 	Request    NativeRequest
 	BatchSize  int
@@ -53,6 +57,7 @@ type ScanResponse struct {
 }
 
 type QueryRequest struct {
+	// Emit is called synchronously; returning an error stops the query.
 	Emit       func(Document) error `json:"-"`
 	Request    NativeRequest
 	Offset     int64

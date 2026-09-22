@@ -83,7 +83,7 @@ func (s *Store) performQuery(ctx context.Context, opts requestOptions) (scanPage
 	response, err := s.perform(ctx, opts)
 	if err != nil {
 		if errors.Is(err, errResponseTooLarge) {
-			return page, storage.ResourceExhaustedError(err)
+			return page, storage.NewOperationError(storage.ErrorCodeResourceExhausted, false, err)
 		}
 		return page, err
 	}
@@ -173,7 +173,7 @@ func (s *Store) Query(ctx context.Context, req storage.QueryRequest) (storage.Qu
 				return errors.New("search query exceeded its requested result count")
 			}
 			if len(hit) > req.Request.MaxBytes && req.Request.MaxBytes > 0 {
-				return storage.ResourceExhaustedError(errResponseTooLarge)
+				return storage.NewOperationError(storage.ErrorCodeResourceExhausted, false, errResponseTooLarge)
 			}
 			document := storage.Document{Encoding: storage.DocumentEncodingJSON, Payload: hit}
 			return req.Emit(document)

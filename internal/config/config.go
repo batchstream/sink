@@ -57,9 +57,10 @@ type Prometheus struct {
 }
 
 type Service struct {
-	Request  Request
-	Batching Batching
-	Merge    Merge
+	StoreMaxConcurrent int
+	Request            Request
+	Batching           Batching
+	Merge              Merge
 }
 
 type Request struct {

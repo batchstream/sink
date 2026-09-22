@@ -1,5 +1,6 @@
 {
   "github.com/batchstream/sink/internal/app": 28,
+  "github.com/batchstream/sink/internal/backpressure": 85,
   "github.com/batchstream/sink/internal/capacity": 87,
   "github.com/batchstream/sink/internal/config": 94,
   "github.com/batchstream/sink/internal/gateway": 16,

@@ -51,6 +51,7 @@ func NewBatchingServer(server *Server, opts BatchingOptions) (*BatchingServer, e
 	batching := &BatchingServer{server: server}
 
 	readOptions := requestBatcherOptions[*sink.ReadRequest, *sink.ReadResponse]{
+		Admission:           server.admission,
 		Unlimited:           true,
 		Method:              "Read",
 		MaxWait:             normalized.MaxWait,
@@ -65,6 +66,7 @@ func NewBatchingServer(server *Server, opts BatchingOptions) (*BatchingServer, e
 	batching.reads = newRequestBatcher(readOptions)
 
 	writeOptions := requestBatcherOptions[*sink.WriteRequest, *sink.WriteResponse]{
+		Admission: server.admission,
 		Unlimited: true,
 		Records: func(request *sink.WriteRequest) []recordIdentity {
 			return mutationRequestRecords(request)
@@ -85,6 +87,7 @@ func NewBatchingServer(server *Server, opts BatchingOptions) (*BatchingServer, e
 	batching.writes = newRequestBatcher(writeOptions)
 
 	deleteOptions := requestBatcherOptions[*sink.DeleteRequest, *sink.DeleteResponse]{
+		Admission: server.admission,
 		Unlimited: true,
 		Records: func(request *sink.DeleteRequest) []recordIdentity {
 			return mutationRequestRecords(request)
@@ -318,7 +321,9 @@ func (s *BatchingServer) executeWrites(
 	calls []*batchCall[*sink.WriteRequest, *sink.WriteResponse],
 ) {
 	for _, wave := range planMutationWaves[*sink.WriteOperation](calls) {
-		parallel := len(wave.applied) > 0 && len(wave.visible) > 0
+		// An admitted execution owns one slot and must remain sequential.
+		// Normal dispatch already partitions by completion mode.
+		parallel := s.server.admission == nil && len(wave.applied) > 0 && len(wave.visible) > 0
 		var executions sync.WaitGroup
 		for _, group := range [][]*batchCall[*sink.WriteRequest, *sink.WriteResponse]{wave.applied, wave.visible} {
 			if len(group) == 0 {
@@ -376,7 +381,7 @@ func (s *BatchingServer) executeDeletes(
 	calls []*batchCall[*sink.DeleteRequest, *sink.DeleteResponse],
 ) {
 	for _, wave := range planMutationWaves[*sink.DeleteOperation](calls) {
-		parallel := len(wave.applied) > 0 && len(wave.visible) > 0
+		parallel := s.server.admission == nil && len(wave.applied) > 0 && len(wave.visible) > 0
 		var executions sync.WaitGroup
 		for _, group := range [][]*batchCall[*sink.DeleteRequest, *sink.DeleteResponse]{wave.applied, wave.visible} {
 			if len(group) == 0 {

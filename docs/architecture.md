@@ -95,11 +95,12 @@ batches. Automatic mutation batches also share adapter resource and completion
 mode, limiting refresh waits to their own dataset. Completed write document
 chains release their scheduling dependencies; each original RPC returns when
 all of its results are final. MongoDB can use collection-level bulk operations, and Elasticsearch or
-OpenSearch can use `_mget` and `_bulk`. Queue limits, adapter concurrency limits,
-and backpressure stop caller concurrency from passing through to a backend
-without bounds.
+OpenSearch can use `_mget` and `_bulk`. Queue limits and adaptive Store admission constrain dispatched work. A shared
+local window covers record and Native methods; its feedback comes only from real
+Store operations. See [Store backpressure](design/store-backpressure.md).
 
-This changes the scaling relationship: database connection count follows the
+Application scaling and Store execution control are independent. Database
+connection count still follows the
 number of Sink replicas instead of the number of crawler processes. It is not a
 global connection cap. Every Sink replica has process-local clients,
 connections, queues, and batchers, so replica count and backend capacity must

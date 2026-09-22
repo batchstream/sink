@@ -41,7 +41,8 @@ type requestFile struct {
 }
 
 type executionFile struct {
-	Merge mergeFile `yaml:"merge"`
+	StoreMaxConcurrent *int      `yaml:"store_max_concurrent"`
+	Merge              mergeFile `yaml:"merge"`
 }
 
 // Store files contain shared identity and dependency policy, never role tuning.

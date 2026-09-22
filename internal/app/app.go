@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/batchstream/sink/internal/backpressure"
 	"github.com/batchstream/sink/internal/capacity"
 	"github.com/batchstream/sink/internal/config"
 	"github.com/batchstream/sink/internal/gateway"
@@ -22,6 +23,7 @@ import (
 )
 
 type Application struct {
+	admission       *backpressure.Controller
 	memory          *capacity.Guard
 	draining        atomic.Bool
 	gateway         *gateway.Server
@@ -78,6 +80,11 @@ func New(ctx context.Context, opts Options) (*Application, error) {
 			app.Close()
 		}
 	}()
+	admissionOptions := backpressure.Options{Store: loaded.Storage.Name, Role: string(loaded.Mode), MaxConcurrent: loaded.Service.StoreMaxConcurrent}
+	app.admission, err = backpressure.New(admissionOptions)
+	if err != nil {
+		return nil, err
+	}
 	var observed *sinkmetrics.Metrics
 	if err := app.configureHealth(); err != nil {
 		return nil, err
@@ -88,6 +95,9 @@ func New(ctx context.Context, opts Options) (*Application, error) {
 			return nil, err
 		}
 		if err := observed.Register(memory); err != nil {
+			return nil, err
+		}
+		if err := observed.Register(app.admission); err != nil {
 			return nil, err
 		}
 		if err := app.configurePrometheus(observed.Handler()); err != nil {

@@ -72,7 +72,7 @@ idle process early cannot defeat startup staggering.
 | Healthy, saturated work | Grow only after at least `max(4, window)` healthy samples and a jittered 125–375 ms control interval |
 | Initial growth | Add `max(1, window/2)` below a slow-start threshold of 16 |
 | After congestion | Threshold becomes half the previous window; subsequent growth is additive by one |
-| Sustained latency inflation | Halve the window; a decrease from one enters zero-window cooldown |
+| Sustained latency inflation | Halve the window, retaining at least one execution so successful work continues and the baseline can adapt |
 | Retryable overload/unavailability/timeout | Immediately set the window to zero, then resume real traffic at half the previous window, at least one |
 | Repeated failed recovery | Double nominal cooldown from 200 ms up to 10 s; actual delay is uniformly 0.5–1.5 times that value |
 | Recovery | Four clean observations reset cooldown escalation, including under light traffic |

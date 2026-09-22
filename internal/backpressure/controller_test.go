@@ -96,6 +96,46 @@ func TestOverloadPausesAndOldFlightCannotUndoDecrease(t *testing.T) {
 	permit.Release()
 }
 
+func TestSlowerSuccessfulWorkKeepsMakingProgress(t *testing.T) {
+	for _, maximum := range []int{1, 8} {
+		t.Run(strconv.Itoa(maximum), func(t *testing.T) {
+			c := testController(t, maximum)
+			now := time.Now()
+			for iteration := range 500 {
+				now = now.Add(controlInterval)
+				permit, _, delay := c.tryAcquire(now)
+				if permit == nil {
+					t.Fatalf("successful work stopped at iteration %d: limit=%d cooldown=%s", iteration, c.limit, delay)
+				}
+				started := c.begin(write, 1)
+				started.saturated = true
+				duration := 10 * time.Millisecond
+				if iteration >= 100 {
+					duration = 100 * time.Millisecond
+				}
+				c.observeAt(started, duration, healthy, now)
+				permit.Release()
+				if c.limit < 1 || !c.resumeAt.IsZero() || c.failures != 0 {
+					t.Fatalf("latency alone paused successful work: limit=%d resume=%v failures=%d", c.limit, c.resumeAt, c.failures)
+				}
+			}
+			if c.limit != maximum {
+				t.Fatalf("permanently slower healthy work did not recover concurrency: %d, want %d", c.limit, maximum)
+			}
+			if maximum > 1 && c.observed.slowdowns == 0 {
+				t.Fatal("slower work did not reduce concurrency")
+			}
+			// Explicit overload must still stop dispatch, even at the floor.
+			c.limit = 1
+			started := c.begin(write, 1)
+			c.observeAt(started, time.Millisecond, congested, now)
+			if permit, _, delay := c.tryAcquire(now); permit != nil || delay <= 0 {
+				t.Fatal("overload at the minimum window did not enter cooldown")
+			}
+		})
+	}
+}
+
 func TestOperationAndBatchClassesDoNotCompareAbsoluteLatency(t *testing.T) {
 	c := testController(t, 16)
 	c.limit = 8

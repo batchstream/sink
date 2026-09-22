@@ -343,7 +343,10 @@ func (c *Controller) observeAt(started sample, duration time.Duration, result fe
 func (c *Controller) decrease(now time.Time, overload bool) {
 	c.threshold = max(1, c.limit/2)
 	c.resumeLimit = c.threshold
-	c.limit /= 2
+	// Latency growth still represents successful work. Keep one execution
+	// available so a slower backend can establish its new baseline; only an
+	// explicit overload or timeout should pause dispatch and grow cooldown.
+	c.limit = c.threshold
 	c.clean = 0
 	c.recovered = 0
 	c.demand = false

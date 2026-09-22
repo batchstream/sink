@@ -27,8 +27,7 @@ documents are consequently bounded by the active microbatch rather than the
 entire RPC. MongoDB native pages iterate cursors; search pages decode HTTP JSON
 hits incrementally and validate trailing shard/timeout metadata before completion.
 Search multi-get decodes directly from the HTTP body without a second whole-body
-buffer. Existing message, backend response, scan-page and Lua bounds remain;
-this change introduces no additional memory-limit setting. Concurrent requests,
+buffer. Message, backend response, scan-page and Lua bounds also apply. Concurrent requests,
 transport/driver buffers and one large document still contribute to process RSS.
 
 The Go SDK methods accept `ctx` and a typed request. Request fields hold record

@@ -61,9 +61,6 @@ Counts such as `max_requests` and `max_operations` remain integers. Time values
 use duration strings such as `2ms`, `30s`, or `1m30s`. The `_bytes` field names
 describe what the limit measures; they do not require writing raw byte counts.
 
-This is a breaking YAML change. See the [migration guide](configuration-migration.md)
-for the complete old-to-new mapping. The streaming gRPC and SDK contracts require coordinated upgrades.
-
 ## One Store per Engine or Worker
 
 Each Engine/Worker process binds to the `name` in its Store file. Replicas of one
@@ -150,7 +147,7 @@ use the lowercase spelling shown below. Storage names are also case-sensitive.
 | `execution.store_max_concurrent` | positive integer | No | `64` | Integer from `1` through `4096` | Local safety ceiling for the adaptive Store window; Engine/Worker only. Not a backend capacity estimate or replica-based quota. |
 | `execution.merge.max_attempts` | positive integer | No | `3` | Integer greater than `0` | Maximum revision-conflict attempts for Merge and folded conditional Put chains. |
 | `batching.max_wait` | duration string | No | `2ms` | Positive Go duration within the bounds below | Maximum collection delay measured from the first request in a batch. |
-| `batching.max_operations` | positive integer | No | `32` | Positive integer | Operation target for one automatically formed batch; a larger valid RPC still executes alone. See [default selection](batching.md#default-selection). |
+| `batching.max_operations` | positive integer | No | `32` | Positive integer | Operation target for one automatically formed batch; a larger valid RPC still executes alone. See [choosing limits](batching.md#choosing-limits). |
 | `batching.max_bytes` | byte size | No | `16MiB` | Size greater than `0B` | Encoded-byte target for one automatically formed batch; one larger valid RPC still runs alone. |
 | `batching.queue.max_operations` | positive integer | No | max(`10000`, `batching.max_operations`) | Integer at least `batching.max_operations` | Maximum operations waiting in each method queue. |
 | `batching.queue.max_bytes` | byte size | No | max(`128MiB`, `grpc.max_receive_message_bytes`) | Size at least `grpc.max_receive_message_bytes` and `batching.max_bytes` | Maximum encoded request bytes waiting in each method queue. |
@@ -220,17 +217,15 @@ Lua, driver and Kafka settings. Startup panics if the high-watermark portion of 
 effective ceiling cannot cover it. The panic lists the required components and
 available ceiling. This catches undersized configurations; it does not guarantee
 against OOM under concurrent load. See the [sizing formula and runtime behavior](design/process-memory-admission.md)
-and [metrics/KEDA migration](observability.md#memory-capacity-and-keda).
+and [memory metrics and KEDA](observability.md#memory-capacity-and-keda).
 
-The former `service` sections, snapshot/output quotas, `memory.burst_percent`,
-`memory.wait_timeout` and Gateway count/byte admission fields are rejected.
 Use `memory` for process pressure and `batching.queue` for Engine waiting queues.
 
 Store admission is shared across Read/Write/Delete/Native operations. It counts
 admitted Storage executions; adapter group fanout remains unchanged. Sink sets
 `w=majority` and `journal=true` on its client, overriding weaker URI concerns;
 server selection is bounded to five seconds. Verify the deployment supports
-these settings before upgrading. The caller context controls the overall request lifetime.
+these settings before deployment. The caller context controls the overall request lifetime.
 
 A response budget can yield partial results: an individual oversized document
 is a permanent resource failure; exhaustion caused by other records in the same original RPC

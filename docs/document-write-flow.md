@@ -40,7 +40,7 @@ There are two different kinds of queue:
 - **Kafka queue:** durably accepts write intent. The client can return before
   a worker completes the database write.
 
-An operation's `store` selects one backend. Writing to MongoDB does not
+The Store in an operation's URI selects one backend. Writing to MongoDB does not
 implicitly replicate the document to Elasticsearch. To write to both,
 submit separate operations targeting the two stores.
 
@@ -253,7 +253,7 @@ Conflict: read the latest document, rerun Lua, and retry the conditional write
 
 Lua executes inside Sink or its worker, and its complete output document
 is written back. It is not a MongoDB update statement or a script executed
-inside Elasticsearch. If the document is absent and creation is allowed,
+inside Elasticsearch. If the document is absent,
 Lua receives `current = nil`, and the write requires that the record still
 be absent.
 
@@ -278,7 +278,6 @@ Read the existing document once
   -> Lua 3 -> final document
   -> Write once, using the revision condition from the original read
   -> After a successful commit, each successful operation returns APPLIED
-     with the same final revision
 ```
 
 Every Lua program still executes. Intermediate documents are not persisted
@@ -295,8 +294,7 @@ requires that working state to be absent; Replace requires it to be present;
 Upsert always replaces it. Failed conditions leave it unchanged. A chain of
 Upserts writes only its last document without reading, and a single Put keeps
 its existing direct adapter path. Conditional or mixed chains read once and
-commit against that snapshot. Puts and Merges share the same final revision
-when their chain commits successfully.
+commit against that snapshot. The revision remains internal to Sink.
 
 A change of completion mode on the same address splits these runs.
 Interleaved operations for other addresses do not split a run.
@@ -307,8 +305,11 @@ The current worker places operations for the same address into separate
 execution waves, so multiple Kafka merges for one document do not enter
 the folding path described above together.
 
-If every modification needs its own database commit and events, issue
-sequential calls and wait for each to complete. See the
+An operation requesting `return_document` commits independently and returns its
+logical output. Ordinary operations before and after it may fold into separate
+runs. If every modification needs its own database commit and events, request
+returned documents for each operation or issue sequential calls and wait for
+each to complete. See the
 [folding contract](merge-folding.md) for the full boundaries. Repeated Reads
 fetch one backend observation per address and return independent results;
 every copy must fit its result frame. Repeated synchronous
@@ -383,10 +384,10 @@ Use these entry points to keep this guide aligned with future changes:
 | Flow | Implementation entry point |
 | --- | --- |
 | Protocol, addresses, completion modes, and result statuses | [sink.proto](../proto/sink/sink.proto) |
-| SDK parameter binding, encoding, and error aggregation | [sink-go dataset.go at the reviewed revision](https://github.com/batchstream/sink-go/blob/a658b054cea20c71f753ce21a5754885fc254318/dataset.go) |
-| SDK batch splitting and Write RPCs | [sink-go client.go at the reviewed revision](https://github.com/batchstream/sink-go/blob/a658b054cea20c71f753ce21a5754885fc254318/client.go) |
+| SDK parameter binding, encoding, and error aggregation | [sink-go dataset.go](https://github.com/batchstream/sink-go/blob/main/dataset.go) |
+| SDK batch splitting and Write RPCs | [sink-go client.go](https://github.com/batchstream/sink-go/blob/main/client.go) |
 | Gateway, Engine, and Worker component wiring | `New` in [app.go](../internal/app/app.go) |
-| Synchronous batching and completion-mode separation | [batching_server.go](../internal/service/batching_server.go), [mutation_batches.go](../internal/service/mutation_batches.go) |
+| Synchronous batching and completion-mode separation | [batcher.go](../internal/service/batcher.go), [batching_server.go](../internal/service/batching_server.go) |
 | Request dispatch, admission control, and Put/Merge execution | `Write` in [server.go](../internal/service/server.go), [memory guard](../internal/capacity/guard.go), [write.go](../internal/service/write.go) |
 | Write folding for one document | [write_group.go](../internal/service/write_group.go), [folding contract](merge-folding.md) |
 | Publishing original intent to Kafka | [publish.go](../internal/service/publish.go), [publisher.go](../internal/queue/kafka/publisher.go) |

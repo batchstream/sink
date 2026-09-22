@@ -1,26 +1,20 @@
 # Rolling upgrades and replica changes
 
-The role-config redesign changes the private forwarding version. Migrate from
-0.18 and older through a separate matching Gateway/Engine cluster. The compatible
-rolling procedure below does not apply across that boundary.
-
 Treat discovery withdrawal and RPC draining as separate intervals. Sink keeps
 established channels when DNS refreshes, and Gateway retains one Engine address
 snapshot for each Store throughout an accepted public batch. Stopping an Engine
 as soon as one DNS lookup removes it can still interrupt a later group of an
 already accepted request.
 
-## Streaming protocol upgrade
+## Protocol compatibility
 
-The private forwarding protocol is version 8. `Forward` is one server-streaming
-RPC carrying typed results and ending with standard gRPC status and EOF. Budget
-grants, usage tracking and custom settlement/status envelopes have been removed. The old unary
-endpoint and byte-chunk protocol have been removed.
+Gateway, Engine, Worker and SDK builds must use compatible protocols. Verify
+mixed-version compatibility before a rolling upgrade. The private forwarding
+protocol is version 8: `Forward` is one server-streaming RPC carrying typed
+results and ending with standard gRPC status and EOF.
 
-Public `Read`, `Write`, `Query` and `Scan` are server-streaming RPCs. Upgrade the
-Gateway, Engine and SDK together; there is no fallback to an older protocol.
-`Delete`, `Execute` and `Count` retain their scalar response contracts. Use a
-separate matching cluster for cutover across this incompatible boundary.
+Public `Read`, `Write`, `Query` and `Scan` are server-streaming RPCs.
+`Delete`, `Execute` and `Count` return scalar responses.
 
 The SDK collects results by default. Supplying a callback consumes results as
 they arrive without retaining document results. Completed record results survive

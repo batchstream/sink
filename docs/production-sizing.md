@@ -2,7 +2,6 @@
 
 Size and scale each role separately. Engine and Worker serve one Store per process;
 Gateway forwards requests across Stores and does not create database connections.
-The old multi-Store process measurements are not capacity guarantees for this topology.
 
 Use the [fixed-resource qualification runner](https://github.com/batchstream/sink-production-suite/blob/main/benchmarks/qualification/README.md)
 to compare workload profiles with explicit container CPU and memory limits. Pair
@@ -78,8 +77,7 @@ using capacity measurements, including MongoDB allocator settings.
 
 Use the production suite's `make build-perf` and `.reports/bin/sink-perf`
 against the public Gateway endpoint for workload measurements.
-The [local validation record](design/store-isolated-validation.md) reports executed
-checks and their limits. The [configuration reference](configuration.md),
+The [configuration reference](configuration.md),
 [metrics](observability.md), and [single-Store Engine deployment template](../examples/kubernetes/engine-deployment.yaml)
 provide the corresponding settings. The template is an example, not a production
 capacity recommendation or a dependency of the application.

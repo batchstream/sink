@@ -8,12 +8,12 @@ quickstart. Deployment settings and their validation rules live in the
 
 ## Store isolation
 
-New deployments use Gateway for routing, one Engine process per Store, and one
+Sink uses Gateway for routing, one Engine process per Store, and one
 Worker role per Store. Engine and Worker replicas scale independently and share
 the execution core; Worker directly accesses its database. Gateway does not open
 database or Kafka connections. Read, Write, Query and Scan stream results; Delete, Execute and Count return scalar responses.
 
-See [isolated topology, budgets and migration](store-isolation.md) for the private
+See [isolated topology, budgets and scaling](store-isolation.md) for the private
 forwarding contract and cross-Store request behavior. Execution details below
 apply inside a single-Store Engine or Worker.
 
@@ -138,8 +138,8 @@ Batch reads use one `$in` query per collection. Unconditional puts and creates
 use unordered bulk writes. Revision-conditional writes use client bulk writes
 when the server supports per-operation results, otherwise bounded individual
 operations retain correlation with each precondition.
-Legacy documents without Sink metadata receive it through a conditional first
-mutation, keeping their first read-modify-write atomic.
+Documents written outside Sink without its metadata receive it through a
+conditional first mutation, keeping their first read-modify-write atomic.
 
 ### Elasticsearch and OpenSearch
 

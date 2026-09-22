@@ -110,15 +110,6 @@ opts := sink.DatasetOptions{
 orders, err := sink.NewDataset(client, opts)
 ```
 
-## New-cluster deployment
-
-This is a breaking protocol and key-format change. Deploy matching Gateway,
-Engine, Worker and SDK builds in a new cluster, with separate Kafka topics and
-consumer groups. Old requests, mutation envelopes and scan checkpoints are not
-migration inputs. Switch clients through the planned blue/green cutover after
-validating the new cluster. This change does not implement data migration or
-modify any running deployment.
-
 ## Native resources
 
 Execute, Query, Count and Scan also select their resource with `Command.uri`.

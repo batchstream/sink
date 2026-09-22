@@ -106,8 +106,8 @@ sum by (store) (increase(sink_batcher_request_queue_duration_seconds_bucket{meth
 
 Use `sink_batcher_request_queue_exits_total` separately for execution/cancellation/
 shutdown counts. The compact histogram cannot split the latency distribution by
-outcome or completion mode; it supports per-store distributions. The legacy
-queue histogram still observes only the oldest request in each dispatched batch.
+outcome or completion mode; it supports per-store distributions. The batch
+queue histogram observes only the oldest request in each dispatched batch.
 
 The write phase histogram uses the same seven finite latency buckets and only
 five phase values: `parse`, `storage_read`, `lua`,
@@ -201,8 +201,7 @@ counts or an HPA recommendation to set database concurrency. See the
 ## Memory capacity and KEDA
 
 Each process exports its watermark guard with bounded `role` and `store` labels
-(Gateway's Store label is empty). Allocation/lease, burst reserve, opaque driver
-allowance and waiting-allocation metrics have been removed.
+(Gateway's Store label is empty).
 
 | Metric | Type | Additional labels / meaning |
 | --- | --- | --- |

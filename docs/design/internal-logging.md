@@ -1,6 +1,6 @@
 # Internal diagnostic logging
 
-## Accepted scope
+## Scope
 
 Sink logs help operators diagnose and improve Gateway, Engine and Worker behavior.
 The default level is `warn`. Outputs are stderr (JSON or text) and optional OTLP
@@ -9,7 +9,7 @@ context propagation, audit delivery and an embedded Collector are out of scope.
 
 The deployment pipeline is Sink → OTLP Collector → Kafka → ingestion →
 Elasticsearch. Sink owns neither the Kafka log topic nor the Elasticsearch index.
-The inspected ingestion implementation retains log body, timestamp and **record
+The ingestion contract retains log body, timestamp and **record
 attributes** as string-valued `labels`; it ignores Resource attributes, scope and
 OTel severity. Consequently every essential identity and the lowercase level
 must also be present as a flat string record attribute. Trace/span IDs are not
@@ -37,7 +37,7 @@ never replace record attributes.
 High-cardinality values (instance, Pod, offset) are for filtering and investigation,
 not metric labels or dashboard aggregation dimensions. Document bodies are omitted
 by default. For severe final failures, `logging.failure_body: true` permits a
-bounded diagnostic document **in body only**, never in labels. The first supported
+bounded diagnostic document **in body only**, never in labels. The supported
 event is `kafka_quarantined`, after acknowledged DLQ publication. JSON is readable;
 BSON uses base64 with an encoding marker. Truncation is explicit. No payload is
 decoded/formatted when this feature is disabled or the event is rate limited.
@@ -70,9 +70,9 @@ attributes at the common handler so future call sites cannot grow the ES schema.
 ## Implementation and verification
 
 Keep configuration/default validation in `internal/config`, logging setup and
-handlers in `internal/logging`, and lifecycle ownership in the CLI. Retain direct
-`slog` calls at operational boundaries. Existing Prometheus metrics remain intact.
-No SDK or business protocol changes are required.
+handlers in `internal/logging`, and lifecycle ownership in `internal/app`. Retain
+direct `slog` calls at operational boundaries. Prometheus metrics provide the
+corresponding aggregate signals.
 
 Verify default warn filtering, strict config validation, identity and severity
 survival through the ingestion projection, no trace/span data, label allowlisting,

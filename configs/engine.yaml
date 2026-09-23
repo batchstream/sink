@@ -21,7 +21,6 @@ batching:
 producer:
   max_buffered_bytes: 64MiB
 execution:
-  store_max_concurrent: 64 # Adaptive window ceiling, not DB capacity or a replica-based quota.
   merge:
     max_attempts: 3 # Revision-conflict attempts.
     lua:

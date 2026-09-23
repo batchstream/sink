@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -77,6 +78,64 @@ func TestComponentDefaults(t *testing.T) {
 	}
 	if kafka.DeadLetter.Name != "mutations.dlq" || kafka.Consumer.MaxPollRecords != 500 || kafka.Consumer.ProcessingTimeout != 20*time.Second || kafka.Consumer.Retry.MaxAttempts != 10 {
 		t.Fatal("consumer defaults changed")
+	}
+}
+
+func TestStoreConcurrencyDefaultsFollowStorageDriver(t *testing.T) {
+	for _, mode := range []string{"engine", "worker"} {
+		for _, driver := range []Driver{DriverElasticsearch, DriverOpenSearch} {
+			store := "name: primary\nstorage:\n  driver: " + string(driver) + "\n  search:\n    endpoints: [http://127.0.0.1:9200]\n"
+			component := "mode: " + mode + "\n"
+			if mode == "worker" {
+				component += "consumer: {group_id: workers}\n"
+				store += "kafka: {enabled: true, brokers: [127.0.0.1:1], topic: {name: mutations}}\n"
+			}
+			loaded, err := Decode(strings.NewReader(component), strings.NewReader(store))
+			if err != nil {
+				t.Fatalf("%s/%s default: %v", mode, driver, err)
+			}
+			if loaded.Service.StoreMaxConcurrent != 128 {
+				t.Fatalf("%s/%s default = %d, want 128", mode, driver, loaded.Service.StoreMaxConcurrent)
+			}
+		}
+	}
+}
+
+func TestStoreConcurrencyOverridePrecedence(t *testing.T) {
+	component := "mode: engine\nexecution: {store_max_concurrent: 32}\n"
+	store := "name: primary\nmax_concurrent: 256\nstorage:\n  driver: elasticsearch\n  search:\n    endpoints: [http://127.0.0.1:9200]\n"
+	loaded, err := Decode(strings.NewReader(component), strings.NewReader(store))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Service.StoreMaxConcurrent != 256 {
+		t.Fatalf("Store max_concurrent = %d, want 256", loaded.Service.StoreMaxConcurrent)
+	}
+
+	store = strings.Replace(store, "max_concurrent: 256\n", "", 1)
+	loaded, err = Decode(strings.NewReader(component), strings.NewReader(store))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Service.StoreMaxConcurrent != 32 {
+		t.Fatalf("role fallback = %d, want 32", loaded.Service.StoreMaxConcurrent)
+	}
+}
+
+func TestStoreConcurrencyOverrideValidation(t *testing.T) {
+	for _, maximum := range []int{1, 4096} {
+		store := fmt.Sprintf("name: primary\nmax_concurrent: %d\nstorage:\n  driver: mongodb\n  mongodb:\n    uri: mongodb://127.0.0.1:1\n", maximum)
+		loaded, err := Decode(strings.NewReader("mode: engine\n"), strings.NewReader(store))
+		if err != nil || loaded.Service.StoreMaxConcurrent != maximum {
+			t.Fatalf("max_concurrent=%d: got %d, err=%v", maximum, loaded.Service.StoreMaxConcurrent, err)
+		}
+	}
+	for _, maximum := range []int{0, -1, 4097} {
+		store := fmt.Sprintf("name: primary\nmax_concurrent: %d\nstorage:\n  driver: mongodb\n  mongodb:\n    uri: mongodb://127.0.0.1:1\n", maximum)
+		_, err := Decode(strings.NewReader("mode: engine\n"), strings.NewReader(store))
+		if err == nil {
+			t.Fatalf("max_concurrent=%d unexpectedly succeeded", maximum)
+		}
 	}
 }
 

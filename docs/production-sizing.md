@@ -14,7 +14,8 @@ of the effective Go/container/host ceiling. Startup panics if estimated minimum
 working memory exceeds the high-watermark allowance. See the [sizing formula](design/process-memory-admission.md)
 and [memory/KEDA signals](observability.md#memory-capacity-and-keda).
 This is overload control, not an OOM guarantee. Store execution has an independent adaptive window, bounded by
-`execution.store_max_concurrent` (default 64). Batch queues, Gateway fanout/connections, backend pools, Kafka
+Store `max_concurrent` (default 64 for MongoDB and 128 for Elasticsearch/OpenSearch). The limit applies
+per Engine/Worker process. Batch queues, Gateway fanout/connections, backend pools, Kafka
 buffers and Lua limits remain separately bounded.
 
 A 2 CPU / 4 GiB allocation alone does not determine safe RPC concurrency. A small
@@ -51,8 +52,8 @@ connections. Shutdown releases the Store's idle connections after work drains.
 
 Store window reductions and backend latency identify database congestion.
 Scaling application replicas does not raise an existing Store window; new
-instances start conservatively and independently adapt. Do not raise
-`execution.store_max_concurrent` in response to HPA, Kafka lag or queue growth.
+instances start conservatively and independently adapt. Do not raise a Store's
+per-process concurrency ceiling in response to HPA, Kafka lag or queue growth.
 See [adaptive Store backpressure](design/store-backpressure.md).
 
 KEDA or another external scaler consumes these metrics. Minimum/maximum replicas,

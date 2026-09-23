@@ -45,11 +45,12 @@ type executionFile struct {
 	Merge              mergeFile `yaml:"merge"`
 }
 
-// Store files contain shared identity and dependency policy, never role tuning.
+// Store files contain identity and backend policy shared by Engine and Worker.
 type storeFile struct {
-	Name    string      `yaml:"name"`
-	Storage storageFile `yaml:"storage"`
-	Kafka   kafkaFile   `yaml:"kafka"`
+	Name          string      `yaml:"name"`
+	MaxConcurrent *int        `yaml:"max_concurrent"`
+	Storage       storageFile `yaml:"storage"`
+	Kafka         kafkaFile   `yaml:"kafka"`
 }
 
 type batchingFile struct {

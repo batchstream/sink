@@ -1,6 +1,7 @@
-# Shared Store identity and dependency policy. Pass with --store-config.
+# Shared Store identity and backend policy. Pass with --store-config.
 # This file is reused by Engine and Worker; restart both after policy changes.
 name: primary
+# max_concurrent: 64 # Optional per-process adaptive ceiling; Search defaults to 128.
 storage:
   driver: mongodb # mongodb, elasticsearch, or opensearch.
   mongodb:

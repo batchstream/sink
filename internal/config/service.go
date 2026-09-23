@@ -8,6 +8,8 @@ import (
 	"github.com/batchstream/sink/internal/backpressure"
 )
 
+const defaultSearchMaxConcurrent = 128
+
 func resolveService(file configFile, grpc GRPC, v *validator) Service {
 	var loaded Service
 	if file.Request != nil {
@@ -19,7 +21,6 @@ func resolveService(file configFile, grpc GRPC, v *validator) Service {
 	if execution == nil {
 		execution = &executionFile{}
 	}
-	loaded.StoreMaxConcurrent = v.bounded("execution.store_max_concurrent", execution.StoreMaxConcurrent, backpressure.DefaultMaxConcurrent, 4096)
 	loaded.Merge.MaxAttempts = v.integer("execution.merge.max_attempts", execution.Merge.MaxAttempts, 3)
 	lua := &loaded.Merge.Lua
 	lua.Timeout = v.duration("execution.merge.lua.timeout", execution.Merge.Lua.Timeout, 100*time.Millisecond)
@@ -35,6 +36,19 @@ func resolveService(file configFile, grpc GRPC, v *validator) Service {
 		loaded.Batching = resolveBatching(*batching, grpc, v)
 	}
 	return loaded
+}
+
+func resolveStoreMaxConcurrent(execution *executionFile, storeMaxConcurrent *int, driver Driver, v *validator) int {
+	defaultMaxConcurrent := backpressure.DefaultMaxConcurrent
+	if driver == DriverElasticsearch || driver == DriverOpenSearch {
+		defaultMaxConcurrent = defaultSearchMaxConcurrent
+	}
+	var executionMaxConcurrent *int
+	if execution != nil {
+		executionMaxConcurrent = execution.StoreMaxConcurrent
+	}
+	roleMaxConcurrent := v.bounded("execution.store_max_concurrent", executionMaxConcurrent, defaultMaxConcurrent, 4096)
+	return v.bounded("max_concurrent", storeMaxConcurrent, roleMaxConcurrent, 4096)
 }
 
 func resolveBatching(file batchingFile, grpc GRPC, v *validator) Batching {

@@ -83,11 +83,13 @@ recovery probe. Old responses from before a decrease cannot apply that decrease
 repeatedly or undo it with stale successes. Growth does not suppress a late
 overload from an earlier, slower call.
 
-`execution.store_max_concurrent` defaults to **64**, accepts **1–4096**, and is
-available only on Engine/Worker. It is a local resource safety ceiling, not a
-database capacity estimate or a per-replica allocation of a global quota. The
-feature is always wired by application assembly. Internal component tests can
-omit the controller to exercise other boundaries independently.
+The adaptive window ceiling accepts **1–4096**. Store `max_concurrent` overrides
+the Engine/Worker role-file fallback `execution.store_max_concurrent`; when both
+are omitted, the default is **64** for MongoDB and **128** for Elasticsearch or
+OpenSearch. The ceiling is local to each Engine/Worker process, not a database
+capacity estimate or a per-replica allocation of a global quota. The feature is
+always wired by application assembly. Internal component tests can omit the
+controller to exercise other boundaries independently.
 
 ## Feedback and latency
 

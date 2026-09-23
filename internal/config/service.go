@@ -38,17 +38,12 @@ func resolveService(file configFile, grpc GRPC, v *validator) Service {
 	return loaded
 }
 
-func resolveStoreMaxConcurrent(execution *executionFile, storeMaxConcurrent *int, driver Driver, v *validator) int {
+func resolveStoreMaxConcurrent(storeMaxConcurrent *int, driver Driver, v *validator) int {
 	defaultMaxConcurrent := backpressure.DefaultMaxConcurrent
 	if driver == DriverElasticsearch || driver == DriverOpenSearch {
 		defaultMaxConcurrent = defaultSearchMaxConcurrent
 	}
-	var executionMaxConcurrent *int
-	if execution != nil {
-		executionMaxConcurrent = execution.StoreMaxConcurrent
-	}
-	roleMaxConcurrent := v.bounded("execution.store_max_concurrent", executionMaxConcurrent, defaultMaxConcurrent, 4096)
-	return v.bounded("max_concurrent", storeMaxConcurrent, roleMaxConcurrent, 4096)
+	return v.bounded("max_concurrent", storeMaxConcurrent, defaultMaxConcurrent, 4096)
 }
 
 func resolveBatching(file batchingFile, grpc GRPC, v *validator) Batching {

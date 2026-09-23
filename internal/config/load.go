@@ -162,7 +162,7 @@ func resolve(file configFile, shared storeFile) (Config, error) {
 	configured.Kafka = resolveKafka("kafka", shared.Kafka, &v)
 	configured.Kafka.Producer = resolveProducer(file.Producer, &v)
 	configured.Kafka.Consumer = resolveConsumer(file.Consumer, &v)
-	loaded.Service.StoreMaxConcurrent = resolveStoreMaxConcurrent(file.Execution, shared.MaxConcurrent, configured.Driver, &v)
+	loaded.Service.StoreMaxConcurrent = resolveStoreMaxConcurrent(shared.MaxConcurrent, configured.Driver, &v)
 	if file.Producer != nil && !configured.Kafka.Enabled {
 		v.reject(errors.New("producer requires Kafka enabled in Store config"))
 	}

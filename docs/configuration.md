@@ -11,10 +11,11 @@ sink --config configs/worker.yaml --store-config configs/stores/primary.yaml
 ```
 
 Both files use standard YAML. There is no include syntax or general field merging
-between them. The Store file's `max_concurrent`, when set, overrides the role
-file's `execution.store_max_concurrent`; otherwise the role value overrides the
-driver-specific default. Paths passed on the command line are relative to the
-working directory.
+between them. Set per-Store concurrency in the Store file with `max_concurrent`;
+when omitted, the driver-specific default is used. The former
+`execution.store_max_concurrent` role setting is no longer accepted; move any
+explicit value to the Store file. Paths passed on the command line are relative
+to the working directory.
 `--config` is required. `--store-config` is required for Engine/Worker and rejected
 for Gateway. `sink config check` accepts the same arguments and validates both files
 offline without opening dependencies or printing configured values. `sink version`
@@ -42,7 +43,7 @@ startup. Restart after changes. Configuration files are limited to 4 MiB.
 | Gateway: `forwarding` | Store routes, discovery and fanout |
 | Engine: `batching`, `producer` | Collection queues and Kafka publishing buffer |
 | Worker: `consumer` | Group, polling, processing rounds and retries |
-| Engine/Worker: `execution` | Store concurrency fallback, Merge conflict retries and Lua sandbox |
+| Engine/Worker: `execution` | Merge conflict retries and Lua sandbox |
 | Store: `name`, `max_concurrent`, `storage`, `kafka` | Shared identity, backend concurrency ceiling, database connection and Topic/DLQ policy |
 
 Request validation belongs to Gateway. Engine has no `request` section and accepts
@@ -148,8 +149,7 @@ use the lowercase spelling shown below. Storage names are also case-sensitive.
 | `storage.search.password` | string | Conditionally | empty | Any password accepted by the search service | Basic-auth password. Must be configured together with `username`. |
 | `storage.search.api_key` | string | No | empty | Any API key accepted by the search service | API key used instead of basic authentication. |
 | `request.max_operations` | positive integer | No | `1000` | Integer greater than `0` | Maximum operation count accepted in one Read, Write, or Delete batch request. |
-| `max_concurrent` | positive integer | No | Driver default, or `execution.store_max_concurrent` | Integer from `1` through `4096` | Store-specific adaptive-window ceiling per Engine/Worker process; overrides the role setting. Defaults to 64 for MongoDB and 128 for Elasticsearch/OpenSearch. Not a backend capacity estimate or replica-based quota. |
-| `execution.store_max_concurrent` | positive integer | No | `64` for MongoDB; `128` for Elasticsearch/OpenSearch | Integer from `1` through `4096` | Role-file fallback adaptive-window ceiling for Engine/Worker. Used when Store `max_concurrent` is omitted; not a backend capacity estimate or replica-based quota. |
+| `max_concurrent` | positive integer | No | `64` for MongoDB; `128` for Elasticsearch/OpenSearch | Integer from `1` through `4096` | Optional adaptive-window ceiling per Engine/Worker process for this Store. Not a backend capacity estimate or replica-based quota. |
 | `execution.merge.max_attempts` | positive integer | No | `3` | Integer greater than `0` | Maximum revision-conflict attempts for Merge and folded conditional Put chains. |
 | `batching.max_wait` | duration string | No | `2ms` | Positive Go duration within the bounds below | Maximum collection delay measured from the first request in a batch. |
 | `batching.max_operations` | positive integer | No | `32` | Positive integer | Operation target for one automatically formed batch; a larger valid RPC still executes alone. See [choosing limits](batching.md#choosing-limits). |

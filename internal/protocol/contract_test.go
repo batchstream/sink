@@ -5,10 +5,11 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/batchstream/sink-go/uri"
+	"github.com/batchstream/sink-protocol/uri"
+	forward "github.com/batchstream/sink/gen/forward"
 	"github.com/batchstream/sink/internal/testuri"
 
-	sink "github.com/batchstream/sink/gen/sink"
+	sink "github.com/batchstream/sink-protocol/sink/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
@@ -107,5 +108,53 @@ func TestWriteRequestVTRoundTripPreservesActions(t *testing.T) {
 	}
 	if decoded.GetOperations()[1].GetMerge() == nil {
 		t.Fatal("second operation did not preserve merge action")
+	}
+}
+
+func TestForwardVTRoundTripUsesSharedSinkMessages(t *testing.T) {
+	key := uri.StringKey("record-1")
+	address := &sink.RecordAddress{Uri: testuri.Record("primary", []string{"catalog", "products"}, key)}
+	document := &sink.Document{
+		Encoding: sink.DocumentEncoding_DOCUMENT_ENCODING_JSON,
+		Payload:  []byte(`{"value":1}`),
+	}
+	put := &sink.PutOperation{
+		Document: document,
+		Mode:     sink.WriteMode_WRITE_MODE_UPSERT,
+	}
+	operation := &sink.WriteOperation{
+		Address: address,
+		Action:  &sink.WriteOperation_Put{Put: put},
+	}
+	write := &sink.WriteRequest{
+		Operations: []*sink.WriteOperation{operation},
+	}
+	body := &forward.ForwardRequest_Write{Write: write}
+	request := &forward.ForwardRequest{Version: 1, Store: "primary", Request: body}
+
+	encoded, err := request.MarshalVT()
+	if err != nil {
+		t.Fatalf("MarshalVT() error = %v", err)
+	}
+	decoded := &forward.ForwardRequest{}
+	err = decoded.UnmarshalVT(encoded)
+	if err != nil {
+		t.Fatalf("UnmarshalVT() error = %v", err)
+	}
+	if !proto.Equal(decoded, request) {
+		t.Fatalf("VT round trip = %v, want %v", decoded, request)
+	}
+
+	standardEncoded, err := proto.Marshal(request)
+	if err != nil {
+		t.Fatalf("proto.Marshal() error = %v", err)
+	}
+	standardDecoded := &forward.ForwardRequest{}
+	err = standardDecoded.UnmarshalVT(standardEncoded)
+	if err != nil {
+		t.Fatalf("UnmarshalVT(standard protobuf) error = %v", err)
+	}
+	if !proto.Equal(standardDecoded, request) {
+		t.Fatalf("standard protobuf round trip = %v, want %v", standardDecoded, request)
 	}
 }

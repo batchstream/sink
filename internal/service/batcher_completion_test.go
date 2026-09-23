@@ -12,7 +12,7 @@ import (
 
 	"github.com/batchstream/sink/internal/testuri"
 
-	sink "github.com/batchstream/sink/gen/sink"
+	sink "github.com/batchstream/sink-protocol/sink/v1"
 )
 
 func TestBatcherOldBatchCannotReleaseNewOwnerOfCompletedDocument(t *testing.T) {

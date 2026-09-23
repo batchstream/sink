@@ -3,7 +3,7 @@ module github.com/batchstream/sink
 go 1.27.0
 
 require (
-	github.com/batchstream/sink-go v0.10.1
+	github.com/batchstream/sink-protocol v0.1.0
 	github.com/go-logr/logr v1.4.4
 	github.com/iceisfun/golua v1.1.1
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10

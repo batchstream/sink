@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/batchstream/sink-go/uri"
+	"github.com/batchstream/sink-protocol/uri"
 	"github.com/batchstream/sink/internal/testuri"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	sink "github.com/batchstream/sink/gen/sink"
+	sink "github.com/batchstream/sink-protocol/sink/v1"
 	"github.com/batchstream/sink/internal/merge"
 	"github.com/batchstream/sink/internal/service"
 	"github.com/batchstream/sink/internal/storage"

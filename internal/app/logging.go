@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	sink "github.com/batchstream/sink-protocol/sink/v1"
 	"github.com/batchstream/sink/gen/forward"
-	sink "github.com/batchstream/sink/gen/sink"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

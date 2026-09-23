@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/batchstream/sink-go/uri"
+	"github.com/batchstream/sink-protocol/uri"
 	"github.com/batchstream/sink/internal/config"
 )
 

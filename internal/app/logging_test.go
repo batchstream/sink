@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	sink "github.com/batchstream/sink-protocol/sink/v1"
 	"github.com/batchstream/sink/gen/forward"
-	sink "github.com/batchstream/sink/gen/sink"
 	"github.com/batchstream/sink/internal/config"
 	"github.com/batchstream/sink/internal/logging"
 	"google.golang.org/grpc"

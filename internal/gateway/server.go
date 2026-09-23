@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	sink "github.com/batchstream/sink-protocol/sink/v1"
 	forward "github.com/batchstream/sink/gen/forward"
-	sink "github.com/batchstream/sink/gen/sink"
 	"github.com/batchstream/sink/internal/capacity"
 	"github.com/batchstream/sink/internal/config"
 	"github.com/batchstream/sink/internal/forwarding"

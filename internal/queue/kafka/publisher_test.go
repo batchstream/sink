@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	sink "github.com/batchstream/sink/gen/sink"
+	sink "github.com/batchstream/sink-protocol/sink/v1"
 	sinkmetrics "github.com/batchstream/sink/internal/metrics"
 	"github.com/batchstream/sink/internal/queue"
 	"github.com/batchstream/sink/internal/storage"

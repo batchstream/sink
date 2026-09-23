@@ -21,7 +21,7 @@
 | [Testing Lua merge programs](lua-testing.md) | Test JSON and BSON fixtures with Sink's production Lua runtime |
 | [Record addresses](record-addresses.md) | Canonical URIs, Store paths and Engine affinity |
 | [Merge folding](merge-folding.md) | Understand how compatible operations share one storage write |
-| [Protocol definition](../proto/sink/sink.proto) | Inspect the authoritative gRPC messages and services |
+| [Protocol definition](https://github.com/batchstream/sink-protocol/blob/main/proto/sink/sink.proto) | Inspect the authoritative gRPC messages and services |
 
 ## Deploy and operate
 

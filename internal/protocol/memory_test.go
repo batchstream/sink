@@ -3,7 +3,7 @@ package protocol_test
 import (
 	"testing"
 
-	sink "github.com/batchstream/sink/gen/sink"
+	sink "github.com/batchstream/sink-protocol/sink/v1"
 	"github.com/batchstream/sink/internal/capacity"
 	"github.com/batchstream/sink/internal/protocol"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"

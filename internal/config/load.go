@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/batchstream/sink-go/uri"
+	"github.com/batchstream/sink-protocol/uri"
 	"github.com/batchstream/sink/internal/capacity"
 	"gopkg.in/yaml.v3"
 )

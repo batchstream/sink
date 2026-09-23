@@ -3,8 +3,8 @@ package engine
 import (
 	"context"
 
+	sink "github.com/batchstream/sink-protocol/sink/v1"
 	forward "github.com/batchstream/sink/gen/forward"
-	sink "github.com/batchstream/sink/gen/sink"
 	"github.com/batchstream/sink/internal/forwarding"
 	"github.com/batchstream/sink/internal/metrics"
 	"google.golang.org/grpc"

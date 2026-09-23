@@ -3,7 +3,7 @@ package metrics
 import (
 	"time"
 
-	sink "github.com/batchstream/sink/gen/sink"
+	sink "github.com/batchstream/sink-protocol/sink/v1"
 )
 
 const slowWritePhaseThreshold = 5 * time.Second

@@ -2,6 +2,7 @@
 
 PROTO_DIR := proto
 GEN_DIR := gen
+SINK_PROTOCOL_PROTO_DIR = $(shell go list -m -f '{{.Dir}}' github.com/batchstream/sink-protocol)/proto
 STATICCHECK_VERSION := v0.8.1
 ACTIONLINT_VERSION := v1.7.12
 LYCHEE ?= lychee
@@ -13,11 +14,11 @@ proto:
 	@mkdir -p $(GEN_DIR)
 	protoc \
 		--proto_path=$(PROTO_DIR) \
+		--proto_path=$(SINK_PROTOCOL_PROTO_DIR) \
 		--go_out=$(GEN_DIR) --go_opt=paths=source_relative \
 		--go-grpc_out=$(GEN_DIR) --go-grpc_opt=paths=source_relative \
 		--go-vtproto_out=$(GEN_DIR) --go-vtproto_opt=paths=source_relative,features=marshal+unmarshal+size+pool \
-		$(PROTO_DIR)/sink/sink.proto $(PROTO_DIR)/forward/forward.proto
-	@printf '%s\n%s\n' '// Package sink contains generated protobuf definitions for the Sink gRPC service.' 'package sink' > $(GEN_DIR)/sink/doc.go
+		$(PROTO_DIR)/forward/forward.proto
 	@printf '%s\n%s\n' '// Package forward contains the private Gateway-to-Engine protobuf contract.' 'package forward' > $(GEN_DIR)/forward/doc.go
 
 test:

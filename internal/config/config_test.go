@@ -101,24 +101,22 @@ func TestStoreConcurrencyDefaultsFollowStorageDriver(t *testing.T) {
 	}
 }
 
-func TestStoreConcurrencyOverridePrecedence(t *testing.T) {
-	component := "mode: engine\nexecution: {store_max_concurrent: 32}\n"
+func TestStoreConcurrencyOverride(t *testing.T) {
 	store := "name: primary\nmax_concurrent: 256\nstorage:\n  driver: elasticsearch\n  search:\n    endpoints: [http://127.0.0.1:9200]\n"
-	loaded, err := Decode(strings.NewReader(component), strings.NewReader(store))
+	loaded, err := Decode(strings.NewReader("mode: engine\n"), strings.NewReader(store))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if loaded.Service.StoreMaxConcurrent != 256 {
 		t.Fatalf("Store max_concurrent = %d, want 256", loaded.Service.StoreMaxConcurrent)
 	}
+}
 
-	store = strings.Replace(store, "max_concurrent: 256\n", "", 1)
-	loaded, err = Decode(strings.NewReader(component), strings.NewReader(store))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.Service.StoreMaxConcurrent != 32 {
-		t.Fatalf("role fallback = %d, want 32", loaded.Service.StoreMaxConcurrent)
+func TestRoleStoreConcurrencySettingIsRemoved(t *testing.T) {
+	component := "mode: engine\nexecution: {store_max_concurrent: 32}\n"
+	_, err := Decode(strings.NewReader(component), strings.NewReader(minimalStorage))
+	if err == nil || !strings.Contains(err.Error(), "store_max_concurrent") {
+		t.Fatalf("removed execution.store_max_concurrent accepted: %v", err)
 	}
 }
 

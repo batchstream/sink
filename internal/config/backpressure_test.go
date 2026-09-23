@@ -19,8 +19,9 @@ func TestStoreConcurrencyCeilingIndependentOfRoleAndMemory(t *testing.T) {
 			t.Fatalf("%s default: %+v %v", mode, loaded.Service, err)
 		}
 		for _, maximum := range []int{-1, 0, 1, 128, 4096, 4097} {
-			input := base + fmt.Sprintf("execution: {store_max_concurrent: %d}\n", maximum)
-			loaded, err := Decode(strings.NewReader(input), strings.NewReader(kafkaStore))
+			storeConfig := fmt.Sprintf("name: primary\nmax_concurrent: %d\n", maximum)
+			store := strings.Replace(kafkaStore, "name: primary\n", storeConfig, 1)
+			loaded, err := Decode(strings.NewReader(base), strings.NewReader(store))
 			valid := maximum >= 1 && maximum <= 4096
 			if valid && (err != nil || loaded.Service.StoreMaxConcurrent != maximum) || !valid && err == nil {
 				t.Fatalf("%s maximum=%d: %v", mode, maximum, err)

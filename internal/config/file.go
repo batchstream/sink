@@ -41,8 +41,7 @@ type requestFile struct {
 }
 
 type executionFile struct {
-	StoreMaxConcurrent *int      `yaml:"store_max_concurrent"`
-	Merge              mergeFile `yaml:"merge"`
+	Merge mergeFile `yaml:"merge"`
 }
 
 // Store files contain identity and backend policy shared by Engine and Worker.

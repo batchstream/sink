@@ -142,7 +142,8 @@ go get github.com/batchstream/sink-go
 
 Its [quick-start example](https://github.com/batchstream/sink-go#quick-start) shows
 how to connect, create an address, and write a Go value. Other languages can
-generate a standard gRPC client from [`proto/sink/sink.proto`](proto/sink/sink.proto).
+generate a standard gRPC client from the shared
+[`sink.v1` definition](https://github.com/batchstream/sink-protocol/blob/main/proto/sink/sink.proto).
 
 ## Run the container
 

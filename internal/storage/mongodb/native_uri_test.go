@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/batchstream/sink-go/uri"
+	"github.com/batchstream/sink-protocol/uri"
 	"github.com/batchstream/sink/internal/storage"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )

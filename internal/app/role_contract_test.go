@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	sink "github.com/batchstream/sink/gen/sink"
+	sink "github.com/batchstream/sink-protocol/sink/v1"
 	"github.com/batchstream/sink/internal/config"
 	"github.com/batchstream/sink/internal/storage"
 	"github.com/batchstream/sink/internal/storage/memory"

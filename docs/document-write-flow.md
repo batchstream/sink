@@ -383,7 +383,7 @@ Use these entry points to keep this guide aligned with future changes:
 
 | Flow | Implementation entry point |
 | --- | --- |
-| Protocol, addresses, completion modes, and result statuses | [sink.proto](../proto/sink/sink.proto) |
+| Protocol, addresses, completion modes, and result statuses | [sink.proto](https://github.com/batchstream/sink-protocol/blob/main/proto/sink/sink.proto) |
 | SDK parameter binding, encoding, and error aggregation | [sink-go dataset.go](https://github.com/batchstream/sink-go/blob/main/dataset.go) |
 | SDK batch splitting and Write RPCs | [sink-go client.go](https://github.com/batchstream/sink-go/blob/main/client.go) |
 | Gateway, Engine, and Worker component wiring | `New` in [app.go](../internal/app/app.go) |

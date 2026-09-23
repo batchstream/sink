@@ -7,7 +7,7 @@
 package forward
 
 import (
-	sink "github.com/batchstream/sink/gen/sink"
+	v1 "github.com/batchstream/sink-protocol/sink/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -91,7 +91,7 @@ func (x *ForwardRequest) GetRequest() isForwardRequest_Request {
 	return nil
 }
 
-func (x *ForwardRequest) GetRead() *sink.ReadRequest {
+func (x *ForwardRequest) GetRead() *v1.ReadRequest {
 	if x != nil {
 		if x, ok := x.Request.(*ForwardRequest_Read); ok {
 			return x.Read
@@ -100,7 +100,7 @@ func (x *ForwardRequest) GetRead() *sink.ReadRequest {
 	return nil
 }
 
-func (x *ForwardRequest) GetWrite() *sink.WriteRequest {
+func (x *ForwardRequest) GetWrite() *v1.WriteRequest {
 	if x != nil {
 		if x, ok := x.Request.(*ForwardRequest_Write); ok {
 			return x.Write
@@ -109,7 +109,7 @@ func (x *ForwardRequest) GetWrite() *sink.WriteRequest {
 	return nil
 }
 
-func (x *ForwardRequest) GetDelete() *sink.DeleteRequest {
+func (x *ForwardRequest) GetDelete() *v1.DeleteRequest {
 	if x != nil {
 		if x, ok := x.Request.(*ForwardRequest_Delete); ok {
 			return x.Delete
@@ -118,7 +118,7 @@ func (x *ForwardRequest) GetDelete() *sink.DeleteRequest {
 	return nil
 }
 
-func (x *ForwardRequest) GetExecute() *sink.ExecuteRequest {
+func (x *ForwardRequest) GetExecute() *v1.ExecuteRequest {
 	if x != nil {
 		if x, ok := x.Request.(*ForwardRequest_Execute); ok {
 			return x.Execute
@@ -127,7 +127,7 @@ func (x *ForwardRequest) GetExecute() *sink.ExecuteRequest {
 	return nil
 }
 
-func (x *ForwardRequest) GetQuery() *sink.QueryRequest {
+func (x *ForwardRequest) GetQuery() *v1.QueryRequest {
 	if x != nil {
 		if x, ok := x.Request.(*ForwardRequest_Query); ok {
 			return x.Query
@@ -136,7 +136,7 @@ func (x *ForwardRequest) GetQuery() *sink.QueryRequest {
 	return nil
 }
 
-func (x *ForwardRequest) GetCount() *sink.CountRequest {
+func (x *ForwardRequest) GetCount() *v1.CountRequest {
 	if x != nil {
 		if x, ok := x.Request.(*ForwardRequest_Count); ok {
 			return x.Count
@@ -145,7 +145,7 @@ func (x *ForwardRequest) GetCount() *sink.CountRequest {
 	return nil
 }
 
-func (x *ForwardRequest) GetScan() *sink.ScanRequest {
+func (x *ForwardRequest) GetScan() *v1.ScanRequest {
 	if x != nil {
 		if x, ok := x.Request.(*ForwardRequest_Scan); ok {
 			return x.Scan
@@ -159,31 +159,31 @@ type isForwardRequest_Request interface {
 }
 
 type ForwardRequest_Read struct {
-	Read *sink.ReadRequest `protobuf:"bytes,10,opt,name=read,proto3,oneof"`
+	Read *v1.ReadRequest `protobuf:"bytes,10,opt,name=read,proto3,oneof"`
 }
 
 type ForwardRequest_Write struct {
-	Write *sink.WriteRequest `protobuf:"bytes,11,opt,name=write,proto3,oneof"`
+	Write *v1.WriteRequest `protobuf:"bytes,11,opt,name=write,proto3,oneof"`
 }
 
 type ForwardRequest_Delete struct {
-	Delete *sink.DeleteRequest `protobuf:"bytes,12,opt,name=delete,proto3,oneof"`
+	Delete *v1.DeleteRequest `protobuf:"bytes,12,opt,name=delete,proto3,oneof"`
 }
 
 type ForwardRequest_Execute struct {
-	Execute *sink.ExecuteRequest `protobuf:"bytes,13,opt,name=execute,proto3,oneof"`
+	Execute *v1.ExecuteRequest `protobuf:"bytes,13,opt,name=execute,proto3,oneof"`
 }
 
 type ForwardRequest_Query struct {
-	Query *sink.QueryRequest `protobuf:"bytes,14,opt,name=query,proto3,oneof"`
+	Query *v1.QueryRequest `protobuf:"bytes,14,opt,name=query,proto3,oneof"`
 }
 
 type ForwardRequest_Count struct {
-	Count *sink.CountRequest `protobuf:"bytes,15,opt,name=count,proto3,oneof"`
+	Count *v1.CountRequest `protobuf:"bytes,15,opt,name=count,proto3,oneof"`
 }
 
 type ForwardRequest_Scan struct {
-	Scan *sink.ScanRequest `protobuf:"bytes,16,opt,name=scan,proto3,oneof"`
+	Scan *v1.ScanRequest `protobuf:"bytes,16,opt,name=scan,proto3,oneof"`
 }
 
 func (*ForwardRequest_Read) isForwardRequest_Request() {}
@@ -269,7 +269,7 @@ func (x *ForwardResponse) GetResponse() isForwardResponse_Response {
 	return nil
 }
 
-func (x *ForwardResponse) GetRead() *sink.ReadResponse {
+func (x *ForwardResponse) GetRead() *v1.ReadResponse {
 	if x != nil {
 		if x, ok := x.Response.(*ForwardResponse_Read); ok {
 			return x.Read
@@ -278,7 +278,7 @@ func (x *ForwardResponse) GetRead() *sink.ReadResponse {
 	return nil
 }
 
-func (x *ForwardResponse) GetWrite() *sink.WriteResponse {
+func (x *ForwardResponse) GetWrite() *v1.WriteResponse {
 	if x != nil {
 		if x, ok := x.Response.(*ForwardResponse_Write); ok {
 			return x.Write
@@ -287,7 +287,7 @@ func (x *ForwardResponse) GetWrite() *sink.WriteResponse {
 	return nil
 }
 
-func (x *ForwardResponse) GetDelete() *sink.DeleteResponse {
+func (x *ForwardResponse) GetDelete() *v1.DeleteResponse {
 	if x != nil {
 		if x, ok := x.Response.(*ForwardResponse_Delete); ok {
 			return x.Delete
@@ -296,7 +296,7 @@ func (x *ForwardResponse) GetDelete() *sink.DeleteResponse {
 	return nil
 }
 
-func (x *ForwardResponse) GetExecute() *sink.ExecuteResponse {
+func (x *ForwardResponse) GetExecute() *v1.ExecuteResponse {
 	if x != nil {
 		if x, ok := x.Response.(*ForwardResponse_Execute); ok {
 			return x.Execute
@@ -305,7 +305,7 @@ func (x *ForwardResponse) GetExecute() *sink.ExecuteResponse {
 	return nil
 }
 
-func (x *ForwardResponse) GetQuery() *sink.QueryResponse {
+func (x *ForwardResponse) GetQuery() *v1.QueryResponse {
 	if x != nil {
 		if x, ok := x.Response.(*ForwardResponse_Query); ok {
 			return x.Query
@@ -314,7 +314,7 @@ func (x *ForwardResponse) GetQuery() *sink.QueryResponse {
 	return nil
 }
 
-func (x *ForwardResponse) GetCount() *sink.CountResponse {
+func (x *ForwardResponse) GetCount() *v1.CountResponse {
 	if x != nil {
 		if x, ok := x.Response.(*ForwardResponse_Count); ok {
 			return x.Count
@@ -323,7 +323,7 @@ func (x *ForwardResponse) GetCount() *sink.CountResponse {
 	return nil
 }
 
-func (x *ForwardResponse) GetScan() *sink.ScanResponse {
+func (x *ForwardResponse) GetScan() *v1.ScanResponse {
 	if x != nil {
 		if x, ok := x.Response.(*ForwardResponse_Scan); ok {
 			return x.Scan
@@ -337,31 +337,31 @@ type isForwardResponse_Response interface {
 }
 
 type ForwardResponse_Read struct {
-	Read *sink.ReadResponse `protobuf:"bytes,10,opt,name=read,proto3,oneof"`
+	Read *v1.ReadResponse `protobuf:"bytes,10,opt,name=read,proto3,oneof"`
 }
 
 type ForwardResponse_Write struct {
-	Write *sink.WriteResponse `protobuf:"bytes,11,opt,name=write,proto3,oneof"`
+	Write *v1.WriteResponse `protobuf:"bytes,11,opt,name=write,proto3,oneof"`
 }
 
 type ForwardResponse_Delete struct {
-	Delete *sink.DeleteResponse `protobuf:"bytes,12,opt,name=delete,proto3,oneof"`
+	Delete *v1.DeleteResponse `protobuf:"bytes,12,opt,name=delete,proto3,oneof"`
 }
 
 type ForwardResponse_Execute struct {
-	Execute *sink.ExecuteResponse `protobuf:"bytes,13,opt,name=execute,proto3,oneof"`
+	Execute *v1.ExecuteResponse `protobuf:"bytes,13,opt,name=execute,proto3,oneof"`
 }
 
 type ForwardResponse_Query struct {
-	Query *sink.QueryResponse `protobuf:"bytes,14,opt,name=query,proto3,oneof"`
+	Query *v1.QueryResponse `protobuf:"bytes,14,opt,name=query,proto3,oneof"`
 }
 
 type ForwardResponse_Count struct {
-	Count *sink.CountResponse `protobuf:"bytes,15,opt,name=count,proto3,oneof"`
+	Count *v1.CountResponse `protobuf:"bytes,15,opt,name=count,proto3,oneof"`
 }
 
 type ForwardResponse_Scan struct {
-	Scan *sink.ScanResponse `protobuf:"bytes,16,opt,name=scan,proto3,oneof"`
+	Scan *v1.ScanResponse `protobuf:"bytes,16,opt,name=scan,proto3,oneof"`
 }
 
 func (*ForwardResponse_Read) isForwardResponse_Response() {}
@@ -425,22 +425,22 @@ func file_forward_forward_proto_rawDescGZIP() []byte {
 
 var file_forward_forward_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_forward_forward_proto_goTypes = []any{
-	(*ForwardRequest)(nil),       // 0: sink.forward.v1.ForwardRequest
-	(*ForwardResponse)(nil),      // 1: sink.forward.v1.ForwardResponse
-	(*sink.ReadRequest)(nil),     // 2: sink.v1.ReadRequest
-	(*sink.WriteRequest)(nil),    // 3: sink.v1.WriteRequest
-	(*sink.DeleteRequest)(nil),   // 4: sink.v1.DeleteRequest
-	(*sink.ExecuteRequest)(nil),  // 5: sink.v1.ExecuteRequest
-	(*sink.QueryRequest)(nil),    // 6: sink.v1.QueryRequest
-	(*sink.CountRequest)(nil),    // 7: sink.v1.CountRequest
-	(*sink.ScanRequest)(nil),     // 8: sink.v1.ScanRequest
-	(*sink.ReadResponse)(nil),    // 9: sink.v1.ReadResponse
-	(*sink.WriteResponse)(nil),   // 10: sink.v1.WriteResponse
-	(*sink.DeleteResponse)(nil),  // 11: sink.v1.DeleteResponse
-	(*sink.ExecuteResponse)(nil), // 12: sink.v1.ExecuteResponse
-	(*sink.QueryResponse)(nil),   // 13: sink.v1.QueryResponse
-	(*sink.CountResponse)(nil),   // 14: sink.v1.CountResponse
-	(*sink.ScanResponse)(nil),    // 15: sink.v1.ScanResponse
+	(*ForwardRequest)(nil),     // 0: sink.forward.v1.ForwardRequest
+	(*ForwardResponse)(nil),    // 1: sink.forward.v1.ForwardResponse
+	(*v1.ReadRequest)(nil),     // 2: sink.v1.ReadRequest
+	(*v1.WriteRequest)(nil),    // 3: sink.v1.WriteRequest
+	(*v1.DeleteRequest)(nil),   // 4: sink.v1.DeleteRequest
+	(*v1.ExecuteRequest)(nil),  // 5: sink.v1.ExecuteRequest
+	(*v1.QueryRequest)(nil),    // 6: sink.v1.QueryRequest
+	(*v1.CountRequest)(nil),    // 7: sink.v1.CountRequest
+	(*v1.ScanRequest)(nil),     // 8: sink.v1.ScanRequest
+	(*v1.ReadResponse)(nil),    // 9: sink.v1.ReadResponse
+	(*v1.WriteResponse)(nil),   // 10: sink.v1.WriteResponse
+	(*v1.DeleteResponse)(nil),  // 11: sink.v1.DeleteResponse
+	(*v1.ExecuteResponse)(nil), // 12: sink.v1.ExecuteResponse
+	(*v1.QueryResponse)(nil),   // 13: sink.v1.QueryResponse
+	(*v1.CountResponse)(nil),   // 14: sink.v1.CountResponse
+	(*v1.ScanResponse)(nil),    // 15: sink.v1.ScanResponse
 }
 var file_forward_forward_proto_depIdxs = []int32{
 	2,  // 0: sink.forward.v1.ForwardRequest.read:type_name -> sink.v1.ReadRequest

@@ -75,8 +75,15 @@ workflow SHA and `suite_ref` together in CI and release configuration.
 
 ### Protobuf changes
 
-Only regenerate protobuf files when changing the protocol or generator versions.
-Install `protoc` and the Go plugins used by the generated files:
+The public `sink.v1` schema and its generated Go package live in
+[`sink-protocol`](https://github.com/batchstream/sink-protocol). Update that
+repository first, then pin its released Go module version here and in `sink-go`.
+This repository keeps only the private Gateway-to-Engine schema in
+`proto/forward/forward.proto`; its generated code imports the public message
+types from `sink-protocol`.
+
+When changing the private forwarding protocol or generator versions, install
+`protoc` and the Go plugins used by its generated files:
 
 ```shell
 go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6
@@ -86,8 +93,9 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 make proto
 ```
 
-Include changes under `gen/sink` in the PR. CI compares the public protocol with
-the Go client, using a matching client branch when available and `main` otherwise.
+Include changes under `gen/forward` in the PR. Public API changes belong in the
+`sink-protocol` repository and should be validated against both the server and
+Go client.
 
 ## Performance qualification
 
@@ -126,7 +134,8 @@ For record-folding and returned-document boundaries, see the
 
 ## Repository layout
 
-- `proto/sink` defines the public gRPC contract.
+- `sink-protocol/proto/sink` defines the public gRPC contract; `proto/forward`
+  defines the private Gateway-to-Engine contract.
 - `internal/service` implements validation, ordering, batching, puts, and Lua
   merge retries.
 - `internal/config` decodes configuration and validates role boundaries.

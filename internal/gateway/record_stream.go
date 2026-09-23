@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
+	sink "github.com/batchstream/sink-protocol/sink/v1"
 	forward "github.com/batchstream/sink/gen/forward"
-	sink "github.com/batchstream/sink/gen/sink"
 	"github.com/batchstream/sink/internal/protocol"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"

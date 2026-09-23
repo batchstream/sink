@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/batchstream/sink-go/uri"
+	"github.com/batchstream/sink-protocol/uri"
 )
 
 // Storage applies batch-native operations. Atomicity is guaranteed per record,

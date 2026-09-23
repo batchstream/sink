@@ -7,7 +7,7 @@ import (
 
 	"github.com/batchstream/sink/internal/protocol"
 
-	sink "github.com/batchstream/sink/gen/sink"
+	sink "github.com/batchstream/sink-protocol/sink/v1"
 )
 
 var envelopeMagic = [4]byte{'S', 'N', 'K', 'Q'}

@@ -1,7 +1,7 @@
 package service
 
 import (
-	sink "github.com/batchstream/sink/gen/sink"
+	sink "github.com/batchstream/sink-protocol/sink/v1"
 	"github.com/batchstream/sink/internal/protocol"
 	"github.com/batchstream/sink/internal/storage"
 )

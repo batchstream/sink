@@ -1,8 +1,10 @@
 // Package backpressure controls Store dispatch using feedback from real work.
-// It owns no queue, background goroutine, dependency probe or retry policy.
+// Read admission has a bounded queue; no background goroutine, dependency probe
+// or retry policy is owned by the controller.
 package backpressure
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"math/rand/v2"
@@ -16,41 +18,53 @@ import (
 const DefaultMaxConcurrent = 64
 
 const (
-	startupWindow   = time.Second
-	controlInterval = 250 * time.Millisecond
-	minimumCooldown = 200 * time.Millisecond
-	maximumCooldown = 10 * time.Second
+	initialConcurrent        = 4
+	defaultMaxQueuedRequests = 10_000
+	defaultMaxQueuedBytes    = 128 << 20
+	startupWindow            = time.Second
+	controlInterval          = 250 * time.Millisecond
+	minimumCooldown          = 200 * time.Millisecond
+	maximumCooldown          = 10 * time.Second
 )
 
 // ErrBusy proves that this admission did not start backend work.
 var ErrBusy = status.Error(codes.ResourceExhausted, "Store admission is temporarily full or cooling down")
 
+// ErrQueueFull proves that read admission did not start backend work.
+var ErrQueueFull = status.Error(codes.ResourceExhausted, "Store read admission queue is full")
+
 type Options struct {
 	Store string
 	Role  string
 	// MaxConcurrent is a local resource ceiling, not an estimate of DB capacity.
-	MaxConcurrent int
+	MaxConcurrent     int
+	MaxQueuedRequests int
+	MaxQueuedBytes    int
 }
 
 type Controller struct {
-	mu          sync.Mutex
-	limit       int
-	inFlight    int
-	maximum     int
-	threshold   int
-	resumeLimit int
-	epoch       uint64
-	clean       int
-	recovered   int
-	failures    int
-	demand      bool
-	started     bool
-	resumeAt    time.Time
-	adjustAt    time.Time
-	changed     chan struct{}
-	random      *rand.Rand
-	latency     [methodCount][sizeClasses]latency
-	observed    observations
+	mu                sync.Mutex
+	limit             int
+	inFlight          int
+	maximum           int
+	threshold         int
+	resumeLimit       int
+	epoch             uint64
+	clean             int
+	recovered         int
+	failures          int
+	demand            bool
+	started           bool
+	resumeAt          time.Time
+	adjustAt          time.Time
+	changed           chan struct{}
+	random            *rand.Rand
+	latency           [methodCount][sizeClasses]latency
+	observed          observations
+	readWaiters       list.List
+	queuedBytes       int
+	maxQueuedRequests int
+	maxQueuedBytes    int
 }
 
 type latency struct {
@@ -65,6 +79,7 @@ type latency struct {
 type Permit struct {
 	controller *Controller
 	once       sync.Once
+	started    time.Time
 }
 
 type permitKey struct{}
@@ -76,10 +91,20 @@ func New(opts Options) (*Controller, error) {
 	if opts.MaxConcurrent < 1 || opts.MaxConcurrent > 4096 {
 		return nil, errors.New("store max_concurrent must be between 1 and 4096")
 	}
+	if opts.MaxQueuedRequests < 0 || opts.MaxQueuedBytes < 0 {
+		return nil, errors.New("store read admission queue limits cannot be negative")
+	}
+	if opts.MaxQueuedRequests == 0 {
+		opts.MaxQueuedRequests = defaultMaxQueuedRequests
+	}
+	if opts.MaxQueuedBytes == 0 {
+		opts.MaxQueuedBytes = defaultMaxQueuedBytes
+	}
 	c := &Controller{
-		maximum: opts.MaxConcurrent, threshold: min(16, opts.MaxConcurrent), resumeLimit: 1,
+		maximum: opts.MaxConcurrent, threshold: min(16, opts.MaxConcurrent), resumeLimit: min(initialConcurrent, opts.MaxConcurrent),
 		changed: make(chan struct{}), random: rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())),
-		observed: newObservations(opts),
+		observed:          newObservations(opts),
+		maxQueuedRequests: opts.MaxQueuedRequests, maxQueuedBytes: opts.MaxQueuedBytes,
 	}
 	return c, nil
 }
@@ -98,13 +123,17 @@ func (c *Controller) tryAcquire(now time.Time) (*Permit, <-chan struct{}, time.D
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.tryAcquireLocked(now)
+}
+
+func (c *Controller) tryAcquireLocked(now time.Time) (*Permit, <-chan struct{}, time.Duration) {
 	ready, changed, delay := c.availability(now)
 	if !ready {
 		return nil, changed, delay
 	}
 	c.inFlight++
 	c.observed.admitted++
-	permit := &Permit{controller: c}
+	permit := &Permit{controller: c, started: now}
 	return permit, nil, 0
 }
 
@@ -130,7 +159,8 @@ func (c *Controller) availability(now time.Time) (bool, <-chan struct{}, time.Du
 }
 
 // Acquire may wait only at an already bounded caller (the Kafka processing
-// loop). Engine RPCs use the existing batch queue or fail-fast Admit instead.
+// loop). Query/Count use AdmitRead; other Engine RPCs use their existing batch
+// queue or fail-fast Admit instead.
 func (c *Controller) Acquire(ctx context.Context) (*Permit, error) {
 	for {
 		if err := ctx.Err(); err != nil {
@@ -146,8 +176,9 @@ func (c *Controller) Acquire(ctx context.Context) (*Permit, error) {
 	}
 }
 
-// Wait leaves the next poll in Kafka. It reserves nothing while polling and
-// cannot prevent consumer group heartbeats or rebalance callbacks.
+// Wait observes available capacity without reserving a permit. Engine uses it
+// before serving; Worker uses it before polling so backlog stays in Kafka while
+// consumer group heartbeats and rebalance callbacks continue.
 func (c *Controller) Wait(ctx context.Context) error {
 	if c == nil {
 		return ctx.Err()
@@ -196,6 +227,7 @@ func (p *Permit) Release() {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		c.inFlight--
+		c.observed.permitDuration.Observe(max(0, time.Since(p.started).Seconds()))
 		c.signal()
 	})
 }
@@ -250,6 +282,7 @@ type sample struct {
 	size      int
 	epoch     uint64
 	saturated bool
+	emitWait  time.Duration
 }
 
 func (c *Controller) begin(method method, operations int) sample {
@@ -268,6 +301,7 @@ func (c *Controller) observeAt(started sample, duration time.Duration, result fe
 	defer c.mu.Unlock()
 	c.observed.samples[started.method][result]++
 	c.observed.seconds[started.method] += max(0, duration.Seconds())
+	c.observed.emitSeconds[started.method] += max(0, started.emitWait.Seconds())
 	// Replies from the same pre-decrease flight cannot repeatedly collapse the
 	// window, or undo the decrease with old successes.
 	if started.epoch != c.epoch || c.limit == 0 {
@@ -313,7 +347,7 @@ func (c *Controller) observeAt(started sample, duration time.Duration, result fe
 	if c.recovered == 4 {
 		c.failures = 0
 	}
-	if !started.saturated && !c.demand {
+	if !started.saturated && !c.demand && c.readWaiters.Len() == 0 {
 		return
 	}
 	c.clean++

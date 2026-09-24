@@ -228,6 +228,9 @@ func TestStreamFeedbackExcludesSlowClientAndCallbackFailures(t *testing.T) {
 			if c.limit != 8 || c.observed.seconds[kind] > 0.081 || c.latency[kind][0].baseline > float64(11*time.Millisecond) {
 				t.Fatal("slow client time leaked into backend latency")
 			}
+			if c.observed.emitSeconds[kind] != 8 {
+				t.Fatalf("slow-client time was not recorded separately: %g", c.observed.emitSeconds[kind])
+			}
 			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 			emit := func(storage.Document) error {
 				<-ctx.Done()
@@ -267,7 +270,20 @@ func TestControllerMetricsAndValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	families, err := registry.Gather()
-	if err != nil || len(families) != 8 {
+	if err != nil || len(families) != 14 {
 		t.Fatalf("invalid metrics: %d families, %v", len(families), err)
+	}
+	series := 0
+	for _, family := range families {
+		for _, metric := range family.Metric {
+			if histogram := metric.GetHistogram(); histogram != nil {
+				series += len(histogram.Bucket) + 3 // Finite buckets, +Inf, sum, count.
+			} else {
+				series++
+			}
+		}
+	}
+	if series != 136 {
+		t.Fatalf("Store collector cardinality changed: %d series", series)
 	}
 }

@@ -53,7 +53,7 @@ func (s *Server) Forward(req *forward.ForwardRequest, stream grpc.ServerStreamin
 	defer func() {
 		// Direct Native admission can reject after validation, but still before
 		// execution. Do not turn that known rejection into an unknown mutation.
-		if err == backpressure.ErrBusy {
+		if err == backpressure.ErrBusy || err == backpressure.ErrQueueFull {
 			stream.SetTrailer(metadata.Pairs(forwarding.NotStartedTrailer, "true"))
 		}
 	}()

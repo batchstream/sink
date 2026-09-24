@@ -231,6 +231,7 @@ func (s *observedNative) finishStream(started sample, at time.Time, stream *stre
 	if stream.failed || errors.Is(stream.ctx.Err(), context.Canceled) || (timeout && stream.wait > duration) {
 		result = ignored
 	}
+	started.emitWait = stream.wait
 	s.controller.observe(started, duration, result)
 }
 

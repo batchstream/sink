@@ -57,7 +57,7 @@ func (s *Server) query(ctx context.Context, req *sink.QueryRequest, send func(*s
 		}
 		return send(frame)
 	}
-	ctx, permit, err := s.admission.Admit(ctx)
+	ctx, permit, err := s.admission.AdmitRead(ctx, req.SizeVT())
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func (s *Server) Count(ctx context.Context, req *sink.CountRequest) (*sink.Count
 	if !ok {
 		return nil, nativeStatus(storage.ErrNativeUnsupported)
 	}
-	ctx, permit, err := s.admission.Admit(ctx)
+	ctx, permit, err := s.admission.AdmitRead(ctx, req.SizeVT())
 	if err != nil {
 		return nil, err
 	}

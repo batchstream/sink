@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/batchstream/sink/internal/config"
 	"github.com/batchstream/sink/internal/logging"
 	searchstorage "github.com/batchstream/sink/internal/storage/search"
 	"google.golang.org/grpc"
@@ -23,6 +24,13 @@ func (app *Application) Run(ctx context.Context) error {
 		cancel()
 		app.background.Wait()
 	}()
+	// Finish randomized Store startup before either readiness or RPCs are served.
+	// Routine saturation and subsequent cooldowns must not flap readiness.
+	if app.admission != nil && app.config.Mode == config.ModeEngine {
+		if err := app.admission.Wait(runContext); err != nil {
+			return nil
+		}
+	}
 	if app.gateway != nil {
 		app.background.Go(func() { app.gateway.Run(runContext) })
 	}

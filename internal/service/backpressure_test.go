@@ -217,8 +217,18 @@ func TestSharedStoreAdmissionPreservesOrderingAndNativeCapability(t *testing.T) 
 		}
 		command := &sink.Command{Uri: "sink://primary", Method: "GET", Path: "/_search"}
 		countRequest := &sink.CountRequest{Command: command}
-		if _, err := batching.Count(t.Context(), countRequest); err != backpressure.ErrBusy || native.calls != 0 {
-			t.Fatal("Native bypassed Store budget")
+		countContext, cancelCount := context.WithCancel(t.Context())
+		countResult := make(chan error, 1)
+		go func() { _, err := batching.Count(countContext, countRequest); countResult <- err }()
+		synctest.Wait()
+		select {
+		case err := <-countResult:
+			t.Fatalf("Count did not wait for the shared Store budget: %v", err)
+		default:
+		}
+		cancelCount()
+		if err := <-countResult; status.Code(err) != codes.Canceled || native.calls != 0 {
+			t.Fatal("canceled queued Count reached Store")
 		}
 		if permit, _, _ := controller.TryAcquire(); permit != nil {
 			permit.Release()

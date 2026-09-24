@@ -2,7 +2,8 @@
 
 Gateway/Engine/Worker scaling adds application processing capacity. Store
 backpressure independently regulates the work those processes send to the
-database. A growing request queue or Kafka lag never raises the Store window.
+database. Queue demand can request growth, but only healthy backend completions
+raise the Store window; queue growth or Kafka lag alone cannot do so.
 The controller does not consume replica counts, HPA signals, CPU, memory,
 connection counts, Ping results, or discovery information.
 
@@ -20,15 +21,15 @@ flowchart LR
     G[Gateway] --> Q[Engine bounded method queues]
     Q -->|TryAcquire before dequeue| C[Local Store controller]
     K[Kafka backlog] -->|Wait before poll; Acquire before attempt| C
-    N[Native request] -->|Admit or reject before execution| C
+    R[Query / Count] -->|Bounded FIFO; caller context only| C
+    N[Execute / Scan] -->|Admit or reject before execution| C
     C --> E[Sequential admitted execution]
     E --> O[Storage observation decorator]
     O --> S[Storage / NativeStorage]
     O -->|Real results and execution latency| C
 ```
 
-There is no new work queue and no goroutine in the controller. Engine's three
-existing dispatch loops select dependency-ready work, then try admission **before**
+Engine's three existing batch dispatch loops select dependency-ready work, then try admission **before**
 releasing queue bytes/operations, recording active records, or launching execution.
 When blocked, they continue handling arrivals, cancellation, record completions and
 shutdown while waiting for a capacity notification or a cooldown timer. Pending
@@ -45,9 +46,25 @@ avoids moving a bounded queue into unbounded semaphore waiters, and avoids
 deadlocking a Merge which already owns its execution slot.
 
 Read, Write, Delete, Execute, Query, Count and Scan share the same controller.
-Native methods have no existing bounded waiting queue: they fail admission
-immediately when the window is occupied or paused. Engine marks this specific
-rejection `sink-forward-not-started`; a backend error with the same gRPC code
+Query and Count share a bounded admission FIFO. A full execution window or an
+overload cooldown leaves those requests waiting rather than rejecting a healthy
+burst. `batching.queue.max_operations` bounds waiting requests (one command per
+request), and `batching.queue.max_bytes` bounds retained encoded request bytes.
+These are the same configured limits as the batch queues, not a second queue on
+top of an existing Read/Write/Delete queue. Only the head competes for a Store
+permit; no goroutine is spawned by admission. Query/Count are FIFO with respect
+to each other, not globally ordered with the independent batch dispatch loops.
+
+There is **no new server-side admission timeout**. A caller with no deadline can
+wait until capacity is available or its context is canceled. A caller deadline
+is propagated unchanged, and cancellation removes queue charges without entering
+the backend. Only a full waiting queue rejects with `RESOURCE_EXHAUSTED`.
+Encoded bytes are a bounded accounting unit, not an exact Go heap estimate;
+process memory admission and gRPC message limits remain independent safeguards.
+Admission waiting never shortens the lifetime of an already executing permit.
+
+Execute and Scan keep their fail-fast admission semantics. Engine marks a Store
+admission or read-queue rejection `sink-forward-not-started`; a backend error with the same gRPC code
 does not receive that evidence. Async publication bypasses Store admission;
 Kafka producer bounds still apply, and Worker controls the later application.
 
@@ -62,14 +79,16 @@ mutation waves sequentially; this feature does not add parallel poll processing.
 
 ## Window algorithm
 
-The algorithm has a fixed-size state and one short mutex-protected update per
-Store observation. It starts on the first admission demand, so constructing an
-idle process early cannot defeat startup staggering.
+The window algorithm has fixed-size feedback state and one short mutex-protected
+update per Store observation, alongside the bounded Query/Count FIFO. Engine
+actively completes randomized initialization in `Run` **before serving readiness
+or RPCs**, without issuing a synthetic database request. Worker retains its
+first-poll initialization. Subsequent saturation or cooldown does not flap readiness.
 
 | Event | Behavior |
 | --- | --- |
-| First demand | Window zero for a random 0.5–1.5 seconds, then one execution |
-| Healthy, saturated work | Grow only after at least `max(4, window)` healthy samples and a jittered 125–375 ms control interval |
+| Initialization | Stagger for a random 0.5–1.5 seconds, then open `min(4, maximum)` executions before Engine readiness |
+| Healthy demand | Saturation or queued Query/Count requests request growth; require at least `max(4, window)` healthy samples and a jittered 125–375 ms control interval |
 | Initial growth | Add `max(1, window/2)` below a slow-start threshold of 16 |
 | After congestion | Threshold becomes half the previous window; subsequent growth is additive by one |
 | Sustained latency inflation | Halve the window, retaining at least one execution so successful work continues and the baseline can adapt |
@@ -190,6 +209,13 @@ A seeded discrete-event simulation runs 1, 8 and 100 independent controllers
 against a shared backend with capacity 8 → 2 → 8, checking recovery, bounded
 overload traffic, startup staggering and progress across instances. It is a
 repeatable algorithm regression, not a production throughput benchmark.
+The initial window of four retains this startup-overshoot gate: an eight-slot
+initial window failed the 100-instance regression. Healthy burst tests also
+require progress without rejection, rather than treating a tiny initial window
+as sufficient protection. Deterministic virtual-time tests hold a caller for an
+hour without a server-added deadline, cancel the head/middle/tail of the FIFO,
+exercise byte/count bounds and cooldown, and verify exact permit/queue cleanup.
+Race tests concurrently release permits, cancel callers and collect metrics.
 Kafka component tests use an in-process broker to verify that paused intake
 does not spend processing timeout, report unhealthy, advance offsets, or produce
 dead letters; another test verifies a real processor's overload/cooldown retry.

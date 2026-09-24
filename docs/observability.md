@@ -6,6 +6,18 @@ For default warn-level diagnostic logs and optional OTLP export, see the
 Gateway has its own forwarding metrics and process readiness. Engine keeps the
 existing execution metrics; Worker keeps its Kafka metrics. See the
 [role-specific scaling and health contract](store-isolation.md#readiness-metrics-and-scaling).
+Gateway request volume is independent of response status. Its error counter
+includes only Gateway-originated failures; Engine RPC failures are recorded by
+Engine and are not attributed to Gateway when forwarded to clients. The
+`sink_gateway_requests_total` label change removes the former `code` label.
+Engine supplies a bounded private trailer fingerprinting its exact error status.
+Gateway excludes an error only when that trailer matches the received status,
+including its details. Local dial/send/receive failures and response-size limits
+that fail the public RPC remain visible in Gateway error metrics.
+This marker does not change the public status, error details, or mutation
+acceptance/retry semantics. During mixed-version
+rollouts, errors from older Engines without the marker are conservatively counted
+by Gateway until those Engines are upgraded.
 
 Every role serves `/livez` and `/readyz` on its dedicated health listener,
 configured by `health.address` (default `:8081`). Prometheus is independent: set
@@ -28,7 +40,9 @@ Sink metrics:
 | Metric | Type | Labels | Meaning |
 | --- | --- | --- | --- |
 | `sink_build_info` | gauge | `version` | Build identity for the running Sink binary. |
-| `sink_grpc_server_requests_total` | counter | `store`, `method`, `code` | Completed Sink gRPC requests by method and canonical gRPC status code. |
+| `sink_gateway_requests_total` | counter | `method` | Completed public RPCs regardless of downstream outcome. |
+| `sink_gateway_errors_total` | counter | `method`, `code` | Non-OK public gRPC statuses originating in Gateway, excluding Engine RPC failures. |
+| `sink_grpc_server_requests_total` | counter | `store`, `method`, `code` | Completed Sink requests owned by this process; Engine records its private Forward status under the public method and canonical gRPC status code. |
 | `sink_grpc_server_request_duration_seconds` | histogram | `store`, `method` | End-to-end Sink gRPC request latency. |
 | `sink_grpc_server_operation_results_total` | counter | `store`, `method`, `status` | Per-operation batch results and native Execute `succeeded`/`failed` outcomes, including database errors delivered over gRPC OK. |
 | `sink_batcher_batches_total` | counter | `store`, `method`, `reason` | Synchronous batches dispatched by flush reason. |

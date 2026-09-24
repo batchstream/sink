@@ -39,5 +39,9 @@ func TestEngineDistinguishesAdmissionFromUnknownNativeOutcome(t *testing.T) {
 		if err != failure || (len(marker) == 1) != (failure == backpressure.ErrBusy) || stream.response != nil {
 			t.Fatalf("unknown outcome or admission evidence changed: error=%v marker=%v", err, marker)
 		}
+		origin := stream.trailer.Get(forwarding.ErrorStatusTrailer)
+		if len(origin) != 1 || origin[0] != forwarding.ErrorStatusMarker(failure) {
+			t.Fatal("Engine error omitted exact ownership evidence")
+		}
 	}
 }

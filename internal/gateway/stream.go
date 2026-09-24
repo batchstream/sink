@@ -17,6 +17,13 @@ type forwardCall struct {
 	emit    func(*forward.ForwardResponse) error
 }
 
+// downstreamError preserves the Engine RPC status without attributing it to Gateway.
+type downstreamError struct{ cause error }
+
+func (e *downstreamError) Error() string              { return e.cause.Error() }
+func (e *downstreamError) Unwrap() error              { return e.cause }
+func (e *downstreamError) GRPCStatus() *status.Status { return status.Convert(e.cause) }
+
 // forwardEach reads the next result only after the public send completes. The
 // transport therefore supplies backpressure without an intermediate queue.
 func (s *Server) forwardEach(ctx context.Context, call forwardCall) (bool, error) {
@@ -54,6 +61,11 @@ func (s *Server) forwardEach(ctx context.Context, call forwardCall) (bool, error
 			}
 			if err == io.EOF {
 				return false, nil
+			}
+			engineStatus := stream.Trailer().Get(forwarding.ErrorStatusTrailer)
+			if len(engineStatus) == 1 && engineStatus[0] != "" && engineStatus[0] == forwarding.ErrorStatusMarker(err) {
+				downstream := &downstreamError{cause: err}
+				return notStarted, downstream
 			}
 			return notStarted, err
 		}

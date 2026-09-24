@@ -356,7 +356,7 @@ func queueCompletionCall[Request interface{ SizeVT() int }, Response any](t *tes
 	call.records = batcher.records(call.request)
 	call.partition = batcher.partition(call.request)
 	call.enqueuedAt = time.Now()
-	if err := batcher.reserve(call.operationCount, call.encodedBytes); err != nil {
+	if err := batcher.reserve(call); err != nil {
 		t.Fatal(err)
 	}
 	// Submit reserves queue capacity before sending to input. Observing that

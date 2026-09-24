@@ -61,7 +61,7 @@ func (s *Server) read(ctx context.Context, req *sink.ReadRequest, budgets *respo
 	if len(storageOperations) == 0 {
 		return response, nil
 	}
-	ctx, permit, err := s.admission.Admit(ctx)
+	ctx, permit, err := s.admission.Admit(ctx, req.SizeVT())
 	if err != nil {
 		return nil, err
 	}

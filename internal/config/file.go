@@ -41,7 +41,13 @@ type requestFile struct {
 }
 
 type executionFile struct {
-	Merge mergeFile `yaml:"merge"`
+	Merge mergeFile           `yaml:"merge"`
+	Queue *admissionQueueFile `yaml:"queue"`
+}
+
+type admissionQueueFile struct {
+	MaxTasks *int      `yaml:"max_tasks"`
+	MaxBytes *byteSize `yaml:"max_bytes"`
 }
 
 // Store files contain identity and backend policy shared by Engine and Worker.

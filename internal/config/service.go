@@ -34,6 +34,18 @@ func resolveService(file configFile, grpc GRPC, v *validator) Service {
 			batching = &batchingFile{}
 		}
 		loaded.Batching = resolveBatching(*batching, grpc, v)
+		queue := execution.Queue
+		if queue == nil {
+			queue = &admissionQueueFile{}
+		}
+		loaded.Admission.MaxTasks = v.integer("execution.queue.max_tasks", queue.MaxTasks, 10_000)
+		minimumBytes := max(grpc.MaxReceiveMessageBytes, loaded.Batching.MaxBytes)
+		loaded.Admission.MaxBytes = v.bytes("execution.queue.max_bytes", queue.MaxBytes, max(128<<20, minimumBytes), math.MaxInt)
+		if loaded.Admission.MaxBytes < minimumBytes {
+			v.reject(errors.New("execution.queue.max_bytes must cover one gRPC request and one batch"))
+		}
+	} else if execution.Queue != nil {
+		v.reject(errors.New("execution.queue is only valid for engine mode"))
 	}
 	return loaded
 }

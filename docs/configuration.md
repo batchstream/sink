@@ -113,7 +113,8 @@ SDK examples, connection discovery, replica changes and deployment boundaries.
 ## Synchronous request batching
 
 `batching` sets the collection targets and the per-method
-`queue` limits. Batching is always active. See [batching behavior](batching.md)
+`queue` limits. `execution.queue` sets ready-task capacity and shared waiting
+bytes independently. Batching is always active. See [batching behavior](batching.md)
 for queue admission, ordering, execution budgets, and completion boundaries.
 
 ## Prometheus metrics
@@ -150,12 +151,14 @@ use the lowercase spelling shown below. Storage names are also case-sensitive.
 | `storage.search.api_key` | string | No | empty | Any API key accepted by the search service | API key used instead of basic authentication. |
 | `request.max_operations` | positive integer | No | `1000` | Integer greater than `0` | Maximum operation count accepted in one Read, Write, or Delete batch request. |
 | `max_concurrent` | positive integer | No | `64` for MongoDB; `128` for Elasticsearch/OpenSearch | Integer from `1` through `4096` | Optional adaptive-window ceiling per Engine/Worker process for this Store. Not a backend capacity estimate or replica-based quota. |
+| `execution.queue.max_tasks` | positive integer | No | `10000` | Integer greater than `0`; Engine only | Maximum ready tasks in the single Store admission FIFO. A collected batch is one task, not one task per operation. |
+| `execution.queue.max_bytes` | byte size | No | max(`128MiB`, `grpc.max_receive_message_bytes`, `batching.max_bytes`) | Covers one legal gRPC request and one batch; Engine only | Shared encoded waiting bytes across all collection queues and Native/batch admission tasks, charged once. Waiting ends only with execution capacity or caller cancellation/deadline. |
 | `execution.merge.max_attempts` | positive integer | No | `3` | Integer greater than `0` | Maximum revision-conflict attempts for Merge and folded conditional Put chains. |
 | `batching.max_wait` | duration string | No | `2ms` | Positive Go duration within the bounds below | Maximum collection delay measured from the first request in a batch. |
 | `batching.max_operations` | positive integer | No | `32` | Positive integer | Operation target for one automatically formed batch; a larger valid RPC still executes alone. See [choosing limits](batching.md#choosing-limits). |
 | `batching.max_bytes` | byte size | No | `16MiB` | Size greater than `0B` | Encoded-byte target for one automatically formed batch; one larger valid RPC still runs alone. |
-| `batching.queue.max_operations` | positive integer | No | max(`10000`, `batching.max_operations`) | Integer at least `batching.max_operations` | Maximum operations waiting in each batch-method queue; also the request count bound for the shared Query/Count admission FIFO. |
-| `batching.queue.max_bytes` | byte size | No | max(`128MiB`, `grpc.max_receive_message_bytes`) | Size at least `grpc.max_receive_message_bytes` and `batching.max_bytes` | Maximum encoded request bytes waiting in each batch-method queue and in the separate Query/Count admission FIFO. Query/Count waiting ends only with capacity or caller-context cancellation/deadline, not a server-added timeout. |
+| `batching.queue.max_operations` | positive integer | No | max(`10000`, `batching.max_operations`) | Integer at least `batching.max_operations` | Maximum operations waiting in each batch-method collection queue. Not an admission task limit or concurrency estimate. |
+| `batching.queue.max_bytes` | byte size | No | max(`128MiB`, `grpc.max_receive_message_bytes`) | Size at least `grpc.max_receive_message_bytes` and `batching.max_bytes` | Maximum encoded request bytes retained by each batch-method collection queue, including its selected admission candidate. The Store-wide execution.queue.max_bytes budget also applies. |
 | `execution.merge.lua.timeout` | duration string | No | `100ms` | Positive Go duration within the bounds below | Maximum wall-clock duration of one Lua execution. |
 | `execution.merge.lua.max_source_bytes` | byte size | No | `64KiB` | Size greater than `0B` | Maximum Lua source size per merge operation. |
 | `execution.merge.lua.max_result_bytes` | byte size | No | `16MiB` | Size greater than `0B` | Maximum input/current document and encoded result bytes; expanded output is also bounded before conversion. |
@@ -224,7 +227,9 @@ available ceiling. This catches undersized configurations; it does not guarantee
 against OOM under concurrent load. See the [sizing formula and runtime behavior](design/process-memory-admission.md)
 and [memory metrics and KEDA](observability.md#memory-capacity-and-keda).
 
-Use `memory` for process pressure and `batching.queue` for Engine waiting queues.
+Use `memory` for process pressure, `batching.queue` for per-method collection
+bounds, and `execution.queue` for ready-task capacity and shared waiting bytes.
+Do not derive task limits or execution concurrency from operation counts.
 
 Store admission is shared across Read/Write/Delete/Native operations. It counts
 admitted Storage executions; adapter group fanout remains unchanged. Sink sets

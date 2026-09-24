@@ -23,7 +23,7 @@ type readAdmissionResult struct {
 
 func readController(t *testing.T, maximum, requests, bytes int) *Controller {
 	t.Helper()
-	opts := Options{Store: "primary", Role: "engine", MaxConcurrent: maximum, MaxQueuedRequests: requests, MaxQueuedBytes: bytes}
+	opts := Options{Store: "primary", Role: "engine", MaxConcurrent: maximum, MaxQueuedTasks: requests, MaxQueuedBytes: bytes}
 	c, err := New(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +31,7 @@ func readController(t *testing.T, maximum, requests, bytes int) *Controller {
 	return c
 }
 
-func TestReadAdmissionFIFOAndCancellationReleaseEveryQueuePosition(t *testing.T) {
+func TestAdmissionFIFOAndCancellationReleaseEveryQueuePosition(t *testing.T) {
 	for _, canceled := range []int{0, 1, 2} {
 		t.Run(strconv.Itoa(canceled), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -48,18 +48,18 @@ func TestReadAdmissionFIFOAndCancellationReleaseEveryQueuePosition(t *testing.T)
 					cancels = append(cancels, cancel)
 					defer cancel()
 					go func() {
-						admitted, permit, err := c.AdmitRead(ctx, 16)
+						admitted, permit, err := c.Admit(ctx, 16)
 						result := readAdmissionResult{index: index, ctx: admitted, permit: permit, err: err}
 						results <- result
 					}()
 					synctest.Wait()
 				}
-				if c.readWaiters.Len() != 3 || c.queuedBytes != 48 {
-					t.Fatalf("queue is not bounded/accounted: requests=%d bytes=%d", c.readWaiters.Len(), c.queuedBytes)
+				if c.waiters.Len() != 3 || c.queuedBytes != 48 {
+					t.Fatalf("queue is not bounded/accounted: requests=%d bytes=%d", c.waiters.Len(), c.queuedBytes)
 				}
 				goroutines := runtime.NumGoroutine()
 				for range 1000 {
-					_, permit, err := c.AdmitRead(t.Context(), 1)
+					_, permit, err := c.Admit(t.Context(), 1)
 					if permit != nil || err != ErrQueueFull {
 						t.Fatalf("full queue: permit=%v error=%v", permit, err)
 					}
@@ -73,7 +73,7 @@ func TestReadAdmissionFIFOAndCancellationReleaseEveryQueuePosition(t *testing.T)
 				if result.index != canceled || status.Code(result.err) != codes.Canceled || result.permit != nil {
 					t.Fatalf("cancellation changed: %+v", result)
 				}
-				if c.readWaiters.Len() != 2 || c.queuedBytes != 32 || c.inFlight != 1 {
+				if c.waiters.Len() != 2 || c.queuedBytes != 32 || c.inFlight != 1 {
 					t.Fatal("cancellation leaked queue capacity or revoked active work")
 				}
 				held.Release()
@@ -88,7 +88,7 @@ func TestReadAdmissionFIFOAndCancellationReleaseEveryQueuePosition(t *testing.T)
 					result.permit.Release()
 				}
 				synctest.Wait()
-				if c.readWaiters.Len() != 0 || c.queuedBytes != 0 || c.inFlight != 0 || c.observed.queueCanceled != 1 || c.observed.queueAdmitted != 2 {
+				if c.waiters.Len() != 0 || c.queuedBytes != 0 || c.inFlight != 0 || c.observed.queueCanceled != 1 || c.observed.queueAdmitted != 2 {
 					t.Fatal("completed queue leaked state")
 				}
 			})
@@ -96,7 +96,7 @@ func TestReadAdmissionFIFOAndCancellationReleaseEveryQueuePosition(t *testing.T)
 	}
 }
 
-func TestReadAdmissionByteLimitAndCapacityReuse(t *testing.T) {
+func TestAdmissionByteLimitAndCapacityReuse(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := readController(t, 1, 10, 32)
 		held, err := c.Acquire(t.Context())
@@ -107,11 +107,11 @@ func TestReadAdmissionByteLimitAndCapacityReuse(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		result := make(chan error, 1)
-		go func() { _, permit, err := c.AdmitRead(ctx, 32); permit.Release(); result <- err }()
+		go func() { _, permit, err := c.Admit(ctx, 32); permit.Release(); result <- err }()
 		synctest.Wait()
 		for _, bytes := range []int{1, 33, int(^uint(0) >> 1)} {
-			_, permit, err := c.AdmitRead(t.Context(), bytes)
-			if err != ErrQueueFull || permit != nil || c.queuedBytes != 32 || c.readWaiters.Len() != 1 {
+			_, permit, err := c.Admit(t.Context(), bytes)
+			if err != ErrQueueFull || permit != nil || c.queuedBytes != 32 || c.waiters.Len() != 1 {
 				t.Fatalf("encoded-byte bound failed for %d: %v", bytes, err)
 			}
 		}
@@ -120,19 +120,19 @@ func TestReadAdmissionByteLimitAndCapacityReuse(t *testing.T) {
 			t.Fatal(err)
 		}
 		held.Release()
-		_, permit, err := c.AdmitRead(t.Context(), 32)
+		_, permit, err := c.Admit(t.Context(), 32)
 		if err != nil {
 			t.Fatal(err)
 		}
 		permit.Release()
 		permit.Release()
-		if c.queuedBytes != 0 || c.readWaiters.Len() != 0 || c.inFlight != 0 {
+		if c.queuedBytes != 0 || c.waiters.Len() != 0 || c.inFlight != 0 {
 			t.Fatal("byte reservations or permits leaked")
 		}
 	})
 }
 
-func TestReadAdmissionPreservesContextAndOnlyCallerEndsWaiting(t *testing.T) {
+func TestAdmissionPreservesContextAndOnlyCallerEndsWaiting(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := readController(t, 1, 4, 64)
 		held, err := c.Acquire(t.Context())
@@ -147,7 +147,7 @@ func TestReadAdmissionPreservesContextAndOnlyCallerEndsWaiting(t *testing.T) {
 		wantDeadline, _ := ctx.Deadline()
 		result := make(chan readAdmissionResult, 1)
 		go func() {
-			admitted, permit, err := c.AdmitRead(ctx, 16)
+			admitted, permit, err := c.Admit(ctx, 16)
 			value := readAdmissionResult{ctx: admitted, permit: permit, err: err}
 			result <- value
 		}()
@@ -174,8 +174,8 @@ func TestReadAdmissionPreservesContextAndOnlyCallerEndsWaiting(t *testing.T) {
 		defer held.Release()
 		short, shortCancel := context.WithDeadline(t.Context(), time.Now().Add(time.Minute))
 		defer shortCancel()
-		_, permit, err := c.AdmitRead(short, 16)
-		if status.Code(err) != codes.DeadlineExceeded || permit != nil || c.readWaiters.Len() != 0 || c.queuedBytes != 0 {
+		_, permit, err := c.Admit(short, 16)
+		if status.Code(err) != codes.DeadlineExceeded || permit != nil || c.waiters.Len() != 0 || c.queuedBytes != 0 {
 			t.Fatalf("caller deadline did not release queue: %v", err)
 		}
 	})
@@ -193,7 +193,7 @@ func TestQueuedHealthyReadsGrowWithoutRejectingRequests(t *testing.T) {
 		active, peak := 0, 0
 		for range 512 {
 			go func() {
-				_, permit, err := c.AdmitRead(t.Context(), 16)
+				_, permit, err := c.Admit(t.Context(), 16)
 				if err != nil {
 					results <- err
 					return
@@ -218,13 +218,13 @@ func TestQueuedHealthyReadsGrowWithoutRejectingRequests(t *testing.T) {
 			}
 		}
 		synctest.Wait()
-		if peak < 3 || peak > 16 || active != 0 || c.observed.increases == 0 || c.observed.rejected != 0 || c.readWaiters.Len() != 0 || c.queuedBytes != 0 || c.inFlight != 0 {
+		if peak < 3 || peak > 16 || active != 0 || c.observed.increases == 0 || c.observed.rejected != 0 || c.waiters.Len() != 0 || c.queuedBytes != 0 || c.inFlight != 0 {
 			t.Fatalf("healthy demand did not grow safely: peak=%d increases=%d rejected=%d", peak, c.observed.increases, c.observed.rejected)
 		}
 	})
 }
 
-func TestReadAdmissionWaitsThroughCooldownWithoutRevokingActiveWork(t *testing.T) {
+func TestAdmissionWaitsThroughCooldownWithoutRevokingActiveWork(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := readController(t, 4, 2, 32)
 		held, err := c.Acquire(t.Context())
@@ -237,12 +237,12 @@ func TestReadAdmissionWaitsThroughCooldownWithoutRevokingActiveWork(t *testing.T
 		resume := c.resumeAt
 		result := make(chan readAdmissionResult, 1)
 		go func() {
-			ctx, permit, err := c.AdmitRead(t.Context(), 16)
+			ctx, permit, err := c.Admit(t.Context(), 16)
 			value := readAdmissionResult{ctx: ctx, permit: permit, err: err}
 			result <- value
 		}()
 		synctest.Wait()
-		if c.limit != 0 || c.inFlight != 1 || c.readWaiters.Len() != 1 {
+		if c.limit != 0 || c.inFlight != 1 || c.waiters.Len() != 1 {
 			t.Fatal("cooldown revoked admitted work or let waiting work bypass")
 		}
 		time.Sleep(time.Until(resume) / 2)
@@ -260,26 +260,26 @@ func TestReadAdmissionWaitsThroughCooldownWithoutRevokingActiveWork(t *testing.T
 	})
 }
 
-func TestReadAdmissionValidationNilAndReusedPermit(t *testing.T) {
+func TestAdmissionValidationNilAndReusedPermit(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		for _, opts := range []Options{{MaxQueuedRequests: -1}, {MaxQueuedBytes: -1}} {
+		for _, opts := range []Options{{MaxQueuedTasks: -1}, {MaxQueuedBytes: -1}} {
 			if _, err := New(opts); err == nil {
 				t.Fatal("negative queue limit accepted")
 			}
 		}
 		c := readController(t, 1, 1, 16)
-		_, permit, err := c.AdmitRead(t.Context(), -1)
+		_, permit, err := c.Admit(t.Context(), -1)
 		if status.Code(err) != codes.InvalidArgument || permit != nil {
 			t.Fatal("negative encoded size accepted")
 		}
 		canceled, cancel := context.WithCancel(t.Context())
 		cancel()
-		_, permit, err = c.AdmitRead(canceled, 1)
+		_, permit, err = c.Admit(canceled, 1)
 		if status.Code(err) != codes.Canceled || permit != nil || c.observed.admitted != 0 {
 			t.Fatal("already canceled request was admitted")
 		}
 		var absent *Controller
-		admitted, permit, err := absent.AdmitRead(t.Context(), 1)
+		admitted, permit, err := absent.Admit(t.Context(), 1)
 		if err != nil || permit != nil || admitted != t.Context() {
 			t.Fatal("nil admission changed component behavior")
 		}
@@ -289,14 +289,14 @@ func TestReadAdmissionValidationNilAndReusedPermit(t *testing.T) {
 		}
 		defer held.Release()
 		ctx := held.Context(t.Context())
-		admitted, permit, err = c.AdmitRead(ctx, 1)
-		if err != nil || permit != nil || admitted != ctx || c.inFlight != 1 || c.readWaiters.Len() != 0 {
+		admitted, permit, err = c.Admit(ctx, 1)
+		if err != nil || permit != nil || admitted != ctx || c.inFlight != 1 || c.waiters.Len() != 0 {
 			t.Fatal("nested admission deadlocked or double-counted an existing permit")
 		}
 	})
 }
 
-func TestReadAdmissionMetricsSeparateWaitingAndPermitHold(t *testing.T) {
+func TestAdmissionMetricsSeparateWaitingAndPermitHold(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c := readController(t, 1, 1, 16)
 		held, err := c.Acquire(t.Context())
@@ -310,7 +310,7 @@ func TestReadAdmissionMetricsSeparateWaitingAndPermitHold(t *testing.T) {
 		}
 		result := make(chan *Permit, 1)
 		go func() {
-			_, permit, err := c.AdmitRead(t.Context(), 16)
+			_, permit, err := c.Admit(t.Context(), 16)
 			if err != nil {
 				t.Error(err)
 			}
@@ -323,7 +323,7 @@ func TestReadAdmissionMetricsSeparateWaitingAndPermitHold(t *testing.T) {
 		}
 		for _, family := range families {
 			switch family.GetName() {
-			case "sink_store_admission_queued_requests":
+			case "sink_store_admission_queued_tasks":
 				if family.Metric[0].GetGauge().GetValue() != 1 {
 					t.Fatal("missing waiting request gauge")
 				}
@@ -362,7 +362,7 @@ func TestReadAdmissionMetricsSeparateWaitingAndPermitHold(t *testing.T) {
 	})
 }
 
-func TestReadAdmissionCancelReleaseContentionDoesNotLeak(t *testing.T) {
+func TestAdmissionCancelReleaseContentionDoesNotLeak(t *testing.T) {
 	c := readController(t, 4, 256, 4096)
 	if err := c.Wait(t.Context()); err != nil {
 		t.Fatal(err)
@@ -377,7 +377,7 @@ func TestReadAdmissionCancelReleaseContentionDoesNotLeak(t *testing.T) {
 				} else if (index+iteration)%3 == 1 {
 					go cancel()
 				}
-				_, permit, err := c.AdmitRead(ctx, 16)
+				_, permit, err := c.Admit(ctx, 16)
 				if err != nil && status.Code(err) != codes.Canceled {
 					t.Errorf("bounded contention lost a request: %v", err)
 				}
@@ -387,7 +387,7 @@ func TestReadAdmissionCancelReleaseContentionDoesNotLeak(t *testing.T) {
 		})
 	}
 	workers.Wait()
-	if c.inFlight != 0 || c.readWaiters.Len() != 0 || c.queuedBytes != 0 {
-		t.Fatalf("race leaked admission: active=%d queued=%d bytes=%d", c.inFlight, c.readWaiters.Len(), c.queuedBytes)
+	if c.inFlight != 0 || c.waiters.Len() != 0 || c.queuedBytes != 0 {
+		t.Fatalf("race leaked admission: active=%d queued=%d bytes=%d", c.inFlight, c.waiters.Len(), c.queuedBytes)
 	}
 }

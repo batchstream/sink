@@ -82,8 +82,8 @@ func New(ctx context.Context, opts Options) (*Application, error) {
 	}()
 	admissionOptions := backpressure.Options{
 		Store: loaded.Storage.Name, Role: string(loaded.Mode), MaxConcurrent: loaded.Service.StoreMaxConcurrent,
-		MaxQueuedRequests: loaded.Service.Batching.Queue.MaxOperations,
-		MaxQueuedBytes:    loaded.Service.Batching.Queue.MaxBytes,
+		MaxQueuedTasks: loaded.Service.Admission.MaxTasks,
+		MaxQueuedBytes: loaded.Service.Admission.MaxBytes,
 	}
 	app.admission, err = backpressure.New(admissionOptions)
 	if err != nil {

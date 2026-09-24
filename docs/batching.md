@@ -6,10 +6,11 @@ is always active; every single-store `Read` uses this path. `Write` and
 `Delete` use it for `WAIT_UNTIL_APPLIED` and `WAIT_UNTIL_VISIBLE`;
 `RETURN_AFTER_ACCEPTED` bypasses it because Kafka already batches asynchronous
 mutations. Read, write, and delete have independent queues within each store.
-Record dependencies stay method-local; Store admission is shared across all
-methods. A congested Store pauses subsequent dispatch for that Store.
+Record dependencies stay method-local. Ready batches and all Native calls enter
+one FIFO before obtaining Store execution permits. A congested Store pauses subsequent dispatch for that Store.
 
-`batching` configures batch and queue limits; batching is always active.
+`batching` configures formation targets and collection bounds; batching is always
+active. `execution.queue` separately bounds ready tasks and shared waiting bytes.
 
 The first queued request starts `batching.max_wait`.
 Collection stops when that timer expires or adding another request would cross
@@ -50,7 +51,11 @@ bound Store and never bypasses that check through the batching layer. Independen
 Store groups follow the bounded-fanout policy in the [runtime guide](store-isolation.md).
 
 Read, Write and Delete each have one bounded queue in an Engine process. Queue
-operation and byte limits apply per method; the process has three such queues.
+operation and byte limits apply per method; the process has three such collection
+queues. Each retains at most one ready batch in the shared admission FIFO without
+blocking its event loop. If that FIFO is full, already accepted work stays
+upstream. `execution.queue.max_bytes` counts waiting bytes across both stages
+once, while `execution.queue.max_tasks` counts ready tasks, not operations.
 Other Stores run in separate Engine processes. A
 new single-store request that would cross its queue's limit fails with gRPC
 `RESOURCE_EXHAUSTED` and is not applied. Requests canceled before dispatch are

@@ -95,7 +95,9 @@ batches. Automatic mutation batches also share adapter resource and completion
 mode, limiting refresh waits to their own dataset. Completed write document
 chains release their scheduling dependencies; each original RPC returns when
 all of its results are final. MongoDB can use collection-level bulk operations, and Elasticsearch or
-OpenSearch can use `_mget` and `_bulk`. Queue limits and adaptive Store admission constrain dispatched work. A shared
+OpenSearch can use `_mget` and `_bulk`. Ready batches and Native calls share one bounded FIFO; queue limits and adaptive
+Store admission constrain dispatched work. Encoded waiting bytes remain charged
+once across batch collection and admission, while a batch counts as one ready task. A shared
 local window covers record and Native methods; its feedback comes only from real
 Store operations. See [Store backpressure](design/store-backpressure.md).
 

@@ -191,19 +191,23 @@ and memory measurements do not feed these metrics or the congestion algorithm.
 | `sink_store_feedback_total` | counter | `method`, `signal=healthy,congested,ignored`; one sample per Store call |
 | `sink_store_backend_duration_seconds_total` | counter | `method`; elapsed Store time excluding admission and downstream Emit waiting |
 | `sink_store_latency_baseline_seconds` | gauge | `method`, `batch_size=1,2_32,33_128,129_plus`; zero before learning |
-| `sink_store_admission_queued_requests` | gauge | Query/Count callers waiting for a Store permit |
-| `sink_store_admission_queued_bytes` | gauge | Encoded Query/Count request bytes retained while waiting |
-| `sink_store_admission_waits_total` | counter | `outcome=admitted,canceled,rejected`; bounded read-queue outcomes |
-| `sink_store_admission_queue_duration_seconds` | histogram | `outcome=admitted,canceled`; caller-controlled read admission wait, not backend time |
+| `sink_store_admission_queued_tasks` | gauge | Ready batches and individual Native calls waiting for a Store permit; one batch is one task |
+| `sink_store_admission_queued_bytes` | gauge | Encoded request bytes in ready tasks; a subset of `sink_store_buffered_bytes` |
+| `sink_store_buffered_bytes` | gauge | Shared encoded waiting bytes across collection and admission, counted once; do not add method-queue bytes to this gauge |
+| `sink_store_admission_waits_total` | counter | `outcome=admitted,canceled,rejected`; bounded task-queue outcomes; upstream handoff retries are not rejections |
+| `sink_store_admission_queue_duration_seconds` | histogram | `outcome=admitted,canceled`; task admission wait, not collection delay or backend time |
 | `sink_store_permit_hold_duration_seconds` | histogram | Execution permit lifetime, including retries/cursor sends but excluding admission wait |
 | `sink_store_emit_wait_duration_seconds_total` | counter | `method`; downstream Query/Scan callback time excluded from backend feedback |
 
 Methods are the fixed set `read`, `write`, `write_visible`, `delete`,
 `delete_visible`, `execute`, `query`, `count`, `scan`. Opaque Execute commands
 use success/error feedback only, so their latency baseline remains zero.
-The collector creates **136 series per process**, independent of request paths,
+The collector creates **137 series per process**, independent of request paths,
 document identities, query text, and error messages. Deployment/target labels
 and historical Pod churn remain outside that count.
+
+Batch request queue duration includes both collection and admission; do not add
+the admission histogram to it as though they were disjoint stages.
 
 Compare backend execution time with `sink_batcher_request_queue_duration_seconds`
 and `sink_store_admission_queue_duration_seconds` to distinguish backend slowdown

@@ -1,6 +1,6 @@
 // Package backpressure controls Store dispatch using feedback from real work.
-// Read admission has a bounded queue; no background goroutine, dependency probe
-// or retry policy is owned by the controller.
+// All ready Store executions share one bounded FIFO. The controller owns no
+// background goroutine, dependency probe or retry policy.
 package backpressure
 
 import (
@@ -18,53 +18,51 @@ import (
 const DefaultMaxConcurrent = 64
 
 const (
-	initialConcurrent        = 4
-	defaultMaxQueuedRequests = 10_000
-	defaultMaxQueuedBytes    = 128 << 20
-	startupWindow            = time.Second
-	controlInterval          = 250 * time.Millisecond
-	minimumCooldown          = 200 * time.Millisecond
-	maximumCooldown          = 10 * time.Second
+	initialConcurrent     = 4
+	defaultMaxQueuedTasks = 10_000
+	defaultMaxQueuedBytes = 128 << 20
+	startupWindow         = time.Second
+	controlInterval       = 250 * time.Millisecond
+	minimumCooldown       = 200 * time.Millisecond
+	maximumCooldown       = 10 * time.Second
 )
 
-// ErrBusy proves that this admission did not start backend work.
-var ErrBusy = status.Error(codes.ResourceExhausted, "Store admission is temporarily full or cooling down")
-
-// ErrQueueFull proves that read admission did not start backend work.
-var ErrQueueFull = status.Error(codes.ResourceExhausted, "Store read admission queue is full")
+// ErrQueueFull proves that admission did not start backend work.
+var ErrQueueFull = status.Error(codes.ResourceExhausted, "Store waiting capacity is full")
 
 type Options struct {
 	Store string
 	Role  string
 	// MaxConcurrent is a local resource ceiling, not an estimate of DB capacity.
-	MaxConcurrent     int
-	MaxQueuedRequests int
-	MaxQueuedBytes    int
+	MaxConcurrent  int
+	MaxQueuedTasks int
+	MaxQueuedBytes int
 }
 
 type Controller struct {
-	mu                sync.Mutex
-	limit             int
-	inFlight          int
-	maximum           int
-	threshold         int
-	resumeLimit       int
-	epoch             uint64
-	clean             int
-	recovered         int
-	failures          int
-	demand            bool
-	started           bool
-	resumeAt          time.Time
-	adjustAt          time.Time
-	changed           chan struct{}
-	random            *rand.Rand
-	latency           [methodCount][sizeClasses]latency
-	observed          observations
-	readWaiters       list.List
-	queuedBytes       int
-	maxQueuedRequests int
-	maxQueuedBytes    int
+	mu             sync.Mutex
+	limit          int
+	inFlight       int
+	maximum        int
+	threshold      int
+	resumeLimit    int
+	epoch          uint64
+	clean          int
+	recovered      int
+	failures       int
+	demand         bool
+	started        bool
+	resumeAt       time.Time
+	adjustAt       time.Time
+	changed        chan struct{}
+	random         *rand.Rand
+	latency        [methodCount][sizeClasses]latency
+	observed       observations
+	waiters        list.List
+	queuedBytes    int
+	bufferedBytes  int
+	maxQueuedTasks int
+	maxQueuedBytes int
 }
 
 type latency struct {
@@ -91,11 +89,11 @@ func New(opts Options) (*Controller, error) {
 	if opts.MaxConcurrent < 1 || opts.MaxConcurrent > 4096 {
 		return nil, errors.New("store max_concurrent must be between 1 and 4096")
 	}
-	if opts.MaxQueuedRequests < 0 || opts.MaxQueuedBytes < 0 {
-		return nil, errors.New("store read admission queue limits cannot be negative")
+	if opts.MaxQueuedTasks < 0 || opts.MaxQueuedBytes < 0 {
+		return nil, errors.New("store admission queue limits cannot be negative")
 	}
-	if opts.MaxQueuedRequests == 0 {
-		opts.MaxQueuedRequests = defaultMaxQueuedRequests
+	if opts.MaxQueuedTasks == 0 {
+		opts.MaxQueuedTasks = defaultMaxQueuedTasks
 	}
 	if opts.MaxQueuedBytes == 0 {
 		opts.MaxQueuedBytes = defaultMaxQueuedBytes
@@ -103,14 +101,14 @@ func New(opts Options) (*Controller, error) {
 	c := &Controller{
 		maximum: opts.MaxConcurrent, threshold: min(16, opts.MaxConcurrent), resumeLimit: min(initialConcurrent, opts.MaxConcurrent),
 		changed: make(chan struct{}), random: rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())),
-		observed:          newObservations(opts),
-		maxQueuedRequests: opts.MaxQueuedRequests, maxQueuedBytes: opts.MaxQueuedBytes,
+		observed:       newObservations(opts),
+		maxQueuedTasks: opts.MaxQueuedTasks, maxQueuedBytes: opts.MaxQueuedBytes,
 	}
 	return c, nil
 }
 
-// TryAcquire is used by bounded dispatchers before removing queued work or
-// starting a goroutine. On failure, changed and delay describe when to retry;
+// TryAcquire is used by the bounded Worker loop; it cannot bypass queued tasks.
+// Engine dispatchers enqueue a Ticket instead. On failure, changed and delay describe when to retry;
 // delay == 0 means only a completion or another state change can free capacity.
 func (c *Controller) TryAcquire() (*Permit, <-chan struct{}, time.Duration) {
 	return c.tryAcquire(time.Now())
@@ -123,12 +121,17 @@ func (c *Controller) tryAcquire(now time.Time) (*Permit, <-chan struct{}, time.D
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.waiters.Len() != 0 {
+		c.demand = true
+		return nil, c.changed, 0
+	}
 	return c.tryAcquireLocked(now)
 }
 
 func (c *Controller) tryAcquireLocked(now time.Time) (*Permit, <-chan struct{}, time.Duration) {
 	ready, changed, delay := c.availability(now)
 	if !ready {
+		c.demand = true
 		return nil, changed, delay
 	}
 	c.inFlight++
@@ -137,9 +140,8 @@ func (c *Controller) tryAcquireLocked(now time.Time) (*Permit, <-chan struct{}, 
 	return permit, nil, 0
 }
 
-// Ready lets a dispatcher avoid rebuilding a batch while capacity is occupied,
-// and lets Worker avoid pausing prefetch on every healthy poll. It reserves no
-// slot; callers must still use TryAcquire/Acquire before dispatch.
+// Ready lets startup and Worker prefetch observe capacity without reserving a
+// slot or inventing demand. Engine execution tickets are polled separately.
 func (c *Controller) Ready() (bool, <-chan struct{}, time.Duration) {
 	if c == nil {
 		return true, nil, 0
@@ -152,15 +154,11 @@ func (c *Controller) Ready() (bool, <-chan struct{}, time.Duration) {
 func (c *Controller) availability(now time.Time) (bool, <-chan struct{}, time.Duration) {
 	c.resume(now)
 	ready := c.limit > c.inFlight
-	if !ready {
-		c.demand = true
-	}
 	return ready, c.changed, max(0, c.resumeAt.Sub(now))
 }
 
-// Acquire may wait only at an already bounded caller (the Kafka processing
-// loop). Query/Count use AdmitRead; other Engine RPCs use their existing batch
-// queue or fail-fast Admit instead.
+// Acquire waits only at the already bounded Kafka processing loop. Engine
+// requests use Admit or enqueue a batch Ticket, never this unqueued wait path.
 func (c *Controller) Acquire(ctx context.Context) (*Permit, error) {
 	for {
 		if err := ctx.Err(); err != nil {
@@ -230,28 +228,6 @@ func (p *Permit) Release() {
 		c.observed.permitDuration.Observe(max(0, time.Since(p.started).Seconds()))
 		c.signal()
 	})
-}
-
-// Admit reuses the dispatch permit within a sequential execution. A direct
-// request without a queue is rejected before execution if capacity is absent.
-func (c *Controller) Admit(ctx context.Context) (context.Context, *Permit, error) {
-	if err := ctx.Err(); err != nil {
-		return ctx, nil, status.FromContextError(err).Err()
-	}
-	if c == nil {
-		return ctx, nil, nil
-	}
-	if permit, ok := ctx.Value(permitKey{}).(*Permit); ok && permit.controller == c {
-		return ctx, nil, nil
-	}
-	permit, _, _ := c.TryAcquire()
-	if permit == nil {
-		c.mu.Lock()
-		c.observed.rejected++
-		c.mu.Unlock()
-		return ctx, nil, ErrBusy
-	}
-	return permit.Context(ctx), permit, nil
 }
 
 // All state transitions below run with mu held. No timers mutate the state.
@@ -347,7 +323,7 @@ func (c *Controller) observeAt(started sample, duration time.Duration, result fe
 	if c.recovered == 4 {
 		c.failures = 0
 	}
-	if !started.saturated && !c.demand && c.readWaiters.Len() == 0 {
+	if !started.saturated && !c.demand && c.waiters.Len() == 0 {
 		return
 	}
 	c.clean++

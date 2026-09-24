@@ -103,7 +103,7 @@ func (s *Server) Execute(ctx context.Context, req *sink.ExecuteRequest) (*sink.E
 	if !ok {
 		return nil, nativeStatus(storage.ErrNativeUnsupported)
 	}
-	ctx, permit, err := s.admission.Admit(ctx)
+	ctx, permit, err := s.admission.Admit(ctx, req.SizeVT())
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +189,7 @@ func (s *Server) scan(ctx context.Context, req *sink.ScanRequest, send func(*sin
 		}
 		return send(frame)
 	}
-	ctx, permit, err := s.admission.Admit(ctx)
+	ctx, permit, err := s.admission.Admit(ctx, req.SizeVT())
 	if err != nil {
 		return err
 	}

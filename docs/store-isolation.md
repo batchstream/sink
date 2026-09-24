@@ -127,8 +127,11 @@ failure does not disable Kafka acceptance, and Kafka failure does not disable
 synchronous execution. Worker readiness checks its own dependencies. Gateway does
 not proxy named dependency health services; its default gRPC health is process health.
 
-Gateway exports bounded method/code labels with `sink_gateway_requests_total`,
-`sink_gateway_request_duration_seconds`, `sink_gateway_engine_duration_seconds`,
+Gateway exports request volume with `sink_gateway_requests_total{method}` and
+its own non-OK RPC statuses with `sink_gateway_errors_total{method,code}`;
+confirmed Engine errors are excluded from the Gateway error counter.
+Other Gateway metrics include `sink_gateway_request_duration_seconds`,
+`sink_gateway_engine_duration_seconds`,
 `sink_gateway_in_flight_requests`, `sink_gateway_routes`,
 and `sink_gateway_config_info`.
 Engine retains the existing `sink_grpc_server_*`, in-flight request, batching and Lua

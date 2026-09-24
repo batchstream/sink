@@ -52,6 +52,9 @@ func TestEnginePressureRejectsBeforeExecution(t *testing.T) {
 	if marker := stream.trailer.Get(forwarding.NotStartedTrailer); len(marker) != 1 || marker[0] != "true" {
 		t.Fatal("rejection omitted not-started evidence")
 	}
+	if marker := stream.trailer.Get(forwarding.ErrorStatusTrailer); len(marker) != 1 || marker[0] != forwarding.ErrorStatusMarker(err) {
+		t.Fatal("memory rejection omitted error ownership evidence")
+	}
 }
 
 type forwardRecorder struct {

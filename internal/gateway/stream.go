@@ -48,8 +48,7 @@ func (s *Server) forwardEach(ctx context.Context, call forwardCall) (bool, error
 	defer func() { s.metrics.downstream.Observe(time.Since(started).Seconds()) }()
 	stream, err := entry.client.Forward(ctx, req)
 	if err != nil {
-		downstream := &downstreamError{cause: err}
-		return false, downstream
+		return false, err
 	}
 	received := false
 	for {
@@ -63,8 +62,12 @@ func (s *Server) forwardEach(ctx context.Context, call forwardCall) (bool, error
 			if err == io.EOF {
 				return false, nil
 			}
-			downstream := &downstreamError{cause: err}
-			return notStarted, downstream
+			engineStatus := stream.Trailer().Get(forwarding.ErrorStatusTrailer)
+			if len(engineStatus) == 1 && engineStatus[0] != "" && engineStatus[0] == forwarding.ErrorStatusMarker(err) {
+				downstream := &downstreamError{cause: err}
+				return notStarted, downstream
+			}
+			return notStarted, err
 		}
 		if frame.GetVersion() != forwarding.Version || frame.GetStore() != route.Store {
 			return false, status.Error(codes.Internal, "invalid Engine stream identity")

@@ -49,7 +49,12 @@ func New(opts Options) (*Server, error) {
 func (s *Server) Forward(req *forward.ForwardRequest, stream grpc.ServerStreamingServer[forward.ForwardResponse]) (err error) {
 	ctx := stream.Context()
 	started := time.Now()
-	defer func() { s.metrics.ObserveForward(req, status.Code(err), time.Since(started)) }()
+	defer func() {
+		s.metrics.ObserveForward(req, status.Code(err), time.Since(started))
+		if marker := forwarding.ErrorStatusMarker(err); marker != "" {
+			stream.SetTrailer(metadata.Pairs(forwarding.ErrorStatusTrailer, marker))
+		}
+	}()
 	defer func() {
 		// Direct Native admission can reject after validation, but still before
 		// execution. Do not turn that known rejection into an unknown mutation.

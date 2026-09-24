@@ -10,6 +10,14 @@ Gateway request volume is independent of response status. Its error counter
 includes only Gateway-originated failures; Engine RPC failures are recorded by
 Engine and are not attributed to Gateway when forwarded to clients. The
 `sink_gateway_requests_total` label change removes the former `code` label.
+Engine supplies a bounded private trailer fingerprinting its exact error status.
+Gateway excludes an error only when that trailer matches the received status,
+including its details. Local dial/send/receive failures and response-size limits
+that fail the public RPC remain visible in Gateway error metrics.
+This marker does not change the public status, error details, or mutation
+acceptance/retry semantics. During mixed-version
+rollouts, errors from older Engines without the marker are conservatively counted
+by Gateway until those Engines are upgraded.
 
 Every role serves `/livez` and `/readyz` on its dedicated health listener,
 configured by `health.address` (default `:8081`). Prometheus is independent: set

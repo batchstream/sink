@@ -61,9 +61,9 @@ jobs:
   qualify:
     name: Public production qualification
     needs: release
-    uses: batchstream/sink-production-suite/.github/workflows/release-qualification.yml@bb4db31e534339a4d0da7134fd703ccdb84f4707
+    uses: batchstream/sink-production-suite/.github/workflows/release-qualification.yml@9594a74fa65b0d42d23bd58998ec9cfd496a8be8
     with:
-      suite_ref: bb4db31e534339a4d0da7134fd703ccdb84f4707
+      suite_ref: 9594a74fa65b0d42d23bd58998ec9cfd496a8be8
       sink_ref: ${{ needs.release.outputs.revision }}
 
   binaries:

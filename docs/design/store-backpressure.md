@@ -18,69 +18,95 @@ guarantee zero overshoot for an arbitrarily large simultaneous deployment.
 
 ```mermaid
 flowchart LR
-    G[Gateway] --> Q[Engine bounded method queues]
-    Q -->|TryAcquire before dequeue| C[Local Store controller]
-    K[Kafka backlog] -->|Wait before poll; Acquire before attempt| C
-    R[Query / Count] -->|Bounded FIFO; caller context only| C
-    N[Execute / Scan] -->|Admit or reject before execution| C
+    G[Gateway] --> B[Read / Write / Delete collection queues]
+    B -->|Ready batch; nonblocking handoff| Q[One Store admission FIFO]
+    G --> N[Execute / Query / Count / Scan]
+    N -->|One ready task| Q
+    Q -->|FIFO head acquires permit| C[Local Store controller]
+    K[Kafka backlog in Worker] -->|Wait before poll; Acquire before attempt| C
     C --> E[Sequential admitted execution]
     E --> O[Storage observation decorator]
     O --> S[Storage / NativeStorage]
     O -->|Real results and execution latency| C
 ```
 
-Engine's three existing batch dispatch loops select dependency-ready work, then try admission **before**
-releasing queue bytes/operations, recording active records, or launching execution.
-When blocked, they continue handling arrivals, cancellation, record completions and
-shutdown while waiting for a capacity notification or a cooldown timer. Pending
-work remains charged to the original queue, even when represented in the
-dispatcher's pending slice. Queue-full behavior remains `RESOURCE_EXHAUSTED`.
-Finished executions retain their permits until the dispatcher receives completion,
-so goroutines waiting to report completion cannot escape the concurrency bound.
+Each Engine has one FIFO of **ready execution tasks** shared by all methods.
+A task is a collected batch or an individual non-batch call, not a document,
+operation, RPC response frame, or physical database command. Batch producers do
+not compete with Native callers through separate `TryAcquire` loops. Even a
+new request that could execute immediately cannot overtake an existing ticket.
+FIFO is admission order, not original RPC arrival order, completion order, cost
+fairness, cross-method record ordering, or a global ordering across replicas.
 
-One permit covers one sequential execution, including parsing, Lua, snapshots,
-CAS attempts, and result settlement. Existing batch partitioning produces one
-completion mode per dispatch. Mixed internal waves also stay sequential when
-admission is present. The Storage decorator **does not acquire or block**. This
-avoids moving a bounded queue into unbounded semaphore waiters, and avoids
-deadlocking a Merge which already owns its execution slot.
+The batch layer retains collection targets, completion-mode partitioning and
+method-local record dependencies. It selects only dependency-ready work and
+keeps at most one selected batch waiting for admission per producer. It cannot
+select a later batch until that ticket is dispatched or canceled, preserving
+its existing dependency order. Pending work, including a selected batch, stays
+charged to the original collection queue until execution or cancellation.
+Already running batches continue to release individual record dependencies.
 
-Read, Write, Delete, Execute, Query, Count and Scan share the same controller.
-Query and Count share a bounded admission FIFO. A full execution window or an
-overload cooldown leaves those requests waiting rather than rejecting a healthy
-burst. `batching.queue.max_operations` bounds waiting requests (one command per
-request), and `batching.queue.max_bytes` bounds retained encoded request bytes.
-These are the same configured limits as the batch queues, not a second queue on
-top of an existing Read/Write/Delete queue. Only the head competes for a Store
-permit; no goroutine is spawned by admission. Query/Count are FIFO with respect
-to each other, not globally ordered with the independent batch dispatch loops.
+A `Ticket` is a nonblocking handoff, not a waiting goroutine. The batch event
+loop keeps accepting bounded arrivals and handling cancellations, record
+completions, execution completions and shutdown while polling its ticket. A full
+admission task queue leaves an accepted batch upstream; it is retried on a
+capacity notification, not rejected or removed from accounting. Only the FIFO
+head may obtain a permit. Other tickets wait for their turn without contending
+for execution slots. Completed executions retain permits until completion
+notifications are consumed, bounding goroutines awaiting settlement too.
 
-There is **no new server-side admission timeout**. A caller with no deadline can
-wait until capacity is available or its context is canceled. A caller deadline
-is propagated unchanged, and cancellation removes queue charges without entering
-the backend. Only a full waiting queue rejects with `RESOURCE_EXHAUSTED`.
-Encoded bytes are a bounded accounting unit, not an exact Go heap estimate;
-process memory admission and gRPC message limits remain independent safeguards.
-Admission waiting never shortens the lifetime of an already executing permit.
+### Waiting resources and execution resources
 
-Execute and Scan keep their fail-fast admission semantics. Engine marks a Store
-admission or read-queue rejection `sink-forward-not-started`; a backend error with the same gRPC code
-does not receive that evidence. Async publication bypasses Store admission;
-Kafka producer bounds still apply, and Worker controls the later application.
+- `execution.queue.max_tasks` bounds ready tasks in the shared admission FIFO.
+  One batch occupies one task regardless of its operation count.
+- `execution.queue.max_bytes` is one Engine-wide budget for encoded request bytes
+  retained across **all collection queues and admission**. A `Reservation` is
+  obtained once; transferring its request into a task does not release and
+  reacquire capacity. Canceling one member releases only that member's bytes.
+- `batching.queue.max_operations` and `batching.queue.max_bytes` remain local
+  collection bounds per batch method. These do not determine Native admission
+  capacity or the Store execution window. They also bound upstream work when
+  the shared ready-task FIFO is full.
+- Store `max_concurrent` caps simultaneous execution tasks, independently of
+  waiting capacity. `batching.max_operations` and `batching.max_bytes` are batch
+  formation targets, not concurrency weights.
 
-Worker waits **before polling**, outside `consumer.processing_timeout`, with
-fetching paused and group heartbeats/rebalances intact. It acquires a permit
-before each handler attempt and releases it before Kafka retry backoff and
-settlement. A retained poll remains bounded by `consumer.max_poll_records`.
-Admission waiting spends no retry attempt and is cancellable by processing
-timeout, rebalance, or shutdown. Unresolved records remain uncommitted; it cannot
-turn a temporary failure into a DLQ entry. Worker currently processes polls and
-mutation waves sequentially; this feature does not add parallel poll processing.
+Bytes are an encoded accounting unit, not a Go heap measurement. Process memory
+watermarks, transport size limits, bounded adapter fanout, and batch targets
+remain independent protection. An immediately executable non-batch request
+needs no waiting-byte reservation. There is no new server-side admission
+expiry: each caller's original context controls its wait. Queue/resource bounds
+can still reject new work with `RESOURCE_EXHAUSTED`; saturation or cooldown
+alone does not. Non-batch calls use their existing RPC goroutine for waiting.
+
+Canceled members are removed before dispatch without canceling surviving members
+of their batch. Moving between stages does not reset deadlines or borrow one
+caller's deadline for another. Shutdown cancels queued tickets, releases both
+stages' charges exactly once, and settles active executions. A canceled caller
+never releases an active execution permit before its backend work ends.
+
+One permit covers the complete sequential execution, including parsing, Lua,
+snapshots, CAS attempts, cursor sends and result settlement. Nested service
+calls reuse the permit rather than enqueueing themselves again. The Storage
+observation decorator never acquires a permit or owns another queue.
+
+Engine marks a capacity rejection `sink-forward-not-started`; a backend error
+with the same gRPC code does not receive that evidence. Health probes bypass the
+business FIFO. Async publication remains on Kafka's bounded producer path, not
+behind database admission; Worker controls the later application.
+
+Worker has its own process-local controller. It waits **before polling**, outside
+`consumer.processing_timeout`, with fetching paused and group heartbeats/rebalances
+intact. It acquires a permit before each handler attempt and releases it before
+Kafka retry backoff and settlement. A retained poll remains bounded by
+`consumer.max_poll_records`. Admission waiting spends no retry attempt and is
+cancellable by processing timeout, rebalance, or shutdown. Unresolved records
+remain uncommitted. This change does not add parallel Worker poll processing.
 
 ## Window algorithm
 
 The window algorithm has fixed-size feedback state and one short mutex-protected
-update per Store observation, alongside the bounded Query/Count FIFO. Engine
+update per Store observation, alongside the bounded task FIFO and byte reservations. Engine
 actively completes randomized initialization in `Run` **before serving readiness
 or RPCs**, without issuing a synthetic database request. Worker retains its
 first-poll initialization. Subsequent saturation or cooldown does not flap readiness.
@@ -88,7 +114,7 @@ first-poll initialization. Subsequent saturation or cooldown does not flap readi
 | Event | Behavior |
 | --- | --- |
 | Initialization | Stagger for a random 0.5–1.5 seconds, then open `min(4, maximum)` executions before Engine readiness |
-| Healthy demand | Saturation or queued Query/Count requests request growth; require at least `max(4, window)` healthy samples and a jittered 125–375 ms control interval |
+| Healthy demand | Saturation or ready tasks waiting for execution request growth; require at least `max(4, window)` healthy samples and a jittered 125–375 ms control interval |
 | Initial growth | Add `max(1, window/2)` below a slow-start threshold of 16 |
 | After congestion | Threshold becomes half the previous window; subsequent growth is additive by one |
 | Sustained latency inflation | Halve the window, retaining at least one execution so successful work continues and the baseline can adapt |
@@ -215,7 +241,11 @@ require progress without rejection, rather than treating a tiny initial window
 as sufficient protection. Deterministic virtual-time tests hold a caller for an
 hour without a server-added deadline, cancel the head/middle/tail of the FIFO,
 exercise byte/count bounds and cooldown, and verify exact permit/queue cleanup.
-Race tests concurrently release permits, cancel callers and collect metrics.
+Mixed-method tests assert one FIFO dispatch sequence across batch and Native calls,
+partial-batch cancellation, a full downstream queue without event-loop deadlock,
+and byte ownership transfer without double release. Light-traffic tests prevent
+queue traversal or startup readiness from fabricating growth demand. Race tests
+concurrently release reservations/permits, cancel tickets and collect metrics.
 Kafka component tests use an in-process broker to verify that paused intake
 does not spend processing timeout, report unhealthy, advance offsets, or produce
 dead letters; another test verifies a real processor's overload/cooldown retry.

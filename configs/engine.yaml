@@ -21,6 +21,9 @@ batching:
 producer:
   max_buffered_bytes: 64MiB
 execution:
+  queue:
+    max_tasks: 10000 # Ready batches and individual native calls; not operation count.
+    max_bytes: 128MiB # Shared waiting bytes across collection and admission.
   merge:
     max_attempts: 3 # Revision-conflict attempts.
     lua:

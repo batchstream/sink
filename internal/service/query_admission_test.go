@@ -10,8 +10,8 @@ import (
 	"github.com/batchstream/sink/internal/storage/memory"
 )
 
-func TestQueryAndCountWaitForStoreCapacityWithoutNewDeadline(t *testing.T) {
-	for _, method := range []string{"Query", "Count"} {
+func TestAllNativeMethodsWaitForStoreCapacityWithoutNewDeadline(t *testing.T) {
+	for _, method := range []string{"Query", "Count", "Execute", "Scan"} {
 		t.Run(method, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				backend := &nativeBoundaryStore{Store: memory.New()}
@@ -27,13 +27,22 @@ func TestQueryAndCountWaitForStoreCapacityWithoutNewDeadline(t *testing.T) {
 				command := &sink.Command{Uri: "sink://primary", Method: "GET", Path: "/_search"}
 				result := make(chan error, 1)
 				go func() {
-					if method == "Query" {
+					switch method {
+					case "Query":
 						request := &sink.QueryRequest{Command: command}
 						_, err := batching.server.Query(ctx, request)
 						result <- err
-					} else {
+					case "Count":
 						request := &sink.CountRequest{Command: command}
 						_, err := batching.Count(ctx, request)
+						result <- err
+					case "Execute":
+						request := &sink.ExecuteRequest{Command: command}
+						_, err := batching.Execute(ctx, request)
+						result <- err
+					case "Scan":
+						request := &sink.ScanRequest{Command: command}
+						_, err := batching.server.Scan(ctx, request)
 						result <- err
 					}
 				}()

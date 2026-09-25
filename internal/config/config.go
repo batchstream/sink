@@ -60,7 +60,13 @@ type Service struct {
 	StoreMaxConcurrent int
 	Request            Request
 	Batching           Batching
+	Admission          AdmissionQueue
 	Merge              Merge
+}
+
+type AdmissionQueue struct {
+	MaxTasks int
+	MaxBytes int
 }
 
 type Request struct {

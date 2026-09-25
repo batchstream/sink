@@ -27,6 +27,7 @@ type batchCall[Request any, Response any] struct {
 	records        []recordIdentity
 	stopWake       func() bool
 	partition      batchPartition
+	reservation    *backpressure.Reservation
 	resultOnce     sync.Once
 	recordMu       sync.Mutex
 	pendingRecords map[recordIdentity]bool
@@ -118,15 +119,6 @@ func (b *requestBatcher[Request, Response]) Submit(
 	if err := contextError(ctx); err != nil {
 		return empty, err
 	}
-	if err := b.reserve(operationCount, encodedBytes); err != nil {
-		reason := "queue_full"
-		if status.Code(err) == codes.Unavailable {
-			reason = "shutdown"
-		}
-		b.metrics.ObserveBatchRejected(b.store, b.method, reason)
-		return empty, err
-	}
-
 	call := &batchCall[Request, Response]{
 		ctx:            ctx,
 		request:        request,
@@ -135,6 +127,15 @@ func (b *requestBatcher[Request, Response]) Submit(
 		enqueuedAt:     time.Now(),
 		result:         make(chan batchResult[Response], 1),
 	}
+	if err := b.reserve(call); err != nil {
+		reason := "queue_full"
+		if status.Code(err) == codes.Unavailable {
+			reason = "shutdown"
+		}
+		b.metrics.ObserveBatchRejected(b.store, b.method, reason)
+		return empty, err
+	}
+
 	if b.records != nil {
 		call.records = b.records(request)
 	}
@@ -186,7 +187,8 @@ func (b *requestBatcher[Request, Response]) wait() {
 	b.waitGroup.Wait()
 }
 
-func (b *requestBatcher[Request, Response]) reserve(operationCount int, encodedBytes int) error {
+func (b *requestBatcher[Request, Response]) reserve(call *batchCall[Request, Response]) error {
+	operationCount, encodedBytes := call.operationCount, call.encodedBytes
 	b.queueMu.Lock()
 	defer b.queueMu.Unlock()
 	if b.ctx.Err() != nil {
@@ -197,6 +199,11 @@ func (b *requestBatcher[Request, Response]) reserve(operationCount int, encodedB
 		encodedBytes > b.maxQueuedBytes || b.queuedBytes > b.maxQueuedBytes-encodedBytes {
 		return status.Error(codes.ResourceExhausted, "synchronous batch queue is full")
 	}
+	reservation, err := b.admission.Reserve(encodedBytes)
+	if err != nil {
+		return err
+	}
+	call.reservation = reservation
 	b.queuedCalls++
 	b.queuedOperations += operationCount
 	b.queuedBytes += encodedBytes
@@ -205,6 +212,7 @@ func (b *requestBatcher[Request, Response]) reserve(operationCount int, encodedB
 }
 
 func (b *requestBatcher[Request, Response]) release(call *batchCall[Request, Response]) {
+	call.reservation.Release()
 	if call.stopWake != nil {
 		call.stopWake()
 	}
@@ -227,13 +235,19 @@ func (b *requestBatcher[Request, Response]) release(call *batchCall[Request, Res
 func (b *requestBatcher[Request, Response]) run() {
 	defer b.waitGroup.Done()
 	pending := make([]*batchCall[Request, Response], 0)
-	// Each active record stays occupied until every selected caller releases it.
+	var selected []*batchCall[Request, Response]
+	var ticket *backpressure.Ticket
+	var reason string
+	// A producer retains at most one ready batch in admission. Its event loop
+	// keeps settling cancellations and completions while that batch waits.
 	active := make(map[recordIdentity]int)
 	recordsDone := make(chan []recordIdentity, max(1, min(1024, b.maxConcurrent)))
 	completed := make(chan *backpressure.Permit, max(1, min(1024, b.maxConcurrent)))
 	running := 0
 	for {
 		if b.ctx.Err() != nil {
+			ticket.Cancel()
+			b.failCalls(selected)
 			b.failCalls(pending)
 			b.drain()
 			for running > 0 {
@@ -243,8 +257,6 @@ func (b *requestBatcher[Request, Response]) run() {
 			}
 			return
 		}
-		// Drain the bounded input queue before selecting a batch, including aged
-		// backlog accumulated while all execution slots were occupied.
 	drainInput:
 		for {
 			select {
@@ -254,74 +266,72 @@ func (b *requestBatcher[Request, Response]) run() {
 				break drainInput
 			}
 		}
-		live := pending[:0]
-		for _, call := range pending {
-			if err := contextError(call.ctx); err != nil {
-				b.release(call)
-				completeCall(call, emptyResponse[Response](), err)
-			} else {
-				live = append(live, call)
-			}
+		pending = b.liveCalls(pending)
+		selected = b.liveCalls(selected)
+		if len(selected) == 0 {
+			ticket.Cancel()
+			ticket = nil
 		}
-		clear(pending[len(live):])
-		pending = live
 		var timer *time.Timer
 		var deadline <-chan time.Time
 		var admissionChanged <-chan struct{}
-		ready := true
-		if len(pending) > 0 {
-			var retryAfter time.Duration
-			ready, admissionChanged, retryAfter = b.admission.Ready()
-			if ready {
-				admissionChanged = nil
-			} else if retryAfter > 0 {
-				timer = time.NewTimer(retryAfter)
-				deadline = timer.C
-			}
-		}
-		if ready && (b.maxConcurrent == 0 || running < b.maxConcurrent) {
-			selected, remaining, reason := b.selectReady(pending, active)
-			if len(selected) > 0 {
-				wait := b.maxWait - time.Since(selected[0].enqueuedAt)
-				if reason != "max_wait" || wait <= 0 {
-					permit, changed, retryAfter := b.admission.TryAcquire()
-					if permit == nil {
-						admissionChanged = changed
-						if retryAfter > 0 {
-							timer = time.NewTimer(retryAfter)
-							deadline = timer.C
-						}
-					} else {
-						pending = remaining
-						for _, call := range selected {
-							b.release(call)
-							call.pendingRecords = make(map[recordIdentity]bool, len(call.records))
-							for _, key := range call.records {
-								if call.pendingRecords[key] {
-									continue
-								}
-								call.pendingRecords[key] = true
-								active[key]++
-							}
-							call.onRecordsDone = func(keys []recordIdentity) {
-								select {
-								case recordsDone <- keys:
-								case <-b.ctx.Done():
-								}
-							}
-						}
-						running++
-						go func() {
-							b.executeBatch(selected, reason, permit)
-							// Keep the slot until the dispatcher receives completion,
-							// bounding goroutines waiting to report finished work too.
-							completed <- permit
-						}()
-						continue
-					}
+		if len(selected) == 0 && (b.maxConcurrent == 0 || running < b.maxConcurrent) {
+			candidate, remaining, selectedReason := b.selectReady(pending, active)
+			if len(candidate) > 0 {
+				wait := b.maxWait - time.Since(candidate[0].enqueuedAt)
+				if selectedReason != "max_wait" || wait <= 0 {
+					selected, pending, reason = candidate, remaining, selectedReason
 				} else {
 					timer = time.NewTimer(wait)
 					deadline = timer.C
+				}
+			}
+		}
+		if len(selected) > 0 {
+			if ticket == nil {
+				reservations := make([]*backpressure.Reservation, 0, len(selected))
+				for _, call := range selected {
+					reservations = append(reservations, call.reservation)
+				}
+				ticket, admissionChanged = b.admission.Enqueue(reservations)
+			}
+			if ticket != nil {
+				permit, changed, retryAfter := ticket.Poll()
+				if permit == nil {
+					admissionChanged = changed
+					if retryAfter > 0 {
+						timer = time.NewTimer(retryAfter)
+						deadline = timer.C
+					}
+				} else {
+					ticket = nil
+					calls := selected
+					selected = nil
+					for _, call := range calls {
+						b.release(call)
+						call.pendingRecords = make(map[recordIdentity]bool, len(call.records))
+						for _, key := range call.records {
+							if call.pendingRecords[key] {
+								continue
+							}
+							call.pendingRecords[key] = true
+							active[key]++
+						}
+						call.onRecordsDone = func(keys []recordIdentity) {
+							select {
+							case recordsDone <- keys:
+							case <-b.ctx.Done():
+							}
+						}
+					}
+					running++
+					flushReason := reason
+					go func() {
+						b.executeBatch(calls, flushReason, permit)
+						// Completion delivery stays inside the execution bound.
+						completed <- permit
+					}()
+					continue
 				}
 			}
 		}
@@ -347,6 +357,20 @@ func (b *requestBatcher[Request, Response]) run() {
 			stopTimer(timer)
 		}
 	}
+}
+
+func (b *requestBatcher[Request, Response]) liveCalls(calls []*batchCall[Request, Response]) []*batchCall[Request, Response] {
+	live := calls[:0]
+	for _, call := range calls {
+		if err := contextError(call.ctx); err != nil {
+			b.release(call)
+			completeCall(call, emptyResponse[Response](), err)
+		} else {
+			live = append(live, call)
+		}
+	}
+	clear(calls[len(live):])
+	return live
 }
 
 // A blocked earlier RPC reserves all its keys in the dependency graph. Later

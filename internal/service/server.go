@@ -100,7 +100,7 @@ func (s *Server) write(ctx context.Context, req *sink.WriteRequest, budgets *res
 		return response, nil
 	}
 
-	ctx, permit, err := s.admission.Admit(ctx)
+	ctx, permit, err := s.admission.Admit(ctx, req.SizeVT())
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +208,7 @@ func (s *Server) delete(ctx context.Context, req *sink.DeleteRequest, budgets *r
 		return response, nil
 	}
 
-	ctx, permit, err := s.admission.Admit(ctx)
+	ctx, permit, err := s.admission.Admit(ctx, req.SizeVT())
 	if err != nil {
 		return nil, err
 	}

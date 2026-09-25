@@ -270,7 +270,7 @@ func TestControllerMetricsAndValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	families, err := registry.Gather()
-	if err != nil || len(families) != 14 {
+	if err != nil || len(families) != 15 {
 		t.Fatalf("invalid metrics: %d families, %v", len(families), err)
 	}
 	series := 0
@@ -283,7 +283,7 @@ func TestControllerMetricsAndValidation(t *testing.T) {
 			}
 		}
 	}
-	if series != 136 {
+	if series != 137 {
 		t.Fatalf("Store collector cardinality changed: %d series", series)
 	}
 }

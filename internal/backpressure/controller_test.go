@@ -242,7 +242,7 @@ func TestAdmissionCancellationAndNoLostWakeup(t *testing.T) {
 		permit.Release()
 		next := <-done
 		admitted := next.Context(t.Context())
-		_, nested, err := c.Admit(admitted)
+		_, nested, err := c.Admit(admitted, 0)
 		if err != nil || nested != nil {
 			t.Fatal("sequential execution tried to reacquire its permit")
 		}

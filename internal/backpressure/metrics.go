@@ -15,8 +15,9 @@ type observations struct {
 	duration       *prometheus.Desc
 	baseline       *prometheus.Desc
 	cooldown       *prometheus.Desc
-	queueRequests  *prometheus.Desc
+	queueTasks     *prometheus.Desc
 	queueBytes     *prometheus.Desc
+	bufferedBytes  *prometheus.Desc
 	queueOutcomes  *prometheus.Desc
 	queueDuration  *prometheus.HistogramVec
 	permitDuration prometheus.Histogram
@@ -36,20 +37,21 @@ type observations struct {
 
 func newObservations(opts Options) observations {
 	labels := prometheus.Labels{"role": opts.Role, "store": opts.Store}
-	queueOptions := prometheus.HistogramOpts{Name: "sink_store_admission_queue_duration_seconds", Help: "Query/Count wait time before admission or caller cancellation; excludes backend work.", ConstLabels: labels}
+	queueOptions := prometheus.HistogramOpts{Name: "sink_store_admission_queue_duration_seconds", Help: "Store task wait time before admission or caller cancellation; excludes backend work.", ConstLabels: labels}
 	permitOptions := prometheus.HistogramOpts{Name: "sink_store_permit_hold_duration_seconds", Help: "Time holding an execution permit, including retries and cursor sends but excluding admission wait.", ConstLabels: labels}
 	observed := observations{
 		limit:          prometheus.NewDesc("sink_store_concurrency_limit", "Current local Store execution window; zero pauses new work.", nil, labels),
 		inFlight:       prometheus.NewDesc("sink_store_executions_in_flight", "Admitted sequential Store executions, including existing retries and cursor sends.", nil, labels),
 		changes:        prometheus.NewDesc("sink_store_window_changes_total", "Store window adjustments by reason.", []string{"reason"}, labels),
-		admissions:     prometheus.NewDesc("sink_store_admissions_total", "Store executions admitted or direct requests rejected before execution.", []string{"outcome"}, labels),
+		admissions:     prometheus.NewDesc("sink_store_admissions_total", "Store executions admitted or new work rejected before execution.", []string{"outcome"}, labels),
 		feedback:       prometheus.NewDesc("sink_store_feedback_total", "Real Store calls classified once, regardless of batch result count.", []string{"method", "signal"}, labels),
 		duration:       prometheus.NewDesc("sink_store_backend_duration_seconds_total", "Store call time excluding admission and downstream Emit time.", []string{"method"}, labels),
 		baseline:       prometheus.NewDesc("sink_store_latency_baseline_seconds", "Learned Store latency per operation and batch-size class; zero until sampled.", []string{"method", "batch_size"}, labels),
 		cooldown:       prometheus.NewDesc("sink_store_cooldown_seconds", "Remaining delay before real work may probe a paused Store.", nil, labels),
-		queueRequests:  prometheus.NewDesc("sink_store_admission_queued_requests", "Query/Count requests waiting for a shared Store execution permit.", nil, labels),
-		queueBytes:     prometheus.NewDesc("sink_store_admission_queued_bytes", "Encoded request bytes retained by the Query/Count admission queue.", nil, labels),
-		queueOutcomes:  prometheus.NewDesc("sink_store_admission_waits_total", "Query/Count admission waits completed or rejected by the bounded queue.", []string{"outcome"}, labels),
+		queueTasks:     prometheus.NewDesc("sink_store_admission_queued_tasks", "Ready Store tasks waiting for a shared Store execution permit.", nil, labels),
+		queueBytes:     prometheus.NewDesc("sink_store_admission_queued_bytes", "Encoded request bytes retained by ready Store tasks, also included in buffered bytes.", nil, labels),
+		bufferedBytes:  prometheus.NewDesc("sink_store_buffered_bytes", "Encoded request bytes retained across batch collection and admission, charged once.", nil, labels),
+		queueOutcomes:  prometheus.NewDesc("sink_store_admission_waits_total", "Store task admission waits completed or rejected by the bounded queue.", []string{"outcome"}, labels),
 		queueDuration:  prometheus.NewHistogramVec(queueOptions, []string{"outcome"}),
 		permitDuration: prometheus.NewHistogram(permitOptions),
 		emitDuration:   prometheus.NewDesc("sink_store_emit_wait_duration_seconds_total", "Time waiting in Query/Scan downstream Emit callbacks, excluded from backend feedback.", []string{"method"}, labels),
@@ -63,7 +65,7 @@ func (c *Controller) Describe(ch chan<- *prometheus.Desc) {
 	for _, desc := range []*prometheus.Desc{c.observed.limit, c.observed.inFlight, c.observed.changes, c.observed.admissions, c.observed.feedback, c.observed.duration, c.observed.baseline, c.observed.cooldown} {
 		ch <- desc
 	}
-	for _, desc := range []*prometheus.Desc{c.observed.queueRequests, c.observed.queueBytes, c.observed.queueOutcomes, c.observed.emitDuration} {
+	for _, desc := range []*prometheus.Desc{c.observed.queueTasks, c.observed.queueBytes, c.observed.bufferedBytes, c.observed.queueOutcomes, c.observed.emitDuration} {
 		ch <- desc
 	}
 	c.observed.queueDuration.Describe(ch)
@@ -74,9 +76,10 @@ func (c *Controller) Collect(ch chan<- prometheus.Metric) {
 	c.mu.Lock()
 	observed, limit, inFlight := c.observed, c.limit, c.inFlight
 	latency, cooldown := c.latency, max(0, time.Until(c.resumeAt).Seconds())
-	queuedRequests, queuedBytes := c.readWaiters.Len(), c.queuedBytes
+	queuedTasks, queuedBytes, bufferedBytes := c.waiters.Len(), c.queuedBytes, c.bufferedBytes
 	c.mu.Unlock()
-	ch <- prometheus.MustNewConstMetric(observed.queueRequests, prometheus.GaugeValue, float64(queuedRequests))
+	ch <- prometheus.MustNewConstMetric(observed.bufferedBytes, prometheus.GaugeValue, float64(bufferedBytes))
+	ch <- prometheus.MustNewConstMetric(observed.queueTasks, prometheus.GaugeValue, float64(queuedTasks))
 	ch <- prometheus.MustNewConstMetric(observed.queueBytes, prometheus.GaugeValue, float64(queuedBytes))
 	ch <- prometheus.MustNewConstMetric(observed.queueOutcomes, prometheus.CounterValue, float64(observed.queueAdmitted), "admitted")
 	ch <- prometheus.MustNewConstMetric(observed.queueOutcomes, prometheus.CounterValue, float64(observed.queueCanceled), "canceled")

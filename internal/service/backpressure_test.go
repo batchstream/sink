@@ -124,7 +124,7 @@ func TestFinishedBatchRetainsPermitUntilDispatcherReceivesCompletion(t *testing.
 		defer cancel()
 		pending := &batchCall[int, int]{ctx: ctx, request: 2, operationCount: 1, encodedBytes: 1, enqueuedAt: time.Now(), result: make(chan batchResult[int], 1)}
 		pending.stopWake = func() bool { close(blocked); <-resume; return true }
-		if err := batcher.reserve(1, 1); err != nil {
+		if err := batcher.reserve(pending); err != nil {
 			t.Fatal(err)
 		}
 		cancel()

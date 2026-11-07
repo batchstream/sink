@@ -1,5 +1,14 @@
 # Sink
 
+> [!IMPORTANT]
+> **Archived.** Sink has been replaced by [Weir](https://github.com/batchstream/weir)
+> and is no longer maintained. Releases up to v0.22.0 and the
+> `ghcr.io/batchstream/sink` images remain available but receive no fixes. Weir
+> serves MongoDB, Elasticsearch, and OpenSearch with typed reads and mutations,
+> Lua transforms, and native commands through a different API, so clients and
+> Lua programs change when they move. Weir has no Kafka-backed asynchronous
+> writes; callers that used them write synchronously.
+
 [![CI](https://github.com/batchstream/sink/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/batchstream/sink/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/batchstream/sink)](https://github.com/batchstream/sink/releases/latest)
 [![Go version](https://img.shields.io/github/go-mod/go-version/batchstream/sink)](go.mod)
